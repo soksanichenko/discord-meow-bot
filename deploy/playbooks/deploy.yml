@@ -1,0 +1,8 @@
+---
+- name: Deploy discord bot
+  hosts: all
+  tasks:
+    - import_role:
+        name: deploy_bot_container
+        tasks_from: docker.yml
+...

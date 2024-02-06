@@ -1,0 +1,31 @@
+---
+- name: Prepare Dockerfile
+  template:
+    dest: "/tmp/Dockerfile"
+    src: "Dockerfile.j2"
+
+- name: Copy sources
+  synchronize:
+    dest: "/tmp/sources"
+    src: "../../../../sources"
+
+- name: Build a docker image
+  docker_image:
+    name: "discord-meow-bot"
+    force_source: yes
+    build:
+      path: "/tmp"
+      pull: yes
+      network: host
+    source: build
+  become: yes
+
+- name: Up a docker container
+  docker_container:
+    name: "discord-meow-bot"
+    image: "discord-meow-bot"
+    state: started
+    restart_policy: always
+    restart: yes
+  become: yes
+...
