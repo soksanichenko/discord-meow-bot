@@ -1,4 +1,4 @@
-# Main module of the bot
+"""Main module of the bot"""
 
 import os
 import discord
