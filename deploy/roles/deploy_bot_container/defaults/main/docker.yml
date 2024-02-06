@@ -1,0 +1,3 @@
+---
+docker_lib_folder: "/var/lib/docker"
+...

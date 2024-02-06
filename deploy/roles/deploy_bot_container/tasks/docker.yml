@@ -4,10 +4,27 @@
     dest: "/tmp/Dockerfile"
     src: "Dockerfile.j2"
 
+- name: Create volume directory for a container
+  file:
+    path: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+    recurse: yes
+    state: directory
+    owner: root
+    group: root
+  become: yes
+
+- name: Copy req.txt for building a docker image
+  copy:
+    dest: "/tmp/req.txt"
+    src: "../../../../sources/req.txt"
+
 - name: Copy sources
   synchronize:
-    dest: "/tmp/sources"
-    src: "../../../../sources"
+    dest: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+    src: "../../../../sources/"
+    owner: false
+    group: false
+  become: yes
 
 - name: Build a docker image
   docker_image:
@@ -27,5 +44,15 @@
     state: started
     restart_policy: always
     restart: yes
+    mounts:
+      - source: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+        target: "/code/sources"
+        read_only: yes
+        type: bind
   become: yes
+
+- name: Remove Dockerfile
+  file:
+    path: "/tmp/Dockerfile"
+    state: absent
 ...

@@ -1,9 +1,9 @@
 FROM almalinux:9
 RUN dnf install python39 -y
-RUN mkdir -p /code
+RUN mkdir -p /code/sources
 WORKDIR /code
+COPY req.txt sources/req.txt
 RUN python3.9 -m venv --system-site-packages --symlinks venv
-COPY /sources/* .
-RUN source venv/bin/activate && pip install -r req.txt
+RUN source venv/bin/activate && pip install -r sources/req.txt
 ENV DISCORD_TOKEN="{{ discord_token }}"
-ENTRYPOINT ["venv/bin/python3", "main.py"]
+ENTRYPOINT ["venv/bin/python3", "sources/main.py"]
