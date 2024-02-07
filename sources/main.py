@@ -62,8 +62,7 @@ async def on_message(message: discord.Message):
         return
     if not message.embeds:
         return
-    parsed_urls = (urlparse(embed.url) for embed in message.embeds)
-    processed_urls = map(replace_domain, parsed_urls)
+    processed_urls = (replace_domain(urlparse(embed.url) for embed in message.embeds)
     final_urls = {
         embed.url: processed_url.geturl() for processed_url, embed in zip(
             processed_urls,
