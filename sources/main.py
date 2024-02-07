@@ -1,19 +1,21 @@
 """Main module of the bot"""
-
+import logging
 import os
 from copy import copy
 from urllib.parse import urlparse, ParseResult
 
 import discord
+from discord.ext.commands import Bot
 
 intents = discord.Intents.default()
 # access to a message content
 intents.message_content = True
-client = discord.Client(intents=intents)
-tree = discord.app_commands.CommandTree(client)
+bot = Bot(command_prefix="", intents=intents)
+
+logger = logging.getLogger('discord')
 
 
-@tree.command(
+@bot.tree.command(
     name='ping',
     description='Test ping command',
 )
@@ -41,6 +43,8 @@ def replace_domain(url: ParseResult):
         'www.vm.tiktok.com': 'vm.vxtiktok.com',
         'twitter.com': 'vxtwitter.com',
         'www.twitter.com': 'vxtwitter.com',
+        'instagram.com': 'ddinstagram.com',
+        'www.instagram.com': 'ddinstagram.com',
     }
     for key, value in domains.items():
         if url.netloc == key:
@@ -55,7 +59,7 @@ def replace_domain(url: ParseResult):
     return url
 
 
-@client.event
+@bot.event
 async def on_message(message: discord.Message):
     """
     Process a new message
@@ -63,7 +67,8 @@ async def on_message(message: discord.Message):
     :return: None
     """
 
-    if message.author == client.user:
+    logger.info('Get message from %s', message.author.name)
+    if message.author == bot.user:
         return
     if not message.embeds:
         return
@@ -89,13 +94,14 @@ async def on_message(message: discord.Message):
     await message.delete()
 
 
-@client.event
+@bot.event
 async def on_ready():
     """
     Sync a tree of the commands
     :return:None
     """
-    await tree.sync()
+    await bot.tree.sync()
+    logger.info('Syncing is completed')
 
 
-client.run(os.environ['DISCORD_TOKEN'])
+bot.run(os.environ['DISCORD_TOKEN'])
