@@ -37,17 +37,16 @@ def replace_domain(url: ParseResult):
         'vm.tiktok.com': 'vm.vxtiktok.com',
         'twitter.com': 'vxtwitter.com',
     }
-    domain = url.netloc
     for key, value in domains.items():
-        domain = domain.replace(key, value)
-    return ParseResult(
-        url.scheme,
-        netloc=domain,
-        path=url.path,
-        query=url.query,
-        params=url.params,
-        fragment=url.fragment,
-    )
+        if url.netloc == key:
+            return ParseResult(
+                url.scheme,
+                netloc=value,
+                path=url.path,
+                query=url.query,
+                params=url.params,
+                fragment=url.fragment,
+            )
 
 
 @client.event
@@ -62,7 +61,9 @@ async def on_message(message: discord.Message):
         return
     if not message.embeds:
         return
-    processed_urls = (replace_domain(urlparse(embed.url) for embed in message.embeds)
+    processed_urls = (
+        replace_domain(urlparse(embed.url)) for embed in message.embeds
+    )
     final_urls = {
         embed.url: processed_url.geturl() for processed_url, embed in zip(
             processed_urls,
