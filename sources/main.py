@@ -47,6 +47,7 @@ def replace_domain(url: ParseResult):
                 params=url.params,
                 fragment=url.fragment,
             )
+    return url
 
 
 @client.event
