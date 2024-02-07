@@ -26,6 +26,11 @@ async def ping(interaction):
 
 
 def replace_domain(url: ParseResult):
+    """
+    Replace an original domain by a fixer
+    :param url: an original parsed URL
+    :return: a fixed parsed URL
+    """
     domains = {
         'reddit.com': 'rxddit.com',
         'tiktok.com': 'vxtiktok.com',
@@ -47,6 +52,11 @@ def replace_domain(url: ParseResult):
 
 @client.event
 async def on_message(message: discord.Message):
+    """
+    Process a new message
+    :param message: a new message posted in Discord
+    :return: None
+    """
 
     if message.author == client.user:
         return
