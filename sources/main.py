@@ -1,6 +1,7 @@
 """Main module of the bot"""
 
 import os
+from copy import copy
 from urllib.parse import urlparse, ParseResult
 
 import discord
@@ -33,9 +34,13 @@ def replace_domain(url: ParseResult):
     """
     domains = {
         'reddit.com': 'rxddit.com',
+        'www.reddit.com': 'rxddit.com',
         'tiktok.com': 'vxtiktok.com',
+        'www.tiktok.com': 'vxtiktok.com',
         'vm.tiktok.com': 'vm.vxtiktok.com',
+        'www.vm.tiktok.com': 'vm.vxtiktok.com',
         'twitter.com': 'vxtwitter.com',
+        'www.twitter.com': 'vxtwitter.com',
     }
     for key, value in domains.items():
         if url.netloc == key:
@@ -71,7 +76,7 @@ async def on_message(message: discord.Message):
             message.embeds
         )
     }
-    content = message.content
+    content = copy(message.content)
     for origin_url, final_url in final_urls.items():
         content = content.replace(origin_url, final_url)
     # An embed URL uses original domain even if you replaced it by a fixer.
