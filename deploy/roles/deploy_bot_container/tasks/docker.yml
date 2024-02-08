@@ -1,4 +1,9 @@
 ---
+- name: Get current timezone
+  ansible.builtin.command: timedatectl show --property=Timezone --value
+  register: timezone_output
+  changed_when: false
+
 - name: Prepare Dockerfile
   template:
     dest: "/tmp/Dockerfile"
@@ -51,8 +56,8 @@
         type: bind
   become: yes
 
-- name: Remove Dockerfile
-  file:
-    path: "/tmp/Dockerfile"
-    state: absent
-...
+#- name: Remove Dockerfile
+#  file:
+#    path: "/tmp/Dockerfile"
+#    state: absent
+#...

@@ -69,8 +69,10 @@ async def on_message(message: discord.Message):
 
     logger.info('Get message from %s', message.author.name)
     if message.author == bot.user:
+        logger.info('That message is mine')
         return
     if not message.embeds:
+        logger.info('The message does not contain embeds')
         return
     processed_urls = (
         replace_domain(urlparse(embed.url)) for embed in message.embeds
@@ -88,6 +90,7 @@ async def on_message(message: discord.Message):
     # So you need to compare replaced content and original one
     # and do nothing if they are identical.
     if message.content == content:
+        logger.info('The original message already fixed')
         return
     content += f'\nOriginal message posted by {message.author.mention}'
     await message.channel.send(content=content)

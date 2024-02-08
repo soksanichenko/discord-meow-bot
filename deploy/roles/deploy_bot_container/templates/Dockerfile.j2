@@ -1,4 +1,5 @@
 FROM almalinux:9
+ENV TZ="{{ timezone_output.stdout }}"
 RUN dnf install python39 -y
 RUN mkdir -p /code/sources
 WORKDIR /code
