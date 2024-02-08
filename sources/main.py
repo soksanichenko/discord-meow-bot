@@ -1,4 +1,5 @@
 """Main module of the bot"""
+import asyncio
 import logging
 import os
 from copy import copy
@@ -71,6 +72,8 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         logger.info('That message is mine')
         return
+    # An embeds can appear with delay, so we need to wait them
+    await asyncio.sleep(1.5)
     if not message.embeds:
         logger.info('The message does not contain embeds')
         return
