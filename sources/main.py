@@ -5,10 +5,10 @@ import os
 from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass
-from tldextract import extract
-from tldextract.tldextract import ExtractResult
 from typing import Optional
 from urllib.parse import urlparse, ParseResult
+from tldextract import extract
+from tldextract.tldextract import ExtractResult
 
 import discord
 from discord.ext.commands import Bot
@@ -23,6 +23,9 @@ logger = logging.getLogger('discord')
 
 @dataclass
 class DomainFixer:
+    """
+    data-class for a domain fixer
+    """
     fixer: str
     second_fixer: Optional[str] = None
     second_domain: Optional[str] = None
