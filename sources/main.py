@@ -1,8 +1,6 @@
 """Main module of the bot"""
-import asyncio
 import logging
 import os
-from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass
 from typing import Optional
@@ -44,69 +42,53 @@ async def ping(interaction):
     await interaction.response.send_message('pong')
 
 
-def fix_url(msg_content: str, url: str) -> tuple[str, str]:
+def fix_urls(message: discord.Message) -> str:
     """
-    Fix a URL by replacing an original domain by a fixer
-    :param msg_content: content of an original message
-    :param url: an original parsed URL
-    :return: a fixed URL
+    Fix the URLs by replacing an original domain by a fixer
+    :param message: a message from Discord
+    :return: a fixed message content
     """
-    domains = defaultdict(lambda: DomainFixer(
-        fixer='',
-    ), **{
-        'reddit.com': DomainFixer(
-            fixer='rxddit',
-        ),
-        'tiktok.com': DomainFixer(
-            fixer='vxtiktok',
-        ),
-        'twitter.com': DomainFixer(
-            fixer='fxtwitter',
-            second_fixer='fixupx',
-            second_domain='x',
-        ),
-        'x.com': DomainFixer(
-            fixer='fixupx',
-            second_fixer='fxtwitter',
-            second_domain='twitter',
-        ),
-    })
-    parsed_url = urlparse(url)
-    parsed_domain = extract(parsed_url.netloc)
-    fixer = domains[parsed_domain.registered_domain]
-    if url in msg_content:
-        fixed_domain = fixer.fixer
-        replaced_url = url
-    else:
-        fixed_domain = fixer.second_fixer
-        replaced_url = ParseResult(
-            parsed_url.scheme,
-            netloc=ExtractResult(
-                subdomain=parsed_domain.subdomain,
-                domain=fixer.second_domain,
-                suffix=parsed_domain.suffix,
-                is_private=parsed_domain.is_private,
-            ).fqdn,
-            path=parsed_url.path,
-            query=parsed_url.query,
-            params=parsed_url.params,
-            fragment=parsed_url.fragment,
-        ).geturl()
-    if not fixer.fixer:
-        return url, url
-    return replaced_url, ParseResult(
-        parsed_url.scheme,
-        netloc=ExtractResult(
-            subdomain=parsed_domain.subdomain,
-            domain=fixed_domain,
-            suffix=parsed_domain.suffix,
-            is_private=parsed_domain.is_private,
-        ).fqdn,
-        path=parsed_url.path,
-        query=parsed_url.query,
-        params=parsed_url.params,
-        fragment=parsed_url.fragment,
-    ).geturl()
+    domains = {
+        'reddit.com': 'rxddit',
+        'tiktok.com': 'vxtiktok',
+        'x.com': 'fixupx',
+        'twitter.com': 'fxtwitter',
+    }
+
+    msg_content_lines = message.content.split()
+    parsed_urls = {
+        (parsed_url := urlparse(line)): extract(parsed_url.netloc)
+        for line in msg_content_lines
+        if line.startswith('http://') or line.startswith('https://')
+    }
+    if all(
+        parsed_domain.registered_domain not in domains
+        for parsed_domain in parsed_urls.values()
+    ):
+        logger.info('No suitable domain or any URL found')
+        return message.content
+    final_urls = {
+        parsed_url.geturl():
+            ParseResult(
+                parsed_url.scheme,
+                netloc=ExtractResult(
+                    subdomain=parsed_domain.subdomain,
+                    domain=domains[parsed_domain.registered_domain],
+                    suffix=parsed_domain.suffix,
+                    is_private=parsed_domain.is_private,
+                ).fqdn,
+                path=parsed_url.path,
+                query=parsed_url.query,
+                params=parsed_url.params,
+                fragment=parsed_url.fragment
+            ).geturl()
+        for parsed_url, parsed_domain in parsed_urls.items()
+    }
+    content = copy(message.content)
+    for original_url, fixed_url in final_urls.items():
+        content = content.replace(original_url, fixed_url)
+    content += f'\nOriginal message posted by {message.author.mention}'
+    return content
 
 
 @bot.event
@@ -121,27 +103,7 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         logger.info('That message is mine')
         return
-    # An embeds can appear with delay, so we need to wait them
-    await asyncio.sleep(1.5)
-    if not message.embeds:
-        logger.info('The message does not contain embeds')
-        return
-    final_urls = dict(
-        fix_url(
-            msg_content=message.content,
-            url=embed.url,
-        ) for embed in message.embeds
-    )
-    content = copy(message.content)
-    for origin_url, final_url in final_urls.items():
-        content = content.replace(origin_url, final_url)
-    # An embed URL uses original domain even if you replaced it by a fixer.
-    # So you need to compare replaced content and original one
-    # and do nothing if they are identical.
-    if message.content == content:
-        logger.info('The original message already fixed')
-        return
-    content += f'\nOriginal message posted by {message.author.mention}'
+    content = fix_urls(message=message)
     await message.channel.send(content=content)
     await message.delete()
 
