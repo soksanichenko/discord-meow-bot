@@ -1,6 +1,6 @@
 FROM almalinux:9
 ENV TZ="{{ timezone_output.stdout }}"
-RUN dnf install python39 -y
+RUN dnf install python39 git -y
 RUN mkdir -p /code/sources
 WORKDIR /code
 COPY req.txt sources/req.txt

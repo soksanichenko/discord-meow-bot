@@ -96,9 +96,17 @@ class TimestampFormatView(discord.ui.View):
     name='get-timestamp',
     description='Get formatted timestamp for any date and/or time',
 )
-@discord.app_commands.describe(time='HH:MM')
-@discord.app_commands.describe(date='dd.mm.YYYY')
-async def get_timestamp(interaction, time: str = '', date: str = ''):
+@discord.app_commands.describe(
+    time='Please input a time in any suitable format in your region'
+)
+@discord.app_commands.describe(
+    date='Please input a date in any suitable format in your region'
+)
+async def get_timestamp(
+    interaction: discord.Interaction,
+    time: str = '',
+    date: str = '',
+):
     """
     Send any text by the bot
     :param time: an input time for converting
@@ -106,7 +114,10 @@ async def get_timestamp(interaction, time: str = '', date: str = ''):
     :param interaction: the command's interaction
     :return: None
     """
-    time_date = dateparser.parse(f'{time} {date}')
+    time_date = dateparser.parse(
+        f'{time} {date}',
+        locales=[interaction.locale.value],
+    )
     if time_date is None:
         await interaction.response.send_message(
             'You sent a date/time in incorrect format',
