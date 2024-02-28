@@ -2,9 +2,8 @@
 import logging
 import os
 from copy import copy
-from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import urlparse, ParseResult
+import dateparser
 from tldextract import extract
 from tldextract.tldextract import ExtractResult
 
@@ -19,27 +18,103 @@ bot = Bot(command_prefix="", intents=intents)
 logger = logging.getLogger('discord')
 
 
-@dataclass
-class DomainFixer:
-    """
-    data-class for a domain fixer
-    """
-    fixer: str
-    second_fixer: Optional[str] = None
-    second_domain: Optional[str] = None
-
-
 @bot.tree.command(
     name='ping',
     description='Test ping command',
 )
-async def ping(interaction):
+async def ping(interaction: discord.Interaction):
     """
     Test ping command
     :param interaction: the command's interaction
     :return: None
     """
     await interaction.response.send_message('pong')
+
+
+class TimestampFormatView(discord.ui.View):
+    """
+    View class for timestamp formatting
+    """
+
+    def __init__(self, timestamp: int):
+        self.timestamp = timestamp
+        super().__init__()
+
+    @discord.ui.select(
+        placeholder='Select format',
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(
+                label='F',
+                description='Wednesday, 1 January 2021, 23:50'
+            ),
+            discord.SelectOption(
+                label='f',
+                description='1 January 2021, 23:50'
+            ),
+            discord.SelectOption(
+                label='D',
+                description='1 January 2021'
+            ),
+            discord.SelectOption(
+                label='d',
+                description='01.01.2021'
+            ),
+            discord.SelectOption(
+                label='t',
+                description='23:50'
+            ),
+            discord.SelectOption(
+                label='T',
+                description='23:50:55'
+            ),
+            discord.SelectOption(
+                label='R',
+                description='2 hours ago'
+            ),
+        ]
+    )
+    async def select_callback(
+        self,
+        interaction: discord.Interaction,
+        select: discord.ui.ChannelSelect,
+    ):
+        """
+        Callback for selecting an option of formatting
+        :param interaction: an object of interaction with a user
+        :param select: a selected option
+        :return: None
+        """
+        await interaction.response.send_message(
+            f'<t:{self.timestamp}:{select.values[0]}>'
+        )
+
+
+@bot.tree.command(
+    name='get-timestamp',
+    description='Get formatted timestamp for any date and/or time',
+)
+@discord.app_commands.describe(time='HH:MM')
+@discord.app_commands.describe(date='dd.mm.YYYY')
+async def get_timestamp(interaction, time: str = '', date: str = ''):
+    """
+    Send any text by the bot
+    :param time: an input time for converting
+    :param date: an input date for converting
+    :param interaction: the command's interaction
+    :return: None
+    """
+    time_date = dateparser.parse(f'{time} {date}')
+    if time_date is None:
+        await interaction.response.send_message(
+            'You sent a date/time in incorrect format',
+        )
+        return
+    await interaction.response.send_message(
+        'Select format',
+        view=TimestampFormatView(int(time_date.timestamp()))
+    )
 
 
 def fix_urls(message: discord.Message) -> str:
@@ -53,6 +128,7 @@ def fix_urls(message: discord.Message) -> str:
         'tiktok.com': 'vxtiktok',
         'x.com': 'fixupx',
         'twitter.com': 'fxtwitter',
+        'instagram.com': 'ddinstagram'
     }
 
     msg_content_lines = message.content.split()
