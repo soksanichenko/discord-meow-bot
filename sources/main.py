@@ -28,7 +28,7 @@ async def ping(interaction: discord.Interaction):
     :param interaction: the command's interaction
     :return: None
     """
-    await interaction.response.send_message('pong')
+    await interaction.response.send_message('pong', ephemeral=True)
 
 
 class TimestampFormatView(discord.ui.View):
@@ -87,7 +87,8 @@ class TimestampFormatView(discord.ui.View):
         :return: None
         """
         await interaction.response.send_message(
-            f'<t:{self.timestamp}:{select.values[0]}>'
+            f'<t:{self.timestamp}:{select.values[0]}>',
+            ephemeral=True,
         )
 
 
@@ -109,11 +110,13 @@ async def get_timestamp(interaction, time: str = '', date: str = ''):
     if time_date is None:
         await interaction.response.send_message(
             'You sent a date/time in incorrect format',
+            ephemeral=True,
         )
         return
     await interaction.response.send_message(
         'Select format',
-        view=TimestampFormatView(int(time_date.timestamp()))
+        view=TimestampFormatView(int(time_date.timestamp())),
+        ephemeral=True,
     )
 
 
