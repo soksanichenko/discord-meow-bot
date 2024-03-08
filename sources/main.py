@@ -92,15 +92,15 @@ class TimestampFormatView(discord.ui.View):
         )
 
 
-@bot.tree.command(
-    name='get-timestamp',
-    description='Get formatted timestamp for any date and/or time',
-)
 @discord.app_commands.describe(
     time='Please input a time in any suitable format in your region'
 )
 @discord.app_commands.describe(
     date='Please input a date in any suitable format in your region'
+)
+@bot.tree.command(
+    name='get-timestamp',
+    description='Get formatted timestamp for any date and/or time',
 )
 async def get_timestamp(
     interaction: discord.Interaction,
@@ -204,11 +204,21 @@ async def on_message(message: discord.Message):
 @bot.event
 async def on_ready():
     """
-    Sync a tree of the commands
+    Sync a tree of the commands then a client is ready
     :return:None
     """
     await bot.tree.sync()
-    logger.info('Syncing is completed')
+    logger.info('Syncing is completed after when a client is ready')
+
+
+@bot.event
+async def on_resumed():
+    """
+    Sync a tree of the commands then a client is resumed
+    :return:None
+    """
+    await bot.tree.sync()
+    logger.info('Syncing is completed after when a client is resumed')
 
 
 bot.run(os.environ['DISCORD_TOKEN'])
