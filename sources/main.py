@@ -1,7 +1,9 @@
 """Main module of the bot"""
+import base64
 import logging
 import os
 from copy import copy
+from pathlib import Path
 from urllib.parse import urlparse, ParseResult
 import dateparser
 from tldextract import extract
@@ -201,6 +203,17 @@ async def on_message(message: discord.Message):
     await message.delete()
 
 
+def load_bot_avatar() -> bytes:
+    """
+    Load a bot's avatar
+    :return: bytes of a bot's avatar
+    """
+    path = Path(__file__).parent.joinpath('static/avatar.gif.base64')
+    with path.open(mode='r', encoding='utf-8') as fd:
+        data = base64.b64decode(fd.read())
+    return data
+
+
 @bot.event
 async def on_ready():
     """
@@ -208,6 +221,7 @@ async def on_ready():
     :return:None
     """
     await bot.tree.sync()
+    await bot.user.edit(avatar=load_bot_avatar())
     logger.info('Syncing is completed after when a client is ready')
 
 
@@ -218,6 +232,7 @@ async def on_resumed():
     :return:None
     """
     await bot.tree.sync()
+    await bot.user.edit(avatar=load_bot_avatar())
     logger.info('Syncing is completed after when a client is resumed')
 
 
