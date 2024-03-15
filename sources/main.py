@@ -1,23 +1,22 @@
 """Main module of the bot"""
-import base64
-import logging
+from __future__ import annotations
 import os
-from copy import copy
-from pathlib import Path
-from urllib.parse import urlparse, ParseResult
-import dateparser
-from tldextract import extract
-from tldextract.tldextract import ExtractResult
 
 import discord
 from discord.ext.commands import Bot
 
+from sources.lib.commands.get_timestamp import (
+    TimestampFormatView,
+    parse_and_validate,
+)
+from sources.lib.core import BotAvatar
+from sources.lib.on_message.domains_fixer import fix_urls
+from sources.lib.utils import Logger
+
 intents = discord.Intents.default()
 # access to a message content
 intents.message_content = True
-bot = Bot(command_prefix="", intents=intents)
-
-logger = logging.getLogger('discord')
+bot = Bot(command_prefix="/", intents=intents)
 
 
 @bot.tree.command(
@@ -31,67 +30,6 @@ async def ping(interaction: discord.Interaction):
     :return: None
     """
     await interaction.response.send_message('pong', ephemeral=True)
-
-
-class TimestampFormatView(discord.ui.View):
-    """
-    View class for timestamp formatting
-    """
-
-    def __init__(self, timestamp: int):
-        self.timestamp = timestamp
-        super().__init__()
-
-    @discord.ui.select(
-        placeholder='Select format',
-        min_values=1,
-        max_values=1,
-        options=[
-            discord.SelectOption(
-                label='F',
-                description='Wednesday, 1 January 2021, 23:50'
-            ),
-            discord.SelectOption(
-                label='f',
-                description='1 January 2021, 23:50'
-            ),
-            discord.SelectOption(
-                label='D',
-                description='1 January 2021'
-            ),
-            discord.SelectOption(
-                label='d',
-                description='01.01.2021'
-            ),
-            discord.SelectOption(
-                label='t',
-                description='23:50'
-            ),
-            discord.SelectOption(
-                label='T',
-                description='23:50:55'
-            ),
-            discord.SelectOption(
-                label='R',
-                description='2 hours ago'
-            ),
-        ]
-    )
-    async def select_callback(
-        self,
-        interaction: discord.Interaction,
-        select: discord.ui.ChannelSelect,
-    ):
-        """
-        Callback for selecting an option of formatting
-        :param interaction: an object of interaction with a user
-        :param select: a selected option
-        :return: None
-        """
-        await interaction.response.send_message(
-            f'<t:{self.timestamp}:{select.values[0]}>',
-            ephemeral=True,
-        )
 
 
 @discord.app_commands.describe(
@@ -116,9 +54,10 @@ async def get_timestamp(
     :param interaction: the command's interaction
     :return: None
     """
-    time_date = dateparser.parse(
-        f'{time} {date}',
-        locales=[interaction.locale.value],
+    time_date = parse_and_validate(
+        date=date,
+        time=time,
+        interaction=interaction,
     )
     if time_date is None:
         await interaction.response.send_message(
@@ -133,107 +72,40 @@ async def get_timestamp(
     )
 
 
-def fix_urls(message: discord.Message) -> str:
+@bot.listen('on_message')
+async def process_links_in_message(message: discord.Message):
     """
-    Fix the URLs by replacing an original domain by a fixer
-    :param message: a message from Discord
-    :return: a fixed message content
-    """
-    domains = {
-        'reddit.com': 'rxddit',
-        'tiktok.com': 'vxtiktok',
-        'x.com': 'fixupx',
-        'twitter.com': 'fxtwitter',
-        'instagram.com': 'ddinstagram'
-    }
-
-    msg_content_lines = message.content.split()
-    parsed_urls = {
-        (parsed_url := urlparse(line)): extract(parsed_url.netloc)
-        for line in msg_content_lines
-        if line.startswith('http://') or line.startswith('https://')
-    }
-    if all(
-        parsed_domain.registered_domain not in domains
-        for parsed_domain in parsed_urls.values()
-    ):
-        logger.info('No suitable domain or any URL found')
-        return message.content
-    final_urls = {
-        parsed_url.geturl():
-            ParseResult(
-                parsed_url.scheme,
-                netloc=ExtractResult(
-                    subdomain=parsed_domain.subdomain,
-                    domain=domains[parsed_domain.registered_domain],
-                    suffix=parsed_domain.suffix,
-                    is_private=parsed_domain.is_private,
-                ).fqdn,
-                path=parsed_url.path,
-                query=parsed_url.query,
-                params=parsed_url.params,
-                fragment=parsed_url.fragment
-            ).geturl()
-        for parsed_url, parsed_domain in parsed_urls.items()
-    }
-    content = copy(message.content)
-    for original_url, fixed_url in final_urls.items():
-        content = content.replace(original_url, fixed_url)
-    content += f'\nOriginal message posted by {message.author.mention}'
-    return content
-
-
-@bot.event
-async def on_message(message: discord.Message):
-    """
-    Process a new message
+    Process links in a new message
     :param message: a new message posted in Discord
     :return: None
     """
 
-    logger.info('Get message from %s', message.author.name)
+    Logger().logger.info('Get message from %s', message.author.name)
     if message.author == bot.user:
-        logger.info('That message is mine')
+        Logger().logger.info('That message is mine')
         return
     content = fix_urls(message=message)
     if content == message.content:
-        logger.info('The original message is already fine')
+        Logger().logger.info('The original message is already fine')
         return
     await message.channel.send(content=content)
     await message.delete()
 
 
-def load_bot_avatar() -> bytes:
-    """
-    Load a bot's avatar
-    :return: bytes of a bot's avatar
-    """
-    path = Path(__file__).parent.joinpath('static/avatar.gif.base64')
-    with path.open(mode='r', encoding='utf-8') as fd:
-        data = base64.b64decode(fd.read())
-    return data
-
-
-@bot.event
-async def on_ready():
-    """
-    Sync a tree of the commands then a client is ready
-    :return:None
-    """
-    await bot.tree.sync()
-    await bot.user.edit(avatar=load_bot_avatar())
-    logger.info('Syncing is completed after when a client is ready')
-
-
-@bot.event
-async def on_resumed():
+@bot.listen('on_ready')
+@bot.listen('on_resumed')
+async def start_bot_staff():
     """
     Sync a tree of the commands then a client is resumed
     :return:None
     """
-    await bot.tree.sync()
-    await bot.user.edit(avatar=load_bot_avatar())
-    logger.info('Syncing is completed after when a client is resumed')
+    # await bot.tree.sync()
+    Logger().logger.info('Syncing is completed')
+    await bot.user.edit(avatar=BotAvatar().avatar)
+    Logger().logger.info('An avatar of the bot is changed')
+    game = discord.Game('Rolling the balls of wool')
+    await bot.change_presence(status=discord.Status.dnd, activity=game)
+    Logger().logger.info('A status of the bot is changed')
 
 
 bot.run(os.environ['DISCORD_TOKEN'])
