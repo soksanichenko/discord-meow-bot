@@ -7,4 +7,5 @@ COPY req.txt sources/req.txt
 RUN python3.9 -m venv --system-site-packages --symlinks venv
 RUN source venv/bin/activate && pip install -r sources/req.txt
 ENV DISCORD_TOKEN="{{ discord_token }}"
+ENV PYTHONPATH="."
 ENTRYPOINT ["venv/bin/python3", "sources/main.py"]
