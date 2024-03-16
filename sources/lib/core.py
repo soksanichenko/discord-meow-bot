@@ -7,7 +7,7 @@ class BotAvatar:
     """Class-singleton for saving of an avatar of the bot"""
     __avatar__ = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs):  # pylint: disable=unused-argument
         if cls.__avatar__ is None:
             cls.__avatar__ = cls.load_bot_avatar()
         return cls.__avatar__
