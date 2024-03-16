@@ -1,4 +1,5 @@
 """Get timestamp module"""
+
 from __future__ import annotations
 
 import typing
@@ -16,7 +17,7 @@ def parse_and_validate(
     """Parse and validate date and time text"""
 
     return dateparser.parse(
-        f"{time} {date}",
+        f'{time} {date}',
         locales=[interaction.locale.value],
     )
 
@@ -31,19 +32,19 @@ class TimestampFormatView(discord.ui.View):
         super().__init__()
 
     @discord.ui.select(
-        placeholder="Select format",
+        placeholder='Select format',
         min_values=1,
         max_values=1,
         options=[
             discord.SelectOption(
-                label="F", description="Wednesday, 1 January 2021, 23:50"
+                label='F', description='Wednesday, 1 March 2021, 23:50'
             ),
-            discord.SelectOption(label="f", description="1 January 2021, 23:50"),
-            discord.SelectOption(label="D", description="1 January 2021"),
-            discord.SelectOption(label="d", description="01.01.2021"),
-            discord.SelectOption(label="t", description="23:50"),
-            discord.SelectOption(label="T", description="23:50:55"),
-            discord.SelectOption(label="R", description="2 hours ago"),
+            discord.SelectOption(label='f', description='1 March 2021, 23:50'),
+            discord.SelectOption(label='D', description='1 March 2021'),
+            discord.SelectOption(label='d', description='01.01.2021'),
+            discord.SelectOption(label='t', description='23:50'),
+            discord.SelectOption(label='T', description='23:50:55'),
+            discord.SelectOption(label='R', description='2 hours ago'),
         ],
     )
     async def select_callback(
@@ -57,9 +58,9 @@ class TimestampFormatView(discord.ui.View):
         :param select: a selected option
         :return: None
         """
-        timestamp = f"<t:{self.timestamp}:{select.values[0]}>"
+        timestamp = f'<t:{self.timestamp}:{select.values[0]}>'
 
         await interaction.response.send_message(
-            f"{timestamp}\n`{timestamp}`",
+            f'{timestamp}\n`{timestamp}`',
             ephemeral=True,
         )

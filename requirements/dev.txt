@@ -1,0 +1,4 @@
+-r prod.txt
+pre-commit==3.6.2
+pylint==3.1.0
+reorder-python-imports==3.12.0

@@ -20,8 +20,8 @@
 
 - name: Copy req.txt for building a docker image
   copy:
-    dest: "/tmp/req.txt"
-    src: "../../../../sources/req.txt"
+    dest: "/tmp/prod.txt"
+    src: "../../../../requirements/prod.txt"
 
 - name: Copy sources
   synchronize:

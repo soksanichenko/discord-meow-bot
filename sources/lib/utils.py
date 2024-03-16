@@ -10,10 +10,8 @@ class Logger(logging.Logger):
 
     def __new__(
         cls,
-        *args,  # pylint: disable=unused-argument
         name: str = 'discord',
         level: int = logging.INFO,
-        **kwargs,  # pylint: disable=unused-argument
     ):
         if cls.__instance__ is None:
             cls.__instance__ = logging.getLogger(name=name)

@@ -1,14 +1,14 @@
 """Main module of the bot"""
+
 from __future__ import annotations
+
 import os
 
 import discord
 from discord.ext.commands import Bot
 
-from sources.lib.commands.get_timestamp import (
-    TimestampFormatView,
-    parse_and_validate,
-)
+from sources.lib.commands.get_timestamp import parse_and_validate
+from sources.lib.commands.get_timestamp import TimestampFormatView
 from sources.lib.core import BotAvatar
 from sources.lib.on_message.domains_fixer import fix_urls
 from sources.lib.utils import Logger
@@ -16,7 +16,7 @@ from sources.lib.utils import Logger
 intents = discord.Intents.default()
 # access to a message content
 intents.message_content = True
-bot = Bot(command_prefix="/", intents=intents)
+bot = Bot(command_prefix='/', intents=intents)
 
 
 @bot.tree.command(
