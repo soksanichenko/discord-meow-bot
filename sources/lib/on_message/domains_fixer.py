@@ -33,7 +33,7 @@ def fix_urls(message: discord.Message) -> str:
         parsed_domain.registered_domain not in domains
         for parsed_domain in parsed_urls.values()
     ):
-        Logger().logger.info("No suitable domain or any URL found")
+        Logger().info("No suitable domain or any URL found")
         return message.content
     final_urls = {
         parsed_url.geturl(): ParseResult(

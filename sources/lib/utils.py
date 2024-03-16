@@ -3,29 +3,19 @@
 import logging
 
 
-def singleton(class_):
-    """Singleton decorator"""
-    instances = {}
+class Logger(logging.Logger):
+    """Logger for the bot"""
 
-    def getinstance(*args, **kwargs):
-        if class_ not in instances:
-            instances[class_] = class_(*args, **kwargs)
-        return instances[class_]
+    __instance__ = None
 
-    return getinstance
-
-
-class Logger:
-    # pylint: disable=too-few-public-methods
-    """Logging class"""
-
-    __logger__ = None
-
-    def __init__(self, level: int = logging.INFO):
-        self.__logger__ = logging.getLogger('discord')
-        self.__logger__.setLevel(level)
-
-    @property
-    def logger(self) -> logging.Logger:
-        """Get initialized logger"""
-        return self.__logger__
+    def __new__(
+        cls,
+        name: str = 'discord',
+        level: int = logging.INFO,
+        *args,
+        **kwargs,
+    ):
+        if cls.__instance__ is None:
+            cls.__instance__ = logging.getLogger(name=name)
+            cls.__instance__.setLevel(level=level)
+        return cls.__instance__

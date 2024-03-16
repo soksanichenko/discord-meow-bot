@@ -80,13 +80,13 @@ async def process_links_in_message(message: discord.Message):
     :return: None
     """
 
-    Logger().logger.info('Get message from %s', message.author.name)
+    Logger().info('Get message from %s', message.author.name)
     if message.author == bot.user:
-        Logger().logger.info('That message is mine')
+        Logger().info('That message is mine')
         return
     content = fix_urls(message=message)
     if content == message.content:
-        Logger().logger.info('The original message is already fine')
+        Logger().info('The original message is already fine')
         return
     await message.channel.send(content=content)
     await message.delete()
@@ -99,13 +99,13 @@ async def start_bot_staff():
     Sync a tree of the commands then a client is resumed
     :return:None
     """
-    # await bot.tree.sync()
-    Logger().logger.info('Syncing is completed')
-    await bot.user.edit(avatar=BotAvatar().avatar)
-    Logger().logger.info('An avatar of the bot is changed')
+    await bot.tree.sync()
+    Logger().info('Syncing is completed')
+    await bot.user.edit(avatar=BotAvatar())
+    Logger().info('An avatar of the bot is changed')
     game = discord.Game('Rolling the balls of wool')
     await bot.change_presence(status=discord.Status.dnd, activity=game)
-    Logger().logger.info('A status of the bot is changed')
+    Logger().info('A status of the bot is changed')
 
 
 bot.run(os.environ['DISCORD_TOKEN'])
