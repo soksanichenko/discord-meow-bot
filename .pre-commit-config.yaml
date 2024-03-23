@@ -4,13 +4,19 @@ repos:
   rev: v4.5.0
   hooks:
   - id: end-of-file-fixer
+    name: Add an empty line to EoF
   - id: trailing-whitespace
+    name: Remove trailing whitespaces
   - id: check-executables-have-shebangs
+    name: Check executables have shebangs
   - id: check-shebang-scripts-are-executable
+    name: Check shebangs scripts are executable
   - id: check-yaml
+    name: Check YAML files
     args:
       - "--unsafe"
   - id: requirements-txt-fixer
+    name: Sort requirements.txt lines
     files: ^requirements/.*$
 
 - repo: local
@@ -28,6 +34,9 @@ repos:
       name: PyLint
       entry: pylint
       language: python
+      args:
+        - '--disable'
+        - 'R0903'  # too-few-public-methods
       types:
         - python
 
@@ -38,12 +47,5 @@ repos:
       args:
         - '--in-place'
         - '--remove-all-unused-imports'
-      types:
-        - python
-
-    - id: flake8
-      name: Flake8
-      entry: flake8
-      language: python
       types:
         - python

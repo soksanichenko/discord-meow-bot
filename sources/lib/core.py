@@ -18,7 +18,7 @@ class BotAvatar:
     def load_bot_avatar() -> bytes:
         """
         Load a bot's avatar
-        :return: bytes of a bot's avatar
+        :return: bytes of an avatar of the bot
         """
         path = Path(__file__).parent.joinpath('../static/avatar.gif.base64')
         with path.open(mode='r', encoding='utf-8') as fd:

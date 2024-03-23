@@ -4,60 +4,99 @@
   register: timezone_output
   changed_when: false
 
-- name: Prepare Dockerfile
-  template:
-    dest: "/tmp/Dockerfile"
-    src: "Dockerfile.j2"
-
-- name: Create volume directory for a container
-  file:
-    path: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
-    recurse: yes
+- name: Create temporary build directory
+  tempfile:
     state: directory
-    owner: root
-    group: root
-  become: yes
+    suffix: build
+  register: docker_temp_directory
 
-- name: Copy req.txt for building a docker image
-  copy:
-    dest: "/tmp/prod.txt"
-    src: "../../../../requirements/prod.txt"
+- name: Working in a build directory
+  block:
+    - name: Prepare Dockerfile
+      template:
+        dest: "{{ docker_temp_directory.path }}/Dockerfile"
+        src: "Dockerfile.j2"
 
-- name: Copy sources
-  synchronize:
-    dest: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
-    src: "../../../../sources/"
-    owner: false
-    group: false
-  become: yes
+    - name: Create volume directory for a container
+      file:
+        path: "{{ docker_lib_folder }}/{{ item }}"
+        recurse: yes
+        state: directory
+        owner: root
+        group: root
+      become: yes
+      with_items: "{{ docker_volumes }}"
 
-- name: Build a docker image
-  docker_image:
-    name: "discord-meow-bot"
-    force_source: yes
-    build:
-      path: "/tmp"
-      pull: yes
-      network: host
-    source: build
-  become: yes
+    - name: Copy req.txt for building a docker image
+      copy:
+        dest: "{{ docker_temp_directory.path }}/prod.txt"
+        src: "../../../../requirements/prod.txt"
 
-- name: Up a docker container
-  docker_container:
-    name: "discord-meow-bot"
-    image: "discord-meow-bot"
-    state: started
-    restart_policy: always
-    restart: yes
-    mounts:
-      - source: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
-        target: "/code/sources"
-        read_only: yes
-        type: bind
-  become: yes
+    - name: Copy sources
+      synchronize:
+        dest: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+        src: "../../../../sources/"
+        owner: false
+        group: false
+      become: yes
 
-- name: Remove Dockerfile
-  file:
-    path: "/tmp/Dockerfile"
-    state: absent
+    - name: Build a docker image
+      docker_image:
+        name: "discord-meow-bot"
+        force_source: yes
+        build:
+          path: "{{ docker_temp_directory.path }}"
+          pull: yes
+          network: host
+        source: build
+      become: yes
+
+    - name: Up a docker container with PostgreSQL
+      docker_container:
+        name: "postgres"
+        image: "postgres:16"
+        pull: yes
+        restart_policy: always
+        restart: yes
+        mounts:
+          - source: "{{ docker_lib_folder }}/volumes/meow-bot/postgres"
+            target: "/var/lib/postgresql/data"
+            type: bind
+        networks:
+          - name: "{{ docker_network }}"
+        env:
+          POSTGRES_PASSWORD: "{{ db_password }}"
+      become: yes
+      tags:
+        - postgres
+
+    - name: Up a docker container with the bot
+      docker_container:
+        name: "discord-meow-bot"
+        image: "discord-meow-bot"
+        state: started
+        restart_policy: always
+        restart: yes
+        mounts:
+          - source: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+            target: "/code/sources"
+            read_only: yes
+            type: bind
+        networks:
+          - name: "{{ docker_network }}"
+        env:
+          DISCORD_TOKEN: "{{ discord_token }}"
+          TZ: "{{ timezone_output.stdout }}"
+          DB_LOGIN: "{{ db_login }}"
+          DB_PASSWORD: "{{ db_password }}"
+          DB_HOST: "{{ db_host }}"
+          DB_DATABASE: "{{ db_database }}"
+          DB_PORT: "{{ db_port | string }}"
+      become: yes
+
+  always:
+    - name: Remove temp build direcotry
+      file:
+        path: "{{ docker_temp_directory.path }}"
+        state: absent
 ...
