@@ -9,4 +9,3 @@ WORKDIR /code
 COPY prod.txt sources/prod.txt
 RUN python3.9 -m venv --symlinks venv
 RUN source venv/bin/activate && python3.9 -m pip install pip -U && pip install -r sources/prod.txt
-ENTRYPOINT ["venv/bin/python3", "sources/main.py"]

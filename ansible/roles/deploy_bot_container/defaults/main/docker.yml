@@ -1,7 +1,9 @@
 ---
 docker_lib_folder: "/var/lib/docker"
 docker_volumes:
-  - "volumes/meow-bot/sources"
-  - "volumes/meow-bot/postgres"
+  sources:
+    path: "volumes/meow-bot/sources"
+  postgres:
+    path: "volumes/meow-bot/postgres"
 docker_network: "active"
 ...

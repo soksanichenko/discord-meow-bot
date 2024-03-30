@@ -7,7 +7,6 @@ import asyncio
 import discord
 from discord import utils
 from discord.ext.commands import Bot
-from discord.utils import MISSING
 
 from sources.config import config
 from sources.lib.commands.get_timestamp import (
@@ -15,9 +14,10 @@ from sources.lib.commands.get_timestamp import (
     autocomplete_timezone,
 )
 from sources.lib.commands.get_timestamp import TimestampFormatView
+from sources.lib.commands.utils import get_command
 from sources.lib.core import BotAvatar
-from sources.lib.db import create_db_if_not_exists
-from sources.lib.db.utils import add_guild
+from sources.lib.db.operations.guilds import add_guild
+from sources.lib.db.operations.users import add_user, get_user_timezone
 from sources.lib.on_message.domains_fixer import fix_urls
 from sources.lib.utils import Logger
 
@@ -40,31 +40,66 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message('pong', ephemeral=True)
 
 
+@bot.tree.command(
+    name='set-timezone',
+    description='Set a current timezone of user',
+)
+@discord.app_commands.autocomplete(timezone=autocomplete_timezone)
+async def set_timezone(
+    interaction: discord.Interaction,
+    timezone: str,
+):
+    """
+    Set a current timezone of user
+    :param interaction: the command's interaction
+    :param timezone: a current timezone of user
+    :return: None
+    """
+    user = interaction.user
+    await add_user(
+        discord_user=user,
+        user_timezone=timezone,
+    )
+    await interaction.response.send_message(
+        f'Timezone for user **{user.display_name}** is set to **{timezone}**',
+        ephemeral=True,
+    )
+
+
 @discord.app_commands.describe(
     time='Please input a time in any suitable format in your region'
 )
 @discord.app_commands.describe(
     date='Please input a date in any suitable format in your region'
 )
-@discord.app_commands.autocomplete(timezone=autocomplete_timezone)
 @bot.tree.command(
     name='get-timestamp',
     description='Get formatted timestamp for any date and/or time',
 )
 async def get_timestamp(
     interaction: discord.Interaction,
-    timezone: str,
     time: str = '',
     date: str = '',
 ):
     """
     Send any text by the bot
-    :param timezone: a current user's timezone
     :param time: an input time for converting
     :param date: an input date for converting
     :param interaction: the command's interaction
     :return: None
     """
+    user = interaction.user
+    timezone = await get_user_timezone(
+        discord_user=user,
+    )
+    command_name = 'set-timezone'
+    command = await get_command(commands_tree=bot.tree, command_name=command_name)
+    if timezone is None:
+        await interaction.response.send_message(
+            f'User **{user.display_name}** does not have a timezone.\n'
+            f'Please, use command </{command_name}:{command.id}> to set it'
+        )
+        return
     time_date = parse_and_validate(
         timezone=timezone,
         date=date,
@@ -124,14 +159,7 @@ async def start_bot_staff():
 
 async def main():
     """Main run function"""
-    utils.setup_logging(
-        handler=MISSING,
-        formatter=MISSING,
-        level=MISSING,
-        root=False,
-    )
-    Logger().info('Create DB if not exists')
-    await create_db_if_not_exists()
+    utils.setup_logging()
     await bot.start(
         token=config.discord_token,
         reconnect=True,

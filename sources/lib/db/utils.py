@@ -1,23 +1,23 @@
 """DB utilities"""
 
-import discord
-from sqlalchemy import select
-
+from sqlalchemy_utils import (
+    database_exists,
+    create_database,
+)
+from sources.config import config
 from sources.lib.db import AsyncSession
-from sources.lib.db.models import Guild
+from sources.lib.db.models import Base
+from sources.lib.utils import Logger
 
 
-async def add_guild(discord_guild: discord.Guild):
-    """Add a guild to a database"""
+async def create_db_if_not_exists():
+    """
+    Create DB and its initial objects if they don't exist
+    :return:
+    """
+    Logger().info('Create DB if not exists')
     async with AsyncSession() as db_session:
-        async with db_session.begin():
-            guild = select(Guild).where(
-                Guild.id == discord_guild.id,
-            )
-            guild = (await db_session.scalars(guild)).one_or_none()
-            if guild is None:
-                guild = Guild(
-                    name=discord_guild.name,
-                    id=discord_guild.id,
-                )
-                db_session.add(guild)
+        if not database_exists(config.sync_db_url):
+            create_database(config.sync_db_url)
+        async with db_session.bind.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)

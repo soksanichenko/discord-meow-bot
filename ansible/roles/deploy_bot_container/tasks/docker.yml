@@ -4,6 +4,16 @@
   register: timezone_output
   changed_when: false
 
+- name: Get existing of a docker network
+  docker_network_info:
+    name: "{{ docker_network }}"
+  register: docker_network_result
+
+- name: Add a separate docker network
+  docker_network:
+    name: "{{ docker_network }}"
+  when: not docker_network_result.exists
+
 - name: Create temporary build directory
   tempfile:
     state: directory
@@ -19,13 +29,13 @@
 
     - name: Create volume directory for a container
       file:
-        path: "{{ docker_lib_folder }}/{{ item }}"
+        path: "{{ docker_lib_folder }}/{{ item.value.path }}"
         recurse: yes
         state: directory
         owner: root
         group: root
       become: yes
-      with_items: "{{ docker_volumes }}"
+      with_dict: "{{ docker_volumes }}"
 
     - name: Copy req.txt for building a docker image
       copy:
@@ -34,7 +44,7 @@
 
     - name: Copy sources
       synchronize:
-        dest: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+        dest: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
         src: "../../../../sources/"
         owner: false
         group: false
@@ -59,7 +69,7 @@
         restart_policy: always
         restart: yes
         mounts:
-          - source: "{{ docker_lib_folder }}/volumes/meow-bot/postgres"
+          - source: "{{ docker_lib_folder }}/{{ docker_volumes['postgres']['path'] }}"
             target: "/var/lib/postgresql/data"
             type: bind
         networks:
@@ -77,8 +87,13 @@
         state: started
         restart_policy: always
         restart: yes
+        entrypoint: |
+          bash -c
+          "venv/bin/python3 sources/scripts/create_db.py
+          venv/bin/alembic -c sources/alembic.ini upgrade head &&
+          venv/bin/python3 sources/scripts/main.py"
         mounts:
-          - source: "{{ docker_lib_folder }}/volumes/meow-bot/sources"
+          - source: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
             target: "/code/sources"
             read_only: yes
             type: bind

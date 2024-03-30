@@ -43,39 +43,6 @@ def parse_and_validate(
     )
 
 
-class TimezoneView(discord.ui.View):
-    """
-    View class for a user's timezone
-    """
-
-    def __init__(self, date: str = '', time: str = ''):
-        super().__init__()
-        self.time = time
-        self.date = date
-
-    @discord.ui.select(
-        placeholder='Select timezone',
-        min_values=1,
-        max_values=1,
-        options=[
-            discord.SelectOption(label=timezone, description='')
-            for timezone in pytz.all_timezones
-        ],
-    )
-    async def select_callback(
-        self,
-        interaction: discord.Interaction,  # pylint: disable=W0613
-        select: discord.ui.Select,
-    ):
-        """
-        Callback for selecting a current user's timezone
-        :param interaction: an object of interaction with a user
-        :param select: a select option
-        :return: None
-        """
-        return select.values[0]
-
-
 class TimestampFormatView(discord.ui.View):
     """
     View class for timestamp formatting
