@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from sources.lib.db import AsyncSession
 from sources.lib.db.models import Guild
+from sources.lib.utils import Logger
 
 
 async def add_guild(discord_guild: discord.Guild):
@@ -26,3 +27,4 @@ async def add_guild(discord_guild: discord.Guild):
             elif guild.name != discord_guild.name:
                 guild.name = discord_guild.name
                 db_session.add(guild)
+    Logger().info('Guild %s is added', discord_guild.name)

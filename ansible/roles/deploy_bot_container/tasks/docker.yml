@@ -32,8 +32,6 @@
         path: "{{ docker_lib_folder }}/{{ item.value.path }}"
         recurse: yes
         state: directory
-        owner: root
-        group: root
       become: yes
       with_dict: "{{ docker_volumes }}"
 

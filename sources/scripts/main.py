@@ -17,14 +17,47 @@ from sources.lib.commands.get_timestamp import TimestampFormatView
 from sources.lib.commands.utils import get_command
 from sources.lib.core import BotAvatar
 from sources.lib.db.operations.guilds import add_guild
-from sources.lib.db.operations.users import add_user, get_user_timezone
+from sources.lib.db.operations.users import (
+    add_user,
+    get_user_timezone,
+)
 from sources.lib.on_message.domains_fixer import fix_urls
 from sources.lib.utils import Logger
 
 intents = discord.Intents.default()
 # access to a message content
 intents.message_content = True
-bot = Bot(command_prefix='/', intents=intents)
+bot = Bot(
+    command_prefix='?',
+    intents=intents,
+    activity=discord.Game('Rolling the balls of wool'),
+    status=discord.Status.invisible,
+    avatar=BotAvatar(),
+)
+
+
+@bot.command(
+    name='sync-tree',
+    description='Sync a tree of the commands',
+)
+async def sync_tree(context: discord.ext.commands.Context):
+    """Sync a tree of the commands"""
+    if await bot.is_owner(context.author):
+        await bot.tree.sync()
+        Logger().info('Syncing is completed')
+    else:
+        await context.reply('You are not an owner of the bot')
+
+
+@bot.tree.command(
+    name='status',
+    description='Print status and activity',
+)
+async def status(interaction: discord.Interaction):
+    """Show a status of the bot"""
+    await interaction.response.send_message(
+        bot.status.name + ', ' + bot.activity.name, ephemeral=True
+    )
 
 
 @bot.tree.command(
@@ -141,24 +174,6 @@ async def process_links_in_message(message: discord.Message):
     await message.delete()
 
 
-@bot.listen('on_ready')
-@bot.listen('on_resumed')
-async def start_bot_staff():
-    """
-    Sync a tree of the commands then a client is resumed
-    :return:None
-    """
-    for guild in bot.guilds:
-        await add_guild(discord_guild=guild)
-    await bot.tree.sync()
-    Logger().info('Syncing is completed')
-    await bot.user.edit(avatar=BotAvatar())
-    Logger().info('An avatar of the bot is changed')
-    game = discord.Game('Rolling the balls of wool')
-    await bot.change_presence(status=discord.Status.dnd, activity=game)
-    Logger().info('A status of the bot is changed')
-
-
 async def main():
     """Main run function"""
     utils.setup_logging()
@@ -166,6 +181,15 @@ async def main():
         token=config.discord_token,
         reconnect=True,
     )
+
+
+@bot.listen('on_guild_join')
+@bot.listen('on_guild_update')
+async def add_guild_to_db(guild: discord.Guild):
+    """
+    Add a guild to DB if a new guild is joined or an existing guild is updated
+    """
+    await add_guild(discord_guild=guild)
 
 
 if __name__ == '__main__':
