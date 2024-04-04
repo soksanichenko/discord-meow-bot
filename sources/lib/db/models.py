@@ -1,6 +1,6 @@
 """DB models"""
 
-from sqlalchemy import Text, BigInteger
+from sqlalchemy import Text, BigInteger, Boolean
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 
 
@@ -21,10 +21,23 @@ class Guild(Base):
 
 class User(Base):
     """
-    A tables describes of the discord users
+    A table describes the discord users
     """
 
     __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(Text)
     timezone: Mapped[str] = mapped_column(Text)
+
+
+class DomainFixer(Base):
+    """
+    A table describes fixers for domains
+    """
+
+    __tablename__ = "domain_fixers"
+
+    original: Mapped[str] = mapped_column(Text, primary_key=True)
+    fixer: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)

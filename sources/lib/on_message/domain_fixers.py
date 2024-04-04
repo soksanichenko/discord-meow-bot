@@ -8,21 +8,19 @@ import discord
 from tldextract import extract
 from tldextract.tldextract import ExtractResult
 
+from sources.lib.db.operations.domain_fixers import get_domain_fixers
 from sources.lib.utils import Logger
 
 
-def fix_urls(message: discord.Message) -> str:
+async def fix_urls(message: discord.Message) -> str:
     """
     Fix the URLs by replacing an original domain by a fixer
     :param message: a message from Discord
     :return: a fixed message content
     """
     domains = {
-        "reddit.com": "rxddit",
-        "tiktok.com": "vxtiktok",
-        "x.com": "fixupx",
-        "twitter.com": "fxtwitter",
-        "instagram.com": "ddinstagram",
+        domain.original: domain.fixer
+        for domain in (await get_domain_fixers(only_enabled=True))
     }
 
     msg_content_lines = message.content.split()

@@ -9,6 +9,7 @@ from discord import utils
 from discord.ext.commands import Bot
 
 from sources.config import config
+from sources.lib.commands.edit_domain_fixers import EditDomainFixers
 from sources.lib.commands.get_timestamp import (
     parse_and_validate,
     autocomplete_timezone,
@@ -16,9 +17,10 @@ from sources.lib.commands.get_timestamp import (
 from sources.lib.commands.get_timestamp import TimestampFormatView
 from sources.lib.commands.utils import get_command
 from sources.lib.core import BotAvatar
+from sources.lib.db.operations.domain_fixers import get_domain_fixers
 from sources.lib.db.operations.guilds import add_guild
 from sources.lib.db.operations.users import add_user, get_user_timezone
-from sources.lib.on_message.domains_fixer import fix_urls
+from sources.lib.on_message.domain_fixers import fix_urls
 from sources.lib.utils import Logger
 
 intents = discord.Intents.default()
@@ -93,7 +95,10 @@ async def get_timestamp(
         discord_user=user,
     )
     command_name = 'set-timezone'
-    command = await get_command(commands_tree=bot.tree, command_name=command_name)
+    command = await get_command(
+        commands_tree=bot.tree,
+        command_name=command_name,
+    )
     if timezone is None:
         await interaction.response.send_message(
             f'User **{user.display_name}** does not have a timezone.\n'
@@ -119,6 +124,45 @@ async def get_timestamp(
     )
 
 
+@bot.tree.command(
+    name='edit-domain-fixers',
+    description='Enable/disable a domain fixer',
+)
+async def edit_domain_fixers(
+    interaction: discord.Interaction,
+):
+    """Edit domain fixers"""
+    view = EditDomainFixers()
+    domains = await get_domain_fixers()
+    item = discord.ui.Select(
+        placeholder='Select domain fixer',
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(
+                label='✅' if domain.enabled else '❌',
+                description=f'{domain.original} -> {domain.fixer}',
+            )
+            for domain in domains
+        ],
+    )
+
+    async def _select_domain_fixer_callback(
+        _interaction: discord.Interaction,
+        _select: discord.ui.Select,
+    ):
+        await _interaction.response.send_message(_select.values[0])
+
+    item.callback = _select_domain_fixer_callback
+    view.add_item(
+        item=item,
+    )
+    await interaction.response.send_message(
+        view=EditDomainFixers(),
+        ephemeral=True,
+    )
+
+
 @bot.listen('on_message')
 async def process_links_in_message(message: discord.Message):
     """
@@ -131,10 +175,12 @@ async def process_links_in_message(message: discord.Message):
     if message.author == bot.user:
         Logger().info('That message is mine')
         return
-    content = fix_urls(message=message)
+    content = await fix_urls(message=message)
     if content == message.content:
         Logger().info('The original message is already fine')
         return
+    if message.mention_everyone:
+        content = f'@silent {content}'
     await message.channel.send(content=content)
     await message.delete()
 

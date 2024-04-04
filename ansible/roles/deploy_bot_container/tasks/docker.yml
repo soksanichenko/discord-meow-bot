@@ -32,8 +32,6 @@
         path: "{{ docker_lib_folder }}/{{ item.value.path }}"
         recurse: yes
         state: directory
-        owner: root
-        group: root
       become: yes
       with_dict: "{{ docker_volumes }}"
 
@@ -89,7 +87,7 @@
         restart: yes
         entrypoint: |
           bash -c
-          "venv/bin/python3 sources/scripts/create_db.py
+          "venv/bin/python3 sources/scripts/create_db.py &&
           venv/bin/alembic -c sources/alembic.ini upgrade head &&
           venv/bin/python3 sources/scripts/main.py"
         mounts:
