@@ -135,6 +135,8 @@ async def process_links_in_message(message: discord.Message):
     if content == message.content:
         Logger().info('The original message is already fine')
         return
+    if message.mention_everyone:
+        content = f'@silent {content}'
     await message.channel.send(content=content)
     await message.delete()
 
