@@ -44,9 +44,11 @@ async def sync_tree(context: discord.ext.commands.Context):
     """Sync a tree of the commands"""
     if await bot.is_owner(context.author):
         await bot.tree.sync()
-        Logger().info('Syncing is completed')
+        message = 'Syncing is completed'
     else:
-        await context.reply('You are not an owner of the bot')
+        message = 'You are not an owner of the bot'
+    Logger().info(message)
+    await context.reply(message)
 
 
 @bot.tree.command(
