@@ -16,17 +16,20 @@ from sources.lib.commands.get_timestamp import (
 from sources.lib.commands.get_timestamp import TimestampFormatView
 from sources.lib.commands.utils import get_command
 from sources.lib.core import BotAvatar
-from sources.lib.db.operations.guilds import add_guild
-from sources.lib.db.operations.users import (
-    add_user,
-    get_user_timezone,
+from sources.lib.db.models import Guild, User
+from sources.lib.db import AsyncSession
+from sources.lib.db.crud.base import (
+    update_db_entity_or_create,
+    get_db_entity,
 )
 from sources.lib.on_message.domains_fixer import fix_urls
 from sources.lib.utils import Logger
 
 intents = discord.Intents.default()
-# access to a message content
+intents.messages = True
 intents.message_content = True
+intents.guilds = True
+intents.members = True
 bot = Bot(
     command_prefix='?',
     intents=intents,
@@ -49,17 +52,6 @@ async def sync_tree(context: discord.ext.commands.Context):
         message = 'You are not an owner of the bot'
     Logger().info(message)
     await context.reply(message)
-
-
-@bot.tree.command(
-    name='status',
-    description='Print status and activity',
-)
-async def status(interaction: discord.Interaction):
-    """Show a status of the bot"""
-    await interaction.response.send_message(
-        bot.status.name + ', ' + bot.activity.name, ephemeral=True
-    )
 
 
 @bot.tree.command(
@@ -91,10 +83,18 @@ async def set_timezone(
     :return: None
     """
     user = interaction.user
-    await add_user(
-        discord_user=user,
-        user_timezone=timezone,
-    )
+    async with AsyncSession() as db_session:
+        await update_db_entity_or_create(
+            db_session=db_session,
+            table_class=User,
+            filters={
+                'id': user.id,
+            },
+            updates={
+                'timezone': timezone,
+                'name': user.name,
+            },
+        )
     await interaction.response.send_message(
         f'Timezone for user **{user.display_name}** is set to **{timezone}**',
         ephemeral=True,
@@ -123,20 +123,27 @@ async def get_timestamp(
     :param interaction: the command's interaction
     :return: None
     """
-    user = interaction.user
-    timezone = await get_user_timezone(
-        discord_user=user,
-    )
+    async with AsyncSession() as db_session:
+        user = await get_db_entity(
+            db_session=db_session,
+            table_class=User,
+            id=interaction.user.id,
+        )  # type: User
     command_name = 'set-timezone'
-    command = await get_command(commands_tree=bot.tree, command_name=command_name)
-    if timezone is None:
+    command = await get_command(
+        commands_tree=bot.tree,
+        command_name=command_name,
+    )
+    if user is None:
         await interaction.response.send_message(
-            f'User **{user.display_name}** does not have a timezone.\n'
-            f'Please, use command </{command_name}:{command.id}> to set it'
+            f'User **{interaction.user.display_name}** '
+            'does not have a timezone.\n'
+            f'Please, use command </{command_name}:{command.id}> to set it',
+            ephemeral=True,
         )
         return
     time_date = parse_and_validate(
-        timezone=timezone,
+        timezone=user.timezone,
         date=date,
         time=time,
         interaction=interaction,
@@ -170,9 +177,10 @@ async def process_links_in_message(message: discord.Message):
     if content == message.content:
         Logger().info('The original message is already fine')
         return
-    if message.mention_everyone:
-        content = f'@silent {content}'
-    await message.channel.send(content=content)
+    if message.reference is None:
+        await message.channel.send(content=content, silent=True)
+    else:
+        await message.reference.resolved.reply(content=content, silent=True)
     await message.delete()
 
 
@@ -191,7 +199,17 @@ async def add_guild_to_db(guild: discord.Guild):
     """
     Add a guild to DB if a new guild is joined or an existing guild is updated
     """
-    await add_guild(discord_guild=guild)
+    async with AsyncSession() as db_session:
+        await update_db_entity_or_create(
+            db_session=db_session,
+            table_class=Guild,
+            filters={
+                'id': guild.id,
+            },
+            updates={
+                'name': guild.name,
+            },
+        )
 
 
 if __name__ == '__main__':

@@ -19,10 +19,8 @@ def fix_urls(message: discord.Message) -> str:
     """
     domains = {
         "reddit.com": "rxddit",
-        "tiktok.com": "vxtiktok",
         "x.com": "fixupx",
         "twitter.com": "fxtwitter",
-        "instagram.com": "ddinstagram",
     }
 
     msg_content_lines = message.content.split()
