@@ -7,6 +7,7 @@ import asyncio
 import discord
 from discord import utils
 from discord.ext.commands import Bot
+from telethon import TelegramClient
 
 from sources.config import config
 from sources.lib.commands.get_timestamp import (
@@ -36,6 +37,11 @@ bot = Bot(
     activity=discord.Game('Rolling the balls of wool'),
     status=discord.Status.invisible,
     avatar=BotAvatar(),
+)
+telegram_client = TelegramClient(
+    session='meowlistener',
+    api_id=config.telegram_api_id,
+    api_hash=config.telegram_api_hash,
 )
 
 
@@ -184,13 +190,19 @@ async def process_links_in_message(message: discord.Message):
     await message.delete()
 
 
-async def main():
+async def discord_bot_main():
     """Main run function"""
     utils.setup_logging()
     await bot.start(
         token=config.discord_token,
         reconnect=True,
     )
+
+
+async def telegram_client_main():
+    """Main run function for telegram client"""
+    await telegram_client.start()
+    await telegram_client.run_until_disconnected()
 
 
 @bot.listen('on_guild_join')
@@ -212,5 +224,15 @@ async def add_guild_to_db(guild: discord.Guild):
         )
 
 
+async def main():
+    """Main run function for all"""
+    await asyncio.gather(
+        discord_bot_main(),
+        telegram_client_main(),
+    )
+
+
 if __name__ == '__main__':
     asyncio.run(main())
+    # asyncio.run(discord_bot_main())
+    # asyncio.run(telegram_client_main())
