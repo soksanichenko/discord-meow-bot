@@ -33,6 +33,8 @@ class Config(BaseSettings):
     __db: DBConfig = DBConfig()
 
     discord_token: str
+    telegram_api_id: str
+    telegram_api_hash: str
     sync_db_url: str = (
         f'postgresql+psycopg2://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

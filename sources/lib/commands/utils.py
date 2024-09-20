@@ -15,5 +15,26 @@ async def get_command(
     :param command_name: A name of command
     :return: object of Command
     """
-    commands = await commands_tree.fetch_commands()
-    return next(iter(filter(lambda c: c.name == command_name, commands)))
+    cmds = await commands_tree.fetch_commands()
+    return next(iter(filter(lambda c: c.name == command_name, cmds)))
+
+
+def get_user_status(
+    user_id: int,
+    interaction: discord.Interaction,
+) -> discord.Status:
+    """Get the status of a user"""
+    return interaction.guild.get_member(user_id).status
+
+
+def get_user_activity(
+    user_id: int,
+    interaction: discord.Interaction,
+) -> discord.Activity:
+    """Get the activity of a user"""
+    return interaction.guild.get_member(user_id).activity
+
+
+def check_is_guild_owner(interaction: discord.Interaction) -> bool:
+    """Check an interaction's user is a guild owner"""
+    return interaction.guild.owner == interaction.user

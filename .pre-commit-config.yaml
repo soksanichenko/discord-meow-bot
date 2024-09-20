@@ -34,6 +34,7 @@ repos:
       name: PyLint
       entry: pylint
       language: python
+      exclude: ".*/alembic/versions/.*"
       args:
         - '--disable'
         - 'R0903'  # too-few-public-methods
