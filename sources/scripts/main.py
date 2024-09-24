@@ -107,7 +107,7 @@ async def remove_fixed_message(
     message: discord.Message,
 ):
     """Remove fixed message using a bot's command"""
-    if message.author != bot.user and message.content.endswith(
+    if message.author == bot.user and message.content.endswith(
         f"\nOriginal message posted by {interaction.user.mention}",
     ):
         await message.delete()
