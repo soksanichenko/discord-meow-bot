@@ -101,6 +101,27 @@ async def set_timezone(
     )
 
 
+@bot.tree.context_menu(name='Remove fixed message')
+async def remove_fixed_message(
+    interaction: discord.Interaction,
+    message: discord.Message,
+):
+    """Remove fixed message using a bot's command"""
+    if message.author != bot.user and message.content.endswith(
+        f"\nOriginal message posted by {interaction.user.mention}",
+    ):
+        await message.delete()
+        await interaction.response.send_message(
+            'The message is deleted',
+            ephemeral=True,
+        )
+    else:
+        await interaction.response.send_message(
+            'That message is not yours',
+            ephemeral=True,
+        )
+
+
 @discord.app_commands.describe(
     time='Please input a time in any suitable format in your region'
 )
