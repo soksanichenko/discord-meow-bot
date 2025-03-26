@@ -12,6 +12,7 @@ from sources.config import config
 from sources.lib.commands.get_timestamp import (
     parse_and_validate,
     autocomplete_timezone,
+    role_autocomplete,
 )
 from sources.lib.commands.get_timestamp import TimestampFormatView
 from sources.lib.commands.utils import get_command
@@ -169,6 +170,37 @@ async def remove_fixed_message(
             'That message is not yours',
             ephemeral=True,
         )
+
+
+@bot.tree.command(
+    name='list-members',
+    description='List of a role members',
+)
+@discord.app_commands.autocomplete(role=role_autocomplete)
+async def list_members(
+    interaction: discord.Interaction,
+    role: str,
+):
+    """Print a role members"""
+    role_obj = interaction.guild.get_role(int(role))
+    if not role_obj:
+        await interaction.response.send_message(
+            'Role does not found',
+            ephemeral=True,
+        )
+        return
+
+    members = sorted([member.mention for member in role_obj.members])
+    embed = discord.Embed(
+        title=f'Members of role "{role_obj.name}"',
+        color=discord.Color.blue(),
+    )
+    if not members:
+        embed.description = 'That role has no members'
+    else:
+        embed.description = '\n'.join(members)
+
+    await interaction.response.send_message(embed=embed)
 
 
 @discord.app_commands.describe(
