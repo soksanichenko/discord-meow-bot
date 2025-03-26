@@ -22,6 +22,18 @@ async def autocomplete_timezone(
     ][:25]
 
 
+async def role_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[discord.app_commands.Choice]:
+    """Autocomplete existing roles on a server"""
+    roles = [
+        discord.app_commands.Choice(name=role.name, value=str(role.id))
+        for role in interaction.guild.roles
+        if current.lower() in role.name.lower()
+    ]
+    return roles[:25]
+
+
 def parse_and_validate(
     date: str,
     time: str,
