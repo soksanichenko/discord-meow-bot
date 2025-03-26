@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import discord
-from discord import utils
+from discord import utils, Color
 from discord.ext.commands import Bot
 from telethon import TelegramClient
 
@@ -63,16 +63,65 @@ async def sync_tree(context: discord.ext.commands.Context):
 
 
 @bot.tree.command(
-    name='ping',
-    description='Test ping command',
+    name='info',
+    description='Get info about your server',
 )
-async def ping(interaction: discord.Interaction):
+async def info(interaction: discord.Interaction):
     """
-    Test ping command
+    Get info about your server
     :param interaction: the command's interaction
     :return: None
     """
-    await interaction.response.send_message('pong', ephemeral=True)
+    guild = interaction.guild
+    embed_var = discord.Embed(
+        title="Server info",
+        description=f"Total information about {guild.name}",
+        color=Color.brand_green(),
+    )
+    if guild.banner:
+        embed_var.set_image(url=guild.banner.url)
+    embed_var.add_field(
+        name='Owner',
+        value=guild.owner.mention,
+        inline=False,
+    )
+    embed_var.add_field(
+        name="Creation date",
+        value=guild.created_at.strftime('%Y-%M-%d %H:%M:%S'),
+        inline=False,
+    )
+    embed_var.add_field(
+        name="Members count",
+        value=guild.member_count,
+        inline=False,
+    )
+    embed_var.add_field(
+        name='Nitro boost',
+        value=f'Tier {guild.premium_tier}: '
+        f'{guild.premium_subscription_count} boost out of 14',
+        inline=False,
+    )
+    embed_var.add_field(
+        name='Bitrate limit',
+        value=f'{int(guild.bitrate_limit // 1000)} Kbps',
+        inline=False,
+    )
+    embed_var.add_field(
+        name='Emoji limit',
+        value=guild.emoji_limit,
+        inline=False,
+    )
+    embed_var.add_field(
+        name='Sticker limit',
+        value=guild.sticker_limit,
+        inline=False,
+    )
+    embed_var.add_field(
+        name='File size limit',
+        value=f'{guild.filesize_limit // 1024 // 1024} MB',
+        inline=False,
+    )
+    await interaction.response.send_message(embed=embed_var, ephemeral=True)
 
 
 @bot.tree.command(
@@ -107,6 +156,27 @@ async def set_timezone(
         f'Timezone for user **{user.display_name}** is set to **{timezone}**',
         ephemeral=True,
     )
+
+
+@bot.tree.context_menu(name='Remove fixed message')
+async def remove_fixed_message(
+    interaction: discord.Interaction,
+    message: discord.Message,
+):
+    """Remove fixed message using a bot's command"""
+    if message.author == bot.user and message.content.endswith(
+        f"\nOriginal message posted by {interaction.user.mention}",
+    ):
+        await message.delete()
+        await interaction.response.send_message(
+            'The message is deleted',
+            ephemeral=True,
+        )
+    else:
+        await interaction.response.send_message(
+            'That message is not yours',
+            ephemeral=True,
+        )
 
 
 @discord.app_commands.describe(

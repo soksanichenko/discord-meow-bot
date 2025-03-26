@@ -80,8 +80,12 @@ class TimestampFormatView(discord.ui.View):
         :return: None
         """
         timestamp = f'<t:{self.timestamp}:{select.values[0]}>'
-
         await interaction.response.send_message(
-            f'{timestamp}\n`{timestamp}`',
+            timestamp,
+            ephemeral=True,
+        )
+
+        await interaction.followup.send(
+            f'`{timestamp}`',
             ephemeral=True,
         )
