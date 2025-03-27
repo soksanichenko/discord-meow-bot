@@ -200,7 +200,7 @@ async def list_members(
     else:
         embed.description = '\n'.join(members)
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @discord.app_commands.describe(
