@@ -21,6 +21,7 @@ def fix_urls(message: discord.Message) -> str:
         "reddit.com": "rxddit",
         "x.com": "fixupx",
         "twitter.com": "fxtwitter",
+        "tiktok.com": "tnktok",
     }
 
     msg_content_lines = message.content.split()
