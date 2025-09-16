@@ -62,7 +62,7 @@
     - name: Up a docker container with PostgreSQL
       docker_container:
         name: "postgres"
-        image: "postgres:16"
+        image: "postgres:17"
         pull: yes
         restart_policy: always
         restart: yes
@@ -85,9 +85,8 @@
         state: started
         restart_policy: always
         restart: yes
-        entrypoint: |
-          bash -c
-          "venv/bin/python3 sources/scripts/create_db.py
+        command: |
+          -c "venv/bin/python3 sources/scripts/create_db.py &&
           venv/bin/alembic -c sources/alembic.ini upgrade head &&
           venv/bin/python3 sources/scripts/main.py"
         mounts:
@@ -99,7 +98,6 @@
           - name: "{{ docker_network }}"
         env:
           DISCORD_TOKEN: "{{ discord_token }}"
-          TZ: "{{ timezone_output.stdout }}"
           DB_LOGIN: "{{ db_login }}"
           DB_PASSWORD: "{{ db_password }}"
           DB_HOST: "{{ db_host }}"

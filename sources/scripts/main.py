@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Optional
 
 import discord
 from discord import utils, Color
@@ -261,6 +262,40 @@ async def get_timestamp(
         view=TimestampFormatView(int(time_date.timestamp())),
         ephemeral=True,
     )
+
+
+def _get_member_activity(members: list[discord.Member]) -> Optional[discord.Activity]:
+    """Get a member activity"""
+    for member in members:
+        game = next((a for a in member.activities if a.type == discord.ActivityType.playing), None)
+        if game:
+            return game
+
+
+async def update_channel_status(voice_channel):
+    """Update a channel status"""
+    members = voice_channel.members
+    if members:
+        game = _get_member_activity(members)
+        status = f"[auto] 🎮 {game.name}" if game else None
+        try:
+            await voice_channel.edit(status=status)
+        except discord.errors.Forbidden:
+            pass
+
+
+@bot.listen('on_presence_update')
+async def on_presence_update(before, after):
+    """Listen on presence update"""
+    if after.voice and after.voice.channel:
+        await update_channel_status(after.voice.channel)
+
+
+@bot.listen('on_voice_state_update')
+async def on_voice_state_update(member, before, after):
+    """Listen voice channel state update"""
+    channel = (after.channel or before.channel)
+    await update_channel_status(channel)
 
 
 @bot.listen('on_message')
