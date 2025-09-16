@@ -31,7 +31,7 @@ def fix_urls(message: discord.Message) -> str:
         if line.startswith("http://") or line.startswith("https://")
     }
     if all(
-        parsed_domain.registered_domain not in domains
+        parsed_domain.top_domain_under_public_suffix not in domains
         for parsed_domain in parsed_urls.values()
     ):
         Logger().info("No suitable domain or any URL found")
@@ -41,9 +41,10 @@ def fix_urls(message: discord.Message) -> str:
             parsed_url.scheme,
             netloc=ExtractResult(
                 subdomain=parsed_domain.subdomain,
-                domain=domains[parsed_domain.registered_domain],
+                domain=domains[parsed_domain.top_domain_under_public_suffix],
                 suffix=parsed_domain.suffix,
                 is_private=parsed_domain.is_private,
+                registry_suffix=parsed_domain.registry_suffix,
             ).fqdn,
             path=parsed_url.path,
             query=parsed_url.query,
