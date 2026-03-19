@@ -32,7 +32,7 @@ async def create_db_entity(db_session: AsyncSession, table_class: Type[Base], **
 
 async def update_db_entity(
     db_session: AsyncSession,
-    db_entity: Type[Base],
+    db_entity: Base,
     **kwargs,
 ):
     """Update an existing DB entity"""
@@ -44,10 +44,11 @@ async def update_db_entity(
 
 async def delete_db_entity(
     db_session: AsyncSession,
-    db_entity: Type[Base],
+    db_entity: Base,
 ):
     """Delete an existing DB entity"""
     await db_session.delete(db_entity)
+    await db_session.commit()
 
 
 async def delete_db_entity_if_exists(

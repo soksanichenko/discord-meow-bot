@@ -1,6 +1,6 @@
 alembic==1.16.5
 asyncpg==0.30.0
-git+https://github.com/Rapptz/discord.py@v2.6.3
+git+https://github.com/Rapptz/discord.py@v2.7.1
 git+https://github.com/soksanichenko/dateparser.git@master
 psycopg2-binary==2.9.10
 pydantic-settings==2.10.1

@@ -1,10 +1,11 @@
 """DB models"""
 
 from sqlalchemy import Text, BigInteger
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    """Base class for all ORM models."""
 
 
 class Guild(Base):

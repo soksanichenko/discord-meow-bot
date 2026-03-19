@@ -1,11 +1,12 @@
 """DB utilities"""
 
 from sqlalchemy_utils import (
-    database_exists,
     create_database,
+    database_exists,
 )
+
 from sources.config import config
-from sources.lib.db import AsyncSession
+from sources.lib.db import async_engine
 from sources.lib.db.models import Base
 from sources.lib.utils import Logger
 
@@ -16,8 +17,7 @@ async def create_db_if_not_exists():
     :return:
     """
     Logger().info('Create DB if not exists')
-    async with AsyncSession() as db_session:
-        if not database_exists(config.sync_db_url):
-            create_database(config.sync_db_url)
-        async with db_session.bind.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    if not database_exists(config.sync_db_url):
+        create_database(config.sync_db_url)
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

@@ -1,7 +1,6 @@
 """
 Utils for the bot commands
 """
-
 import discord
 
 
@@ -22,17 +21,19 @@ async def get_command(
 def get_user_status(
     user_id: int,
     interaction: discord.Interaction,
-) -> discord.Status:
+) -> discord.Status | None:
     """Get the status of a user"""
-    return interaction.guild.get_member(user_id).status
+    member = interaction.guild.get_member(user_id)
+    return member.status if member is not None else None
 
 
 def get_user_activity(
     user_id: int,
     interaction: discord.Interaction,
-) -> discord.Activity:
+) -> discord.Activity | None:
     """Get the activity of a user"""
-    return interaction.guild.get_member(user_id).activity
+    member = interaction.guild.get_member(user_id)
+    return member.activity if member is not None else None
 
 
 def check_is_guild_owner(interaction: discord.Interaction) -> bool:

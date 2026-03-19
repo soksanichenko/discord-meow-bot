@@ -13,7 +13,7 @@ from sources.config import config
 async_engine = create_async_engine(url=config.async_db_url)
 async_session_factory = async_sessionmaker(
     bind=async_engine,
-    expire_on_commit=True,
+    expire_on_commit=False,
 )
 AsyncSession = async_scoped_session(
     session_factory=async_session_factory,
