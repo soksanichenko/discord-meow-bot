@@ -34,7 +34,7 @@ All configuration is done via environment variables:
 ## Running
 
 ```bash
-pip install -r requirements/prod.txt
+pip install -r sources/prod.txt
 
 # First run only — creates the database
 python sources/scripts/create_db.py

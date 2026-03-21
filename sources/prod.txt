@@ -1,0 +1,9 @@
+alembic==1.18.4
+asyncpg==0.31.0
+discord.py==2.7.1
+git+https://github.com/soksanichenko/dateparser.git@master
+psycopg2-binary==2.9.11
+pydantic-settings==2.13.1
+SQLAlchemy-Utils==0.42.1
+SQLAlchemy[asyncio]==2.0.48
+tldextract==5.3.1

@@ -33,7 +33,7 @@ sources/
 │   └── utils.py          # Logger singleton (get_logger)
 ├── config.py             # Pydantic settings — DBConfig + Config
 └── alembic.ini
-requirements/prod.txt
+sources/prod.txt
 ansible/                  # Deployment — see Deployment section
 deploy.sh                 # Runs ansible-playbook for zelgray.work inventory
 ```
@@ -122,7 +122,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 
 ```bash
 # Install dependencies
-pip install -r requirements/prod.txt
+pip install -r sources/prod.txt
 
 # Set environment variables (DISCORD_TOKEN, DB_*)
 export DISCORD_TOKEN=...

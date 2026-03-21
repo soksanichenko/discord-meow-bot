@@ -38,7 +38,7 @@
     - name: Copy req.txt for building a docker image
       ansible.builtin.copy:
         dest: "{{ docker_temp_directory.path }}/prod.txt"
-        src: "../../../../requirements/prod.txt"
+        src: "../../../../sources/prod.txt"
 
     - name: Copy sources
       ansible.posix.synchronize:
