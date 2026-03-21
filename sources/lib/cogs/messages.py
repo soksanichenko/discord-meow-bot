@@ -53,7 +53,7 @@ class MessagesCog(commands.Cog):
         if message.author == self.bot.user:
             Logger().info('That message is mine')
             return
-        content = fix_urls(message=message)
+        content = await fix_urls(message=message)
         if content == message.content:
             Logger().info('The original message is already fine')
             return

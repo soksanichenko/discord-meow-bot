@@ -77,6 +77,12 @@ class GuildCog(commands.Cog):
             embed.description = '\n'.join(members)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @commands.Cog.listener('on_ready')
+    async def on_ready(self) -> None:
+        """Sync all current guilds to DB on bot startup."""
+        for guild in self.bot.guilds:
+            await upsert_guild(guild_id=guild.id, guild_name=guild.name)
+
     @commands.Cog.listener('on_guild_join')
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Add a guild to DB when the bot joins."""

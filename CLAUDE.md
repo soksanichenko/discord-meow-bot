@@ -82,6 +82,7 @@ Rules:
 `sources/lib/db/models.py`:
 - `Guild(id: BigInteger PK, name: Text)`
 - `User(id: BigInteger PK, name: Text, timezone: Text)`
+- `DomainFixer(source_domain: Text PK, replacement_domain: Text, override_subdomain: Text nullable)` — URL replacement rules; `override_subdomain=NULL` keeps the original subdomain
 
 ### Migrations
 
