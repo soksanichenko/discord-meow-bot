@@ -5,17 +5,17 @@
   changed_when: false
 
 - name: Get existing of a docker network
-  docker_network_info:
+  community.docker.docker_network_info:
     name: "{{ docker_network }}"
   register: docker_network_result
 
 - name: Add a separate docker network
-  docker_network:
+  community.docker.docker_network:
     name: "{{ docker_network }}"
   when: not docker_network_result.exists
 
 - name: Create temporary build directory
-  tempfile:
+  ansible.builtin.tempfile:
     state: directory
     suffix: build
   register: docker_temp_directory
@@ -23,25 +23,25 @@
 - name: Working in a build directory
   block:
     - name: Prepare Dockerfile
-      template:
+      ansible.builtin.template:
         dest: "{{ docker_temp_directory.path }}/Dockerfile"
         src: "Dockerfile.j2"
 
     - name: Create volume directory for a container
-      file:
+      ansible.builtin.file:
         path: "{{ docker_lib_folder }}/{{ item.value.path }}"
         recurse: yes
         state: directory
       become: yes
-      with_dict: "{{ docker_volumes }}"
+      loop: "{{ docker_volumes | dict2items }}"
 
     - name: Copy req.txt for building a docker image
-      copy:
+      ansible.builtin.copy:
         dest: "{{ docker_temp_directory.path }}/prod.txt"
         src: "../../../../requirements/prod.txt"
 
     - name: Copy sources
-      synchronize:
+      ansible.posix.synchronize:
         dest: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
         src: "../../../../sources/"
         owner: false
@@ -49,7 +49,7 @@
       become: yes
 
     - name: Build a docker image
-      docker_image:
+      community.docker.docker_image:
         name: "discord-meow-bot"
         force_source: yes
         build:
@@ -59,36 +59,18 @@
         source: build
       become: yes
 
-    - name: Up a docker container with PostgreSQL
-      docker_container:
-        name: "postgres"
-        image: "postgres:17"
-        pull: yes
-        restart_policy: always
-        restart: yes
-        mounts:
-          - source: "{{ docker_lib_folder }}/{{ docker_volumes['postgres']['path'] }}"
-            target: "/var/lib/postgresql/data"
-            type: bind
-        networks:
-          - name: "{{ docker_network }}"
-        env:
-          POSTGRES_PASSWORD: "{{ db_password }}"
-      become: yes
-      tags:
-        - postgres
-
     - name: Up a docker container with the bot
-      docker_container:
+      community.docker.docker_container:
         name: "discord-meow-bot"
         image: "discord-meow-bot"
         state: started
         restart_policy: always
-        restart: yes
-        command: |
-          -c "venv/bin/python3 sources/scripts/create_db.py &&
-          venv/bin/alembic -c sources/alembic.ini upgrade head &&
-          venv/bin/python3 sources/scripts/main.py"
+        command:
+          - "-c"
+          - >-
+            venv/bin/python3 sources/scripts/create_db.py &&
+            venv/bin/alembic -c sources/alembic.ini upgrade head &&
+            venv/bin/python3 sources/scripts/main.py
         mounts:
           - source: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
             target: "/code/sources"
@@ -106,8 +88,8 @@
       become: yes
 
   always:
-    - name: Remove temp build direcotry
-      file:
+    - name: Remove temp build directory
+      ansible.builtin.file:
         path: "{{ docker_temp_directory.path }}"
         state: absent
 ...

@@ -17,11 +17,12 @@ def fix_urls(message: discord.Message) -> str:
     :param message: a message from Discord
     :return: a fixed message content
     """
+    # subdomain=None means keep the original subdomain from the URL
     domains = {
-        "reddit.com": "rxddit",
-        "x.com": "fixupx",
-        "twitter.com": "fxtwitter",
-        # "tiktok.com": "tnktok",
+        'reddit.com':  {'domain': 'rxddit',   'subdomain': None},
+        'x.com':       {'domain': 'fixupx',   'subdomain': None},
+        'twitter.com': {'domain': 'fxtwitter', 'subdomain': None},
+        'tiktok.com':  {'domain': 'tnktok',   'subdomain': None},
     }
 
     msg_content_lines = message.content.split()
@@ -40,8 +41,8 @@ def fix_urls(message: discord.Message) -> str:
         parsed_url.geturl(): ParseResult(
             parsed_url.scheme,
             netloc=ExtractResult(
-                subdomain=parsed_domain.subdomain,
-                domain=domains[parsed_domain.top_domain_under_public_suffix],
+                subdomain=fixer.get('subdomain') or parsed_domain.subdomain,
+                domain=fixer['domain'],
                 suffix=parsed_domain.suffix,
                 is_private=parsed_domain.is_private,
                 registry_suffix=parsed_domain.registry_suffix,
@@ -52,6 +53,7 @@ def fix_urls(message: discord.Message) -> str:
             fragment=parsed_url.fragment,
         ).geturl()
         for parsed_url, parsed_domain in parsed_urls.items()
+        for fixer in (domains[parsed_domain.top_domain_under_public_suffix],)
     }
     content = copy(message.content)
     for original_url, fixed_url in final_urls.items():
