@@ -5,7 +5,7 @@ from discord import Color, app_commands
 from discord.ext import commands
 
 from sources.lib.commands.get_timestamp import role_autocomplete
-from sources.lib.db.operations.guilds import upsert_guild
+from sources.lib.db.operations.guilds import delete_guild, upsert_guild
 
 
 class GuildCog(commands.Cog):
@@ -92,3 +92,8 @@ class GuildCog(commands.Cog):
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild) -> None:
         """Update a guild in DB when it is updated."""
         await upsert_guild(guild_id=after.id, guild_name=after.name)
+
+    @commands.Cog.listener('on_guild_remove')
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Remove a guild from DB when the bot is kicked or leaves."""
+        await delete_guild(guild_id=guild.id)
