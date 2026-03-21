@@ -47,6 +47,7 @@
         owner: false
         group: false
       become: yes
+      register: sources_result
 
     - name: Build a docker image
       community.docker.docker_image:
@@ -64,6 +65,7 @@
         name: "discord-meow-bot"
         image: "discord-meow-bot"
         state: started
+        restart: "{{ sources_result.changed }}"
         restart_policy: always
         command:
           - "-c"
