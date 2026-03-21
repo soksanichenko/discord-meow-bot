@@ -85,6 +85,7 @@
           DB_HOST: "{{ db_host }}"
           DB_DATABASE: "{{ db_database }}"
           DB_PORT: "{{ db_port | string }}"
+        log_driver: journald
       become: yes
 
   always:
