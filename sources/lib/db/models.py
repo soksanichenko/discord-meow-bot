@@ -1,6 +1,8 @@
 """DB models"""
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Text
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -68,3 +70,19 @@ class GuildDomainFixer(Base):
     domain_fixer_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('domain_fixers.id', ondelete='CASCADE'), primary_key=True,
     )
+
+
+class Reminder(Base):
+    """A reminder scheduled by a Discord user."""
+
+    __tablename__ = 'reminders'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    message_url: Mapped[str | None] = mapped_column(Text)
+    message_content: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    is_sent: Mapped[bool] = mapped_column(Boolean, default=False)

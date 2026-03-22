@@ -2,6 +2,40 @@
 Utils for the bot commands
 """
 import discord
+from discord.ext import commands
+
+from sources.lib.db.models import User
+from sources.lib.db.operations.users import get_user
+
+
+async def require_timezone(
+    bot: commands.Bot,
+    interaction: discord.Interaction,
+) -> User | None:
+    """Fetch the user and send an error response if no timezone is configured.
+
+    Intended to be called at the start of any command that requires the user to
+    have run /set-timezone first. Sends an ephemeral message with a clickable
+    command mention and returns None so the caller can immediately return.
+
+    Args:
+        bot: The Discord bot instance, used to resolve the /set-timezone mention.
+        interaction: The interaction to respond to on failure.
+
+    Returns:
+        The User instance if a timezone is configured, otherwise None.
+    """
+    db_user = await get_user(interaction.user.id)
+    if db_user is None:
+        command = await get_command(bot.tree, 'set-timezone')
+        await interaction.response.send_message(
+            'User **%s** does not have a timezone.\n'
+            'Please, use command </set-timezone:%s> to set it'
+            % (interaction.user.display_name, command.id),
+            ephemeral=True,
+        )
+        return None
+    return db_user
 
 
 async def get_command(

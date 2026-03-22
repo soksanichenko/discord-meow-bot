@@ -9,8 +9,8 @@ from sources.lib.commands.get_timestamp import (
     autocomplete_timezone,
     parse_and_validate,
 )
-from sources.lib.commands.utils import get_command
-from sources.lib.db.operations.users import get_user, upsert_user
+from sources.lib.commands.utils import require_timezone
+from sources.lib.db.operations.users import upsert_user
 
 
 class UserCog(commands.Cog):
@@ -50,19 +50,8 @@ class UserCog(commands.Cog):
         date: str = '',
     ) -> None:
         """Get formatted timestamp for any date and/or time."""
-        user = await get_user(user_id=interaction.user.id)
-        command_name = 'set-timezone'
-        command = await get_command(
-            commands_tree=self.bot.tree,
-            command_name=command_name,
-        )
+        user = await require_timezone(self.bot, interaction)
         if user is None:
-            await interaction.response.send_message(
-                f'User **{interaction.user.display_name}** '
-                'does not have a timezone.\n'
-                f'Please, use command </{command_name}:{command.id}> to set it',
-                ephemeral=True,
-            )
             return
         time_date = parse_and_validate(
             timezone=user.timezone,
