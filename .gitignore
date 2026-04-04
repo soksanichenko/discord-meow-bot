@@ -3,3 +3,4 @@ vault-pass
 .env
 *.pyc
 __pycache__
+IDEAS.md
