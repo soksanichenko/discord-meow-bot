@@ -103,6 +103,20 @@ class GuildMemberBirthday(Base):
     last_announced_year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
 
+class MusicLinksChannel(Base):
+    """Allowlist of channels where music link conversion is active for a guild.
+
+    If no rows exist for a guild, conversion is active in all channels.
+    """
+
+    __tablename__ = 'music_links_channels'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+    )
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+
 class Reminder(Base):
     """A reminder scheduled by a Discord user."""
 

@@ -1,5 +1,8 @@
 ---
 discord_token: "{{ lookup('bitwarden.secrets.lookup', '76922d91-098e-4b58-b669-b4310084be27') }}"
+youtube_api_key: "{{ lookup('bitwarden.secrets.lookup', '4b3f645d-8070-43a3-af79-b43100a09838') }}"
+spotify_api_client_id: "{{ lookup('bitwarden.secrets.lookup', '58046f9f-727c-4df0-9164-b43100a23aa2') }}"
+spotify_api_client_secret: "{{ lookup('bitwarden.secrets.lookup', '8e024801-9adc-4f40-8d55-b43100a24fb1') }}"
 db_password: "{{ lookup('bitwarden.secrets.lookup', 'c3f44971-a7af-4b62-af36-b4310084dcc0') }}"
 db_login: "meow-bot"
 db_host: postgresql

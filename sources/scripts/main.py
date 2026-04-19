@@ -12,6 +12,7 @@ from sources.lib.cogs.birthdays import BirthdaysCog
 from sources.lib.cogs.domain_fixer import DomainFixerCog
 from sources.lib.cogs.guild import GuildCog
 from sources.lib.cogs.messages import MessagesCog
+from sources.lib.cogs.music_links import MusicLinksCog
 from sources.lib.cogs.reminders import RemindersCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
@@ -34,6 +35,7 @@ class MeowBot(Bot):
         await self.add_cog(DomainFixerCog(self))
         await self.add_cog(GuildCog(self))
         await self.add_cog(MessagesCog(self))
+        await self.add_cog(MusicLinksCog(self))
         await self.add_cog(RemindersCog(self))
         await self.add_cog(UserCog(self))
         await self.add_cog(VoiceCog(self))
