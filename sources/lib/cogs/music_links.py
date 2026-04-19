@@ -170,6 +170,11 @@ class MusicLinksCog(commands.Cog):
             return None
 
         snippet = items[0]['snippet']
+
+        # Only convert videos in the Music category (categoryId 10).
+        if snippet.get('categoryId') != '10':
+            return None
+
         title = snippet['title']
         channel_title = snippet.get('channelTitle', '')
 

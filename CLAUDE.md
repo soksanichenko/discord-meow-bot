@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, and guild info commands. Deployed via Ansible + Docker on a remote server.
+A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, and message reminders. Deployed via Ansible + Docker on a remote server.
 
 ## Project Structure
 
@@ -14,19 +14,24 @@ sources/
 ├── lib/
 │   ├── cogs/             # Discord Cogs — one file per feature group
 │   │   ├── admin.py      # ?sync-tree command
-│   │   ├── guild.py      # /info, /list-members, guild event listeners
-│   │   ├── messages.py   # URL domain fixing listener
-│   │   ├── user.py       # /set-timezone, /get-timestamp
+│   │   ├── birthdays.py  # /birthday group + hourly announcement scheduler
+│   │   ├── domain_fixer.py  # /domain-fixer group (admin URL rule management)
+│   │   ├── guild.py      # /server group: info, list-members, timezone, settings
+│   │   ├── messages.py   # URL domain fixing listener (on_message)
+│   │   ├── music_links.py  # /music-links group + cross-platform link conversion
+│   │   ├── reminders.py  # /reminders group (add, list, delete, reschedule)
+│   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
 │   │   └── voice.py      # Voice channel auto-status
 │   ├── commands/         # Reusable command helpers
 │   │   ├── get_timestamp.py
 │   │   └── utils.py
 │   ├── db/
 │   │   ├── __init__.py   # Async engine + session factory
-│   │   ├── models.py     # SQLAlchemy ORM: Guild, User
+│   │   ├── models.py     # SQLAlchemy ORM models
 │   │   ├── utils.py      # DB helper utilities
 │   │   ├── crud/base.py  # Generic CRUD (get, create, update, delete, upsert)
-│   │   ├── operations/   # Domain-specific: users.py, guilds.py
+│   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
+│   │   │                 #   music_links.py, reminders.py
 │   │   └── alembic/      # Migrations
 │   ├── on_message/
 │   │   └── domains_fixer.py  # URL rewriting logic
@@ -57,8 +62,12 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `DB_HOST` | PostgreSQL host |
 | `DB_DATABASE` | Database name |
 | `DB_PORT` | PostgreSQL port (default: 5432) |
+| `BIRTHDAY_IMAGES_DIR` | Local path for stored birthday images (default: `/tmp/meow-bot-images`) |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (music link conversion) |
+| `SPOTIFY_API_CLIENT_ID` | Spotify Web API client ID |
+| `SPOTIFY_API_CLIENT_SECRET` | Spotify Web API client secret |
 
-Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from these variables.
+Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from the DB_* variables.
 
 ## Logging
 
@@ -82,7 +91,12 @@ Rules:
 `sources/lib/db/models.py`:
 - `Guild(id: BigInteger PK, name: Text)`
 - `User(id: BigInteger PK, name: Text, timezone: Text)`
-- `DomainFixer(source_domain: Text PK, replacement_domain: Text, override_subdomain: Text nullable)` — URL replacement rules; `override_subdomain=NULL` keeps the original subdomain
+- `DomainFixer(id PK, source_domain, replacement_domain, override_subdomain nullable)` — URL replacement rules; `override_subdomain=NULL` keeps the original subdomain
+- `GuildDomainFixer(guild_id FK, domain_fixer_id FK)` — many-to-many junction
+- `GuildSettings(guild_id PK FK, birthday_channel_id, birthday_role_id, timezone, birthday_message, birthday_image_path)` — per-guild bot config
+- `GuildMemberBirthday(guild_id+user_id PK, birthday_day, birthday_month, birth_year nullable, last_announced_year nullable)` — per-guild birthday records
+- `MusicLinksChannel(guild_id+channel_id PK FK)` — channels where music link conversion is active
+- `Reminder(id PK, user_id, channel_id, message_url, message_content, note, remind_at, created_at, is_sent)` — scheduled reminders
 
 ### Migrations
 
@@ -110,6 +124,29 @@ await update_db_entity_or_create(session, User, {'id': discord_id}, {'name': nam
 ```
 
 Domain-specific wrappers live in `sources/lib/db/operations/`.
+
+## Command Structure
+
+| Command | Cog | Description |
+|---|---|---|
+| `/birthday set/remove/view/list` | birthdays.py | Manage own birthday |
+| `/birthday channel-set/remove` | birthdays.py | Set announcement channel (admin) |
+| `/birthday role-set/remove` | birthdays.py | Set birthday role (admin) |
+| `/birthday message-set/remove` | birthdays.py | Custom announcement message (admin) |
+| `/birthday image-set/remove` | birthdays.py | Custom announcement image (admin) |
+| `/birthday preview` | birthdays.py | Preview birthday announcement (admin) |
+| `/birthday force` | birthdays.py | Set birthday for another user (admin) |
+| `/birthday purge` | birthdays.py | Remove birthday for another user (admin) |
+| `/server info` | guild.py | Guild info |
+| `/server list-members` | guild.py | List members |
+| `/server timezone-set/remove` | guild.py | Guild fallback timezone (admin) |
+| `/server settings` | guild.py | Show guild timezone (admin) |
+| `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
+| `/reminders add/list/delete/reschedule` | reminders.py | Message reminders |
+| `/get-timestamp` | user.py | Generate Discord timestamp |
+| `/my-settings` | user.py | Show personal timezone |
+| `/force-timezone` | user.py | Set timezone for another user (admin) |
+| `/domain-fixer ...` | domain_fixer.py | URL domain rules (admin) |
 
 ## Adding a New Feature
 
@@ -139,7 +176,7 @@ python sources/scripts/main.py
 
 ## Deployment
 
-Ansible-based, targets `zelgray.work` inventory. Secrets are Ansible Vault-encrypted in `ansible/inventories/zelgray.work/group_vars/all.yml`.
+Ansible-based, targets `zelgray.work` inventory. Secrets are managed via **Bitwarden Secrets Manager** (Ansible BSM lookup plugin) — not ansible-vault.
 
 ```bash
 # Deploy
@@ -152,7 +189,9 @@ Deployment does:
 1. Builds Docker image (AlmaLinux 10 + Python 3.12)
 2. Starts container with startup sequence: `create_db.py` → `alembic upgrade head` → `main.py`
 3. Log driver: `journald`; restart policy: `always`
-4. Sources mounted read-only at `/opt/docker/volumes/meow-bot/sources`
+4. Bind mounts:
+   - `sources/` → `/code/sources` (read-only)
+   - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
 
 ## No Tests
 
@@ -163,9 +202,12 @@ There is no test suite. When adding logic that can be tested without Discord, co
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.py` | v2.7.1 (git) | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.43 | ORM |
-| `asyncpg` | 0.30.0 | Async PostgreSQL driver |
-| `alembic` | 1.16.5 | DB migrations |
-| `pydantic-settings` | 2.10.1 | Config from env vars |
-| `tldextract` | 5.3.0 | URL domain extraction |
-| `dateparser` | git/master | Natural language date parsing |
+| `SQLAlchemy[asyncio]` | 2.0.48 | ORM |
+| `asyncpg` | 0.31.0 | Async PostgreSQL driver |
+| `alembic` | 1.18.4 | DB migrations |
+| `pydantic-settings` | 2.13.1 | Config from env vars |
+| `tldextract` | 5.3.1 | URL domain extraction |
+| `dateparser` | 1.4.0 | Natural language date parsing |
+| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery) |
+| `aiohttp` | 3.13.5 | HTTP client (YouTube API, Spotify API) |
+| `psycopg2-binary` | 2.9.11 | Sync PostgreSQL driver (alembic migrations) |
