@@ -1,23 +1,88 @@
 """Guild cog"""
 
 import discord
+import pytz
 from discord import Color, app_commands
 from discord.ext import commands
 
-from sources.lib.commands.get_timestamp import role_autocomplete
+from sources.lib.commands.get_timestamp import autocomplete_timezone, role_autocomplete
+from sources.lib.db.operations.birthdays import get_guild_settings, upsert_guild_settings
 from sources.lib.db.operations.guilds import delete_guild, upsert_guild
 
 
 class GuildCog(commands.Cog):
     """Guild-related commands and listeners."""
 
+    server = app_commands.Group(
+        name='server',
+        description='Server configuration',
+    )
+
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(
-        name='info',
-        description='Get info about your server',
-    )
+    @server.command(name='settings', description='View current server configuration')
+    @app_commands.default_permissions(manage_guild=True)
+    async def server_settings(self, interaction: discord.Interaction) -> None:
+        """Display all bot settings configured for this server.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        settings = await get_guild_settings(interaction.guild_id)
+
+        embed = discord.Embed(title='Server settings', colour=discord.Colour.blurple())
+
+        timezone_value = settings.timezone if settings and settings.timezone else '*not set*'
+        embed.add_field(name='Timezone', value=timezone_value, inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @server.command(name='timezone-set', description='Set the server timezone')
+    @app_commands.describe(timezone='Timezone name, e.g. Europe/Kyiv, America/New_York')
+    @app_commands.autocomplete(timezone=autocomplete_timezone)
+    @app_commands.default_permissions(manage_guild=True)
+    async def timezone_set(
+        self,
+        interaction: discord.Interaction,
+        timezone: str,
+    ) -> None:
+        """Set the guild-level timezone used as fallback for birthday announcements.
+
+        Args:
+            interaction: The Discord interaction.
+            timezone: A pytz timezone name.
+        """
+        try:
+            pytz.timezone(timezone)
+        except pytz.UnknownTimeZoneError:
+            await interaction.response.send_message(
+                '**%s** is not a valid timezone.' % timezone,
+                ephemeral=True,
+            )
+            return
+
+        await upsert_guild_settings(interaction.guild_id, timezone=timezone)
+        await interaction.response.send_message(
+            'Server timezone set to **%s**.' % timezone,
+            ephemeral=True,
+        )
+
+    @server.command(name='timezone-remove', description='Remove the configured server timezone')
+    @app_commands.default_permissions(manage_guild=True)
+    async def timezone_remove(self, interaction: discord.Interaction) -> None:
+        """Clear the guild-level timezone.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        await upsert_guild_settings(interaction.guild_id, timezone=None)
+        await interaction.response.send_message(
+            'Server timezone has been removed.',
+            ephemeral=True,
+        )
+
+    @server.command(name='info', description='Get info about your server')
     async def info(self, interaction: discord.Interaction) -> None:
         """Get info about your server."""
         guild = interaction.guild
@@ -55,10 +120,7 @@ class GuildCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed_var, ephemeral=True)
 
-    @app_commands.command(
-        name='list-members',
-        description='List of a role members',
-    )
+    @server.command(name='list-members', description='List of a role members')
     @app_commands.autocomplete(role=role_autocomplete)
     async def list_members(self, interaction: discord.Interaction, role: str) -> None:
         """Print a role members."""

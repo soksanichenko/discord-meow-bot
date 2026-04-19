@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, SmallInteger, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -70,6 +70,37 @@ class GuildDomainFixer(Base):
     domain_fixer_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('domain_fixers.id', ondelete='CASCADE'), primary_key=True,
     )
+
+
+class GuildSettings(Base):
+    """Per-guild bot configuration (birthday channel, birthday role, etc.)."""
+
+    __tablename__ = 'guild_settings'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+    )
+    birthday_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    birthday_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    birthday_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    birthday_image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class GuildMemberBirthday(Base):
+    """A birthday record scoped to a guild — one user can have different birthdays per server."""
+
+    __tablename__ = 'guild_member_birthdays'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    birthday_day: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    birthday_month: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    birth_year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Tracks the last calendar year an announcement was sent to avoid duplicates.
+    last_announced_year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
 
 class Reminder(Base):

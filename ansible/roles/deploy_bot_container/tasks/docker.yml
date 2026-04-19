@@ -78,10 +78,15 @@
             target: "/code/sources"
             read_only: yes
             type: bind
+          - source: "{{ docker_lib_folder }}/{{ docker_volumes['images']['path'] }}"
+            target: "/code/images"
+            read_only: no
+            type: bind
         networks:
           - name: "{{ docker_network }}"
         env:
           DISCORD_TOKEN: "{{ discord_token }}"
+          BIRTHDAY_IMAGES_DIR: "/code/images"
           DB_LOGIN: "{{ db_login }}"
           DB_PASSWORD: "{{ db_password }}"
           DB_HOST: "{{ db_host }}"

@@ -33,6 +33,7 @@ class Config(BaseSettings):
     __db: DBConfig = DBConfig()
 
     discord_token: str
+    birthday_images_dir: str = '/tmp/meow-bot-images'
     sync_db_url: str = (
         f'postgresql+psycopg2://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

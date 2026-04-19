@@ -67,7 +67,7 @@ class RemindersCog(commands.Cog):
             RemindModal(scheduler=self.scheduler, bot=self.bot, source_message=message)
         )
 
-    @app_commands.command(name='remind', description='Set a reminder without a specific message')
+    @reminders.command(name='add', description='Set a reminder')
     @app_commands.describe(
         when='When to remind you, e.g. "in 1 hour", "tomorrow 9am", "25 mar 15:00"',
         note='Optional note to include in the reminder',

@@ -3,5 +3,7 @@ docker_lib_folder: "/opt/docker"
 docker_volumes:
   sources:
     path: "volumes/meow-bot/sources"
+  images:
+    path: "volumes/meow-bot/images"
 docker_network: "active"
 ...
