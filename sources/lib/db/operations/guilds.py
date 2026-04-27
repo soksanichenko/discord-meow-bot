@@ -1,7 +1,10 @@
 """Operations with DB table `guilds`"""
 
 from sources.lib.db import AsyncSession
-from sources.lib.db.crud.base import delete_db_entity_if_exists, update_db_entity_or_create
+from sources.lib.db.crud.base import (
+    delete_db_entity_if_exists,
+    update_db_entity_or_create,
+)
 from sources.lib.db.models import Guild
 
 

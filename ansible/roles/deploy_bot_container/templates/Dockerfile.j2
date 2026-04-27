@@ -2,7 +2,7 @@ FROM almalinux:10
 
 ENV PYTHONPATH="."
 
-RUN dnf install python3 git libpq-devel python3-devel -y
+RUN dnf install epel-release -y && dnf install python3 git libpq-devel python3-devel ffmpeg-free -y
 RUN dnf group install 'Development Tools' -y
 RUN mkdir -p /code/sources
 WORKDIR /code

@@ -1,8 +1,7 @@
 """Domains fixer module"""
 
 from copy import copy
-from urllib.parse import ParseResult
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import discord
 from tldextract import extract

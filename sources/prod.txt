@@ -3,9 +3,10 @@ APScheduler==3.11.2
 alembic==1.18.4
 asyncpg==0.31.0
 dateparser==1.4.0
-discord.py==2.7.1
+discord.py[voice]==2.7.1
 psycopg2-binary==2.9.11
 pydantic-settings==2.13.1
 SQLAlchemy-Utils==0.42.1
 SQLAlchemy[asyncio]==2.0.48
 tldextract==5.3.1
+yt-dlp==2025.3.31

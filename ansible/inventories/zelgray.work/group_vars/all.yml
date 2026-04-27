@@ -3,6 +3,8 @@ discord_token: "{{ lookup('bitwarden.secrets.lookup', '76922d91-098e-4b58-b669-b
 youtube_api_key: "{{ lookup('bitwarden.secrets.lookup', '4b3f645d-8070-43a3-af79-b43100a09838') }}"
 spotify_api_client_id: "{{ lookup('bitwarden.secrets.lookup', '58046f9f-727c-4df0-9164-b43100a23aa2') }}"
 spotify_api_client_secret: "{{ lookup('bitwarden.secrets.lookup', '8e024801-9adc-4f40-8d55-b43100a24fb1') }}"
+lastfm_api_key: "{{ lookup('bitwarden.secrets.lookup', '956a2d90-1c95-4207-8767-b43301251872') }}"
+lastfm_shared_secret: "{{ lookup('bitwarden.secrets.lookup', 'b8981500-0413-4995-94c3-b4330125288d') }}"
 db_password: "{{ lookup('bitwarden.secrets.lookup', 'c3f44971-a7af-4b62-af36-b4310084dcc0') }}"
 db_login: "meow-bot"
 db_host: postgresql

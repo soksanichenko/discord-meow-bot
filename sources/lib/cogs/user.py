@@ -64,7 +64,7 @@ class UserCog(commands.Cog):
         name = db_user.name if db_user else user.name
         await upsert_user(user_id=user.id, name=name, timezone=timezone)
         await interaction.response.send_message(
-            'Timezone for **%s** has been set to **%s**.' % (user.display_name, timezone),
+            f'Timezone for **{user.display_name}** has been set to **{timezone}**.',
             ephemeral=True,
         )
 

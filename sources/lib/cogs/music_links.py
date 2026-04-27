@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import base64
 import re
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import discord
@@ -18,6 +15,7 @@ from sources.lib.db.operations.music_links import (
     get_allowed_channels,
     remove_allowed_channel,
 )
+from sources.lib.spotify import SpotifyClient, clean_yt_title
 from sources.lib.utils import Logger
 
 _YT_PATTERN = re.compile(
@@ -30,38 +28,6 @@ _YT_MUSIC_PATTERN = re.compile(
 _SPOTIFY_PATTERN = re.compile(
     r'https?://open\.spotify\.com/track/([a-zA-Z0-9]+)'
 )
-
-# Strips common noise from YouTube video titles before searching Spotify.
-_TITLE_NOISE_RE = re.compile(
-    r'[\(\[][^\)\]]*'
-    r'(?:official|video|audio|lyrics?|lyric|hd|4k|mv|music|visuali[sz]er|clip)'
-    r'[^\)\]]*[\)\]]',
-    re.IGNORECASE,
-)
-
-
-def _clean_yt_title(title: str) -> str:
-    """Remove common YouTube title noise like '(Official Video)'.
-
-    Args:
-        title: Raw YouTube video title.
-
-    Returns:
-        Cleaned title suitable for Spotify search.
-    """
-    return _TITLE_NOISE_RE.sub('', title).strip(' -–—|')
-
-
-@dataclass
-class _SpotifyToken:
-    """Cached Spotify access token."""
-
-    access_token: str
-    expires_at: datetime = field(default_factory=lambda: datetime.min.replace(tzinfo=timezone.utc))
-
-    def is_valid(self) -> bool:
-        """Return True if the token has not expired yet."""
-        return datetime.now(tz=timezone.utc) < self.expires_at
 
 
 class MusicLinksCog(commands.Cog):
@@ -84,11 +50,12 @@ class MusicLinksCog(commands.Cog):
         self.bot = bot
         self._logger = Logger()
         self._session: aiohttp.ClientSession | None = None
-        self._spotify_token: _SpotifyToken | None = None
+        self._spotify: SpotifyClient | None = None
 
     async def cog_load(self) -> None:
         """Open the shared HTTP session and warn if credentials are missing."""
         self._session = aiohttp.ClientSession()
+        self._spotify = SpotifyClient(self._session)
         if not config.youtube_api_key:
             self._logger.warning('YOUTUBE_API_KEY is not set — music link conversion disabled')
         if not config.spotify_api_client_id or not config.spotify_api_client_secret:
@@ -99,45 +66,6 @@ class MusicLinksCog(commands.Cog):
         if self._session:
             await self._session.close()
             self._session = None
-
-    # ------------------------------------------------------------------
-    # Spotify auth
-    # ------------------------------------------------------------------
-
-    async def _get_spotify_token(self) -> str | None:
-        """Return a valid Spotify access token, refreshing it if needed.
-
-        Returns:
-            The access token string, or None if authentication failed.
-        """
-        if self._spotify_token and self._spotify_token.is_valid():
-            return self._spotify_token.access_token
-
-        credentials = base64.b64encode(
-            ('%s:%s' % (config.spotify_api_client_id, config.spotify_api_client_secret)).encode()
-        ).decode()
-
-        try:
-            async with self._session.post(
-                'https://accounts.spotify.com/api/token',
-                headers={'Authorization': 'Basic %s' % credentials},
-                data={'grant_type': 'client_credentials'},
-            ) as resp:
-                if resp.status != 200:
-                    self._logger.warning('Spotify token request failed with status %d', resp.status)
-                    return None
-                data = await resp.json()
-        except aiohttp.ClientError as exc:
-            self._logger.warning('Spotify token request error: %s', exc)
-            return None
-
-        token = data['access_token']
-        expires_in = data.get('expires_in', 3600)
-        self._spotify_token = _SpotifyToken(
-            access_token=token,
-            expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=expires_in - 60),
-        )
-        return token
 
     # ------------------------------------------------------------------
     # Conversion logic
@@ -180,16 +108,16 @@ class MusicLinksCog(commands.Cog):
 
         # Topic channels (auto-generated) have clean titles already.
         if not channel_title.endswith('- Topic'):
-            title = _clean_yt_title(title)
+            title = clean_yt_title(title)
 
-        token = await self._get_spotify_token()
+        token = await self._spotify.get_token()
         if not token:
             return None
 
         try:
             async with self._session.get(
                 'https://api.spotify.com/v1/search',
-                headers={'Authorization': 'Bearer %s' % token},
+                headers={'Authorization': f'Bearer {token}'},
                 params={'q': title, 'type': 'track', 'limit': 1},
             ) as resp:
                 if resp.status != 200:
@@ -215,14 +143,14 @@ class MusicLinksCog(commands.Cog):
         Returns:
             YouTube Music URL, or None if no match was found.
         """
-        token = await self._get_spotify_token()
+        token = await self._spotify.get_token()
         if not token:
             return None
 
         try:
             async with self._session.get(
-                'https://api.spotify.com/v1/tracks/%s' % track_id,
-                headers={'Authorization': 'Bearer %s' % token},
+                f'https://api.spotify.com/v1/tracks/{track_id}',
+                headers={'Authorization': f'Bearer {token}'},
             ) as resp:
                 if resp.status != 200:
                     self._logger.warning('Spotify tracks API returned %d', resp.status)
@@ -234,7 +162,7 @@ class MusicLinksCog(commands.Cog):
 
         artist = data['artists'][0]['name']
         name = data['name']
-        query = '%s %s' % (artist, name)
+        query = f'{artist} {name}'
 
         try:
             async with self._session.get(
@@ -261,7 +189,7 @@ class MusicLinksCog(commands.Cog):
             return None
 
         video_id = items[0]['id']['videoId']
-        return 'https://music.youtube.com/watch?v=%s' % video_id
+        return f'https://music.youtube.com/watch?v={video_id}'
 
     # ------------------------------------------------------------------
     # Listener
@@ -291,21 +219,21 @@ class MusicLinksCog(commands.Cog):
         if yt_music_match:
             result = await self._youtube_to_spotify(yt_music_match.group(1))
             if result:
-                await message.reply('This track is also available on Spotify:\n%s' % result, mention_author=False)
+                await message.reply(f'This track is also available on Spotify:\n{result}', mention_author=False)
             return
 
         yt_match = _YT_PATTERN.search(content)
         if yt_match:
             result = await self._youtube_to_spotify(yt_match.group(1))
             if result:
-                await message.reply('This track is also available on Spotify:\n%s' % result, mention_author=False)
+                await message.reply(f'This track is also available on Spotify:\n{result}', mention_author=False)
             return
 
         spotify_match = _SPOTIFY_PATTERN.search(content)
         if spotify_match:
             result = await self._spotify_to_youtube(spotify_match.group(1))
             if result:
-                await message.reply('This track is also available on YouTube Music:\n%s' % result, mention_author=False)
+                await message.reply(f'This track is also available on YouTube Music:\n{result}', mention_author=False)
 
     # ------------------------------------------------------------------
     # Admin commands
@@ -328,12 +256,12 @@ class MusicLinksCog(commands.Cog):
         added = await add_allowed_channel(interaction.guild_id, channel.id)
         if not added:
             await interaction.response.send_message(
-                '%s is already in the allowlist.' % channel.mention,
+                f'{channel.mention} is already in the allowlist.',
                 ephemeral=True,
             )
             return
         await interaction.response.send_message(
-            'Music link conversion is now active in %s.' % channel.mention,
+            f'Music link conversion is now active in {channel.mention}.',
             ephemeral=True,
         )
 
@@ -354,12 +282,12 @@ class MusicLinksCog(commands.Cog):
         removed = await remove_allowed_channel(interaction.guild_id, channel.id)
         if not removed:
             await interaction.response.send_message(
-                '%s is not in the allowlist.' % channel.mention,
+                f'{channel.mention} is not in the allowlist.',
                 ephemeral=True,
             )
             return
         await interaction.response.send_message(
-            '%s removed from the allowlist.' % channel.mention,
+            f'{channel.mention} removed from the allowlist.',
             ephemeral=True,
         )
 
@@ -382,10 +310,10 @@ class MusicLinksCog(commands.Cog):
         mentions = [
             (interaction.guild.get_channel(cid).mention
              if interaction.guild.get_channel(cid)
-             else '*unknown channel (%d)*' % cid)
+             else f'*unknown channel ({cid})*')
             for cid in allowed
         ]
         await interaction.response.send_message(
-            'Music link conversion is active in:\n%s' % '\n'.join(mentions),
+            f'Music link conversion is active in:\n{chr(10).join(mentions)}',
             ephemeral=True,
         )

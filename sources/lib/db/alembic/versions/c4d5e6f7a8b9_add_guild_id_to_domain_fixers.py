@@ -10,17 +10,16 @@ primary key (guild_id, source_domain) and a FK to guilds.
 Default rules are seeded for every guild already present in the guilds table.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = 'c4d5e6f7a8b9'
-down_revision: Union[str, None] = 'b3c4d5e6f7a8'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = 'b3c4d5e6f7a8'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _DEFAULT_FIXERS = [
     {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',    'override_subdomain': None},

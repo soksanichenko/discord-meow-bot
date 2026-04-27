@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -50,11 +50,11 @@ def _build_reminder_embed(reminder: Reminder) -> discord.Embed:
     if not reminder.message_content and not reminder.message_url and not reminder.note:
         embed.description = 'You asked me to remind you — here I am!'
 
-    embed.set_footer(text='Set on %s' % reminder.created_at.strftime('%d %b %Y at %H:%M UTC'))
+    embed.set_footer(text=f"Set on {reminder.created_at.strftime('%d %b %Y at %H:%M UTC')}")
     return embed
 
 
-async def _fire_reminder(reminder_id: int, bot: Bot, scheduler: 'ReminderScheduler') -> None:
+async def _fire_reminder(reminder_id: int, bot: Bot, scheduler: ReminderScheduler) -> None:
     """Fetch a reminder from DB, send a DM to the user, and mark it as sent.
 
     Falls back to the original channel if the DM cannot be delivered.
@@ -168,9 +168,9 @@ class ReminderScheduler:
         """
         run_date = reminder.remind_at
         if run_date.tzinfo is None:
-            run_date = run_date.replace(tzinfo=timezone.utc)
+            run_date = run_date.replace(tzinfo=UTC)
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         if run_date <= now:
             run_date = now + timedelta(seconds=_OVERDUE_DELAY_SECONDS)
 
@@ -179,7 +179,7 @@ class ReminderScheduler:
             trigger='date',
             run_date=run_date,
             args=[reminder.id, bot, self],
-            id='reminder_%d' % reminder.id,
+            id=f'reminder_{reminder.id}',
             replace_existing=True,
         )
         self._logger.debug('Scheduled reminder %d for %s', reminder.id, run_date.isoformat())
@@ -190,7 +190,7 @@ class ReminderScheduler:
         Args:
             reminder_id: The reminder ID whose job should be removed.
         """
-        job = self._scheduler.get_job('reminder_%d' % reminder_id)
+        job = self._scheduler.get_job(f'reminder_{reminder_id}')
         if job is not None:
             job.remove()
             self._logger.debug('Cancelled reminder job %d', reminder_id)

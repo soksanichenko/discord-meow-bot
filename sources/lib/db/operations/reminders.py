@@ -1,6 +1,6 @@
 """Operations with DB table `reminders`"""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -49,7 +49,7 @@ async def create_reminder(
         message_url=message_url,
         message_content=message_content,
         note=note,
-        created_at=datetime.now(tz=timezone.utc),
+        created_at=datetime.now(tz=UTC),
         is_sent=False,
     )
     async with AsyncSession() as session:

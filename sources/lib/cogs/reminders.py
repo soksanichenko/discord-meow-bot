@@ -1,6 +1,6 @@
 """Reminders cog — set and manage personal reminders."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
@@ -98,7 +98,7 @@ class RemindersCog(commands.Cog):
             )
             return
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         if remind_at <= now:
             await interaction.response.send_message(
                 'That time appears to be in the past. Please enter a future date/time.',
@@ -109,7 +109,7 @@ class RemindersCog(commands.Cog):
         delta = remind_at - now
         if delta.days > MAX_FUTURE_DAYS:
             await interaction.response.send_message(
-                'Reminders cannot be set more than %d days in the future.' % MAX_FUTURE_DAYS,
+                f'Reminders cannot be set more than {MAX_FUTURE_DAYS} days in the future.',
                 ephemeral=True,
             )
             return
@@ -124,7 +124,7 @@ class RemindersCog(commands.Cog):
 
         ts = discord.utils.format_dt(remind_at, style='F')
         await interaction.response.send_message(
-            "Got it! I'll remind you %s." % ts,
+            f"Got it! I'll remind you {ts}.",
             ephemeral=True,
         )
 
@@ -148,20 +148,17 @@ class RemindersCog(commands.Cog):
             colour=discord.Colour.blurple(),
         )
         for reminder in user_reminders:
-            name = '#%d — %s' % (
-                reminder.id,
-                discord.utils.format_dt(reminder.remind_at, style='f'),
-            )
+            name = f'#{reminder.id} — {discord.utils.format_dt(reminder.remind_at, style="f")}'
             parts = []
             if reminder.message_url:
-                parts.append('[Original message](%s)' % reminder.message_url)
+                parts.append(f'[Original message]({reminder.message_url})')
             elif reminder.message_content:
                 snippet = reminder.message_content[:100]
                 if len(reminder.message_content) > 100:
                     snippet += '...'
-                parts.append('> %s' % snippet)
+                parts.append(f'> {snippet}')
             if reminder.note:
-                parts.append('Note: %s' % reminder.note)
+                parts.append(f'Note: {reminder.note}')
             embed.add_field(
                 name=name,
                 value='\n'.join(parts) if parts else '*(no note)*',
@@ -188,9 +185,9 @@ class RemindersCog(commands.Cog):
         choices = []
         for reminder in user_reminders:
             ts = reminder.remind_at.strftime('%d %b %Y %H:%M')
-            label = '#%d: %s' % (reminder.id, ts)
+            label = f'#{reminder.id}: {ts}'
             if reminder.note:
-                label += ' — %s' % reminder.note[:30]
+                label += f' — {reminder.note[:30]}'
             choices.append(app_commands.Choice(name=label, value=reminder.id))
         return choices[:25]
 
@@ -211,7 +208,7 @@ class RemindersCog(commands.Cog):
         deleted = await delete_reminder(reminder_id, interaction.user.id)
         if not deleted:
             await interaction.response.send_message(
-                'Reminder #%d was not found or does not belong to you.' % reminder_id,
+                f'Reminder #{reminder_id} was not found or does not belong to you.',
                 ephemeral=True,
             )
             return
@@ -221,6 +218,6 @@ class RemindersCog(commands.Cog):
             'Reminder %d cancelled by user %d', reminder_id, interaction.user.id
         )
         await interaction.response.send_message(
-            'Reminder #%d has been cancelled.' % reminder_id,
+            f'Reminder #{reminder_id} has been cancelled.',
             ephemeral=True,
         )

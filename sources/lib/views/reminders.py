@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import dateparser
@@ -63,7 +63,7 @@ class RemindModal(discord.ui.Modal):
 
     def __init__(
         self,
-        scheduler: 'ReminderScheduler',
+        scheduler: ReminderScheduler,
         bot: commands.Bot,
         source_message: discord.Message | None = None,
         message_url: str | None = None,
@@ -107,7 +107,7 @@ class RemindModal(discord.ui.Modal):
             )
             return
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         if remind_at <= now:
             await interaction.response.send_message(
                 'That time appears to be in the past. Please enter a future date/time.',
@@ -118,7 +118,7 @@ class RemindModal(discord.ui.Modal):
         delta = remind_at - now
         if delta.days > MAX_FUTURE_DAYS:
             await interaction.response.send_message(
-                'Reminders cannot be set more than %d days in the future.' % MAX_FUTURE_DAYS,
+                f'Reminders cannot be set more than {MAX_FUTURE_DAYS} days in the future.',
                 ephemeral=True,
             )
             return
@@ -142,7 +142,7 @@ class RemindModal(discord.ui.Modal):
 
         ts = discord.utils.format_dt(remind_at, style='F')
         await interaction.response.send_message(
-            "Got it! I'll remind you %s." % ts,
+            f"Got it! I'll remind you {ts}.",
             ephemeral=True,
         )
 
@@ -152,7 +152,7 @@ class RescheduleView(discord.ui.View):
 
     def __init__(
         self,
-        scheduler: 'ReminderScheduler',
+        scheduler: ReminderScheduler,
         bot: commands.Bot,
         message_url: str | None = None,
         message_content: str | None = None,

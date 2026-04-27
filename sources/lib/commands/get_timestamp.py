@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import typing
 from datetime import datetime
 
 import dateparser
@@ -13,7 +12,7 @@ import pytz
 async def autocomplete_timezone(
     interaction: discord.Interaction,  # pylint: disable=W0613
     user_timezone: str,
-) -> typing.List[discord.app_commands.Choice[str]]:
+) -> list[discord.app_commands.Choice[str]]:
     """Autocomplete timezone for a user"""
     return [
         discord.app_commands.Choice(name=timezone, value=timezone)
@@ -38,8 +37,8 @@ def parse_and_validate(
     date: str,
     time: str,
     interaction: discord.Interaction,
-    timezone: typing.Optional[str] = None,
-) -> typing.Optional[datetime]:
+    timezone: str | None = None,
+) -> datetime | None:
     """Parse and validate date and time text"""
     options = {
         'locales': [interaction.locale.value],

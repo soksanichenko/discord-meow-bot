@@ -29,9 +29,8 @@ async def require_timezone(
     if db_user is None:
         command = await get_command(bot.tree, 'set-timezone')
         await interaction.response.send_message(
-            'User **%s** does not have a timezone.\n'
-            'Please, use command </set-timezone:%s> to set it'
-            % (interaction.user.display_name, command.id),
+            f'User **{interaction.user.display_name}** does not have a timezone.\n'
+            f'Please, use command </set-timezone:{command.id}> to set it',
             ephemeral=True,
         )
         return None

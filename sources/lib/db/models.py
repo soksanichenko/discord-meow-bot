@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, SmallInteger, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -16,7 +25,7 @@ class Guild(Base):
     there is the bot is connected
     """
 
-    __tablename__ = "guilds"
+    __tablename__ = 'guilds'
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(Text)
@@ -27,7 +36,7 @@ class User(Base):
     A tables describes of the discord users
     """
 
-    __tablename__ = "users"
+    __tablename__ = 'users'
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(Text)
     timezone: Mapped[str] = mapped_column(Text)
@@ -115,6 +124,19 @@ class MusicLinksChannel(Base):
         BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
     )
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+
+class GuildMusicPlayerSettings(Base):
+    """Persistent per-guild music player configuration."""
+
+    __tablename__ = 'guild_music_player_settings'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+    )
+    volume: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=100)
+    autoplay: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    random_order: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class Reminder(Base):

@@ -141,6 +141,9 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/server list-members` | guild.py | List members |
 | `/server timezone-set/remove` | guild.py | Guild fallback timezone (admin) |
 | `/server settings` | guild.py | Show guild timezone (admin) |
+| `/music-player play/skip/pause/resume/stop/disconnect` | music_player.py | Playback control |
+| `/music-player queue/song` | music_player.py | Queue and current track info |
+| `/music-player autoplay/random/shuffle/volume` | music_player.py | Playback settings |
 | `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
 | `/reminders add/list/delete/reschedule` | reminders.py | Message reminders |
 | `/get-timestamp` | user.py | Generate Discord timestamp |

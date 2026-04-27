@@ -5,9 +5,8 @@ Alembic env file
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy.engine import Connection
-
 from alembic import context
+from sqlalchemy.engine import Connection
 
 from sources.config import config as general_config
 from sources.lib.db import async_engine
@@ -51,7 +50,7 @@ def run_migrations_offline() -> None:
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
+        dialect_opts={'paramstyle': 'named'},
     )
 
     with context.begin_transaction():  # pylint: disable=E1101

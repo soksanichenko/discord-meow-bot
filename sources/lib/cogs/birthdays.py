@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import discord
@@ -39,7 +39,7 @@ _CONTENT_TYPE_TO_EXT = {
     'image/webp': 'webp',
 }
 _DEFAULT_MESSAGE = '🎂 Happy birthday, {mention}! 🎉'
-_DEFAULT_MESSAGE_WITH_AGE = '🎂 Happy birthday, {mention}! You\'re turning **{age}** today! 🎉'
+_DEFAULT_MESSAGE_WITH_AGE = "🎂 Happy birthday, {mention}! You're turning **{age}** today! 🎉"
 
 
 
@@ -60,7 +60,7 @@ class _SafeFormatDict(dict):
     """dict subclass that returns the key placeholder for missing keys."""
 
     def __missing__(self, key: str) -> str:
-        return '{%s}' % key
+        return f'{{{key}}}'
 
 
 def _format_message(
@@ -101,7 +101,7 @@ def _format_ordinal(n: int) -> str:
         suffix = 'th'
     else:
         suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
-    return '%d%s' % (n, suffix)
+    return f'{n}{suffix}'
 
 
 def _validate_date(day: int, month: int, year: int | None) -> bool:
@@ -168,7 +168,7 @@ class BirthdaysCog(commands.Cog):
 
         Pure data logic — no Discord delivery calls.
         """
-        now_utc = datetime.now(tz=timezone.utc)
+        now_utc = datetime.now(tz=UTC)
         events: list[_BirthdayEvent] = []
 
         for guild in self.bot.guilds:
@@ -217,7 +217,7 @@ class BirthdaysCog(commands.Cog):
         Args:
             events: List of birthday events produced by _get_todays_birthday_events.
         """
-        today = datetime.now(tz=timezone.utc)
+        today = datetime.now(tz=UTC)
 
         for event in events:
             guild = self.bot.get_guild(event.guild_id)
@@ -290,8 +290,8 @@ class BirthdaysCog(commands.Cog):
         if image_path_str:
             image_path = Path(image_path_str)
             if image_path.exists():
-                file = discord.File(image_path, filename='birthday%s' % image_path.suffix)
-                embed.set_image(url='attachment://birthday%s' % image_path.suffix)
+                file = discord.File(image_path, filename=f'birthday{image_path.suffix}')
+                embed.set_image(url=f'attachment://birthday{image_path.suffix}')
 
         if file:
             await channel.send(embed=embed, file=file)
@@ -300,7 +300,7 @@ class BirthdaysCog(commands.Cog):
 
     async def _remove_expired_birthday_roles(self) -> None:
         """Strip the birthday role from members whose birthday is no longer today."""
-        today = datetime.now(tz=timezone.utc)
+        today = datetime.now(tz=UTC)
 
         for guild in self.bot.guilds:
             settings = await get_guild_settings(guild.id)
@@ -365,7 +365,7 @@ class BirthdaysCog(commands.Cog):
             )
             return
 
-        if year is not None and not (1900 <= year <= datetime.now(tz=timezone.utc).year):
+        if year is not None and not (1900 <= year <= datetime.now(tz=UTC).year):
             await interaction.response.send_message(
                 'Year must be between 1900 and the current year.',
                 ephemeral=True,
@@ -381,12 +381,12 @@ class BirthdaysCog(commands.Cog):
         )
 
         month_name = calendar.month_name[month]
-        date_str = '%d %s' % (day, month_name)
+        date_str = f'{day} {month_name}'
         if year:
-            date_str += ' %d' % year
+            date_str += f' {year}'
 
         await interaction.response.send_message(
-            'Your birthday has been set to **%s** on this server.' % date_str,
+            f'Your birthday has been set to **{date_str}** on this server.',
             ephemeral=True,
         )
 
@@ -429,19 +429,19 @@ class BirthdaysCog(commands.Cog):
             if target == interaction.user:
                 msg = "You don't have a birthday set on this server."
             else:
-                msg = '**%s** has not set a birthday on this server.' % target.display_name
+                msg = f'**{target.display_name}** has not set a birthday on this server.'
             await interaction.response.send_message(msg, ephemeral=True)
             return
 
         month_name = calendar.month_name[bday.birthday_month]
-        date_str = '%d %s' % (bday.birthday_day, month_name)
+        date_str = f'{bday.birthday_day} {month_name}'
         if bday.birth_year:
-            date_str += ' %d' % bday.birth_year
+            date_str += f' {bday.birth_year}'
 
         if target == interaction.user:
-            msg = 'Your birthday on this server is set to **%s**.' % date_str
+            msg = f'Your birthday on this server is set to **{date_str}**.'
         else:
-            msg = "**%s**'s birthday on this server is **%s**." % (target.display_name, date_str)
+            msg = f"**{target.display_name}**'s birthday on this server is **{date_str}**."
 
         await interaction.response.send_message(msg, ephemeral=True)
 
@@ -467,12 +467,12 @@ class BirthdaysCog(commands.Cog):
         lines: list[str] = []
         for bday in birthdays:
             member = interaction.guild.get_member(bday.user_id)
-            name = member.display_name if member else 'Unknown user (%d)' % bday.user_id
+            name = member.display_name if member else f'Unknown user ({bday.user_id})'
             month_name = calendar.month_abbr[bday.birthday_month]
-            date_str = '%d %s' % (bday.birthday_day, month_name)
+            date_str = f'{bday.birthday_day} {month_name}'
             if bday.birth_year:
-                date_str += ' %d' % bday.birth_year
-            lines.append('**%s** — %s' % (name, date_str))
+                date_str += f' {bday.birth_year}'
+            lines.append(f'**{name}** — {date_str}')
 
         # Discord embed field value limit is 1024 chars; split into chunks if needed.
         chunk: list[str] = []
@@ -520,7 +520,7 @@ class BirthdaysCog(commands.Cog):
         """
         await upsert_guild_settings(interaction.guild_id, birthday_channel_id=channel.id)
         await interaction.response.send_message(
-            'Birthday announcements will be posted in %s.' % channel.mention,
+            f'Birthday announcements will be posted in {channel.mention}.',
             ephemeral=True,
         )
 
@@ -554,21 +554,21 @@ class BirthdaysCog(commands.Cog):
         """
         if role.managed or role.is_default():
             await interaction.response.send_message(
-                '**%s** is managed by an integration and cannot be used as a birthday role.' % role.name,
+                f'**{role.name}** is managed by an integration and cannot be used as a birthday role.',
                 ephemeral=True,
             )
             return
 
         if role >= interaction.guild.me.top_role:
             await interaction.response.send_message(
-                "**%s** is at or above the bot's highest role and cannot be assigned." % role.name,
+                f"**{role.name}** is at or above the bot's highest role and cannot be assigned.",
                 ephemeral=True,
             )
             return
 
         await upsert_guild_settings(interaction.guild_id, birthday_role_id=role.id)
         await interaction.response.send_message(
-            '**%s** will be assigned to members on their birthday.' % role.name,
+            f'**{role.name}** will be assigned to members on their birthday.',
             ephemeral=True,
         )
 
@@ -639,7 +639,7 @@ class BirthdaysCog(commands.Cog):
 
         if image.size > _MAX_IMAGE_SIZE:
             await interaction.followup.send(
-                'Image must be 2 MB or smaller (received %.1f MB).' % (image.size / 1024 / 1024),
+                f'Image must be 2 MB or smaller (received {image.size / 1024 / 1024:.1f} MB).',
                 ephemeral=True,
             )
             return
@@ -648,10 +648,10 @@ class BirthdaysCog(commands.Cog):
         ext = _CONTENT_TYPE_TO_EXT[image.content_type]
 
         images_dir = Path(config.birthday_images_dir)
-        for old_file in images_dir.glob('guild_%d_birthday.*' % interaction.guild_id):
+        for old_file in images_dir.glob(f'guild_{interaction.guild_id}_birthday.*'):
             await asyncio.to_thread(old_file.unlink)
 
-        image_path = images_dir / ('guild_%d_birthday.%s' % (interaction.guild_id, ext))
+        image_path = images_dir / f'guild_{interaction.guild_id}_birthday.{ext}'
         await asyncio.to_thread(image_path.write_bytes, data)
 
         await upsert_guild_settings(interaction.guild_id, birthday_image_path=str(image_path))
@@ -700,7 +700,7 @@ class BirthdaysCog(commands.Cog):
         settings = await get_guild_settings(interaction.guild_id)
         bday = await get_guild_member_birthday(interaction.guild_id, target.id)
         birth_year = bday.birth_year if bday else None
-        today = datetime.now(tz=timezone.utc)
+        today = datetime.now(tz=UTC)
 
         template = settings.birthday_message if settings else None
         image_path_str = settings.birthday_image_path if settings else None
@@ -713,15 +713,15 @@ class BirthdaysCog(commands.Cog):
         if image_path_str:
             image_path = Path(image_path_str)
             if image_path.exists():
-                file = discord.File(image_path, filename='birthday%s' % image_path.suffix)
-                embed.set_image(url='attachment://birthday%s' % image_path.suffix)
+                file = discord.File(image_path, filename=f'birthday{image_path.suffix}')
+                embed.set_image(url=f'attachment://birthday{image_path.suffix}')
 
         if file:
             await interaction.followup.send(embed=embed, file=file)
         else:
             await interaction.followup.send(embed=embed)
 
-    @birthday.command(name='force', description="Set a birthday for another member (admin)")
+    @birthday.command(name='force', description='Set a birthday for another member (admin)')
     @app_commands.describe(
         user='The member whose birthday to set',
         day='Day of birth (1–31)',
@@ -753,7 +753,7 @@ class BirthdaysCog(commands.Cog):
             )
             return
 
-        if year is not None and not (1900 <= year <= datetime.now(tz=timezone.utc).year):
+        if year is not None and not (1900 <= year <= datetime.now(tz=UTC).year):
             await interaction.response.send_message(
                 'Year must be between 1900 and the current year.',
                 ephemeral=True,
@@ -769,12 +769,12 @@ class BirthdaysCog(commands.Cog):
         )
 
         month_name = calendar.month_name[month]
-        date_str = '%d %s' % (day, month_name)
+        date_str = f'{day} {month_name}'
         if year:
-            date_str += ' %d' % year
+            date_str += f' {year}'
 
         await interaction.response.send_message(
-            "Birthday for **%s** has been set to **%s**." % (user.display_name, date_str),
+            f'Birthday for **{user.display_name}** has been set to **{date_str}**.',
             ephemeral=True,
         )
 
@@ -795,11 +795,11 @@ class BirthdaysCog(commands.Cog):
         deleted = await remove_guild_member_birthday(interaction.guild_id, user.id)
         if not deleted:
             await interaction.response.send_message(
-                '**%s** does not have a birthday set on this server.' % user.display_name,
+                f'**{user.display_name}** does not have a birthday set on this server.',
                 ephemeral=True,
             )
             return
         await interaction.response.send_message(
-            "Birthday for **%s** has been removed." % user.display_name,
+            f'Birthday for **{user.display_name}** has been removed.',
             ephemeral=True,
         )

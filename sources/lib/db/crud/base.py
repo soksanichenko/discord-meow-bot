@@ -2,7 +2,6 @@
 
 from typing import (
     Any,
-    Type,
 )
 
 from sqlalchemy import select
@@ -13,7 +12,7 @@ from sources.lib.db.models import Base
 
 async def get_db_entity(
     db_session: AsyncSession,
-    table_class: Type[Base],
+    table_class: type[Base],
     **kwargs,
 ):
     """Get a DB entity by the params"""
@@ -21,7 +20,7 @@ async def get_db_entity(
     return (await db_session.scalars(user)).one_or_none()
 
 
-async def create_db_entity(db_session: AsyncSession, table_class: Type[Base], **kwargs):
+async def create_db_entity(db_session: AsyncSession, table_class: type[Base], **kwargs):
     """Add a new DB entity"""
     db_entity = table_class(
         **kwargs,
@@ -53,7 +52,7 @@ async def delete_db_entity(
 
 async def delete_db_entity_if_exists(
     db_session: AsyncSession,
-    table_class: Type[Base],
+    table_class: type[Base],
     **kwargs,
 ):
     """Delete a DB entity if it exists"""
@@ -71,7 +70,7 @@ async def delete_db_entity_if_exists(
 
 async def update_db_entity_or_create(
     db_session: AsyncSession,
-    table_class: Type[Base],
+    table_class: type[Base],
     filters: dict[str, Any],
     updates: dict[str, Any],
 ):
