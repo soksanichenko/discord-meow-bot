@@ -1,10 +1,9 @@
 aiohttp==3.13.5
 APScheduler==3.11.2
 alembic==1.18.4
-asyncpg==0.31.0
+psycopg[binary]==3.3.4
 dateparser==1.4.0
 discord.py==2.7.1
-psycopg2-binary==2.9.12
 pydantic-settings==2.14.1
 SQLAlchemy-Utils==0.42.1
 SQLAlchemy[asyncio]==2.0.49

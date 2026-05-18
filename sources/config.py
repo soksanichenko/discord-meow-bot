@@ -38,11 +38,11 @@ class Config(BaseSettings):
     spotify_api_client_id: str = ''
     spotify_api_client_secret: str = ''
     sync_db_url: str = (
-        f'postgresql+psycopg2://{__db.login}:{__db.password}@'
+        f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
     )
     async_db_url: str = (
-        f'postgresql+asyncpg://{__db.login}:{__db.password}@'
+        f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
     )
 
