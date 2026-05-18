@@ -4,7 +4,7 @@ alembic==1.18.4
 asyncpg==0.31.0
 dateparser==1.4.0
 discord.py==2.7.1
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
 pydantic-settings==2.14.1
 SQLAlchemy-Utils==0.42.1
 SQLAlchemy[asyncio]==2.0.49
