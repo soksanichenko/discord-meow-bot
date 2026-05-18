@@ -1,0 +1,41 @@
+---
+name: Deploy
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and Bitwarden SDK
+        run: pip install ansible bitwarden-sdk
+
+      - name: Install Ansible collections
+        run: >-
+          ansible-galaxy collection install
+          bitwarden.secrets
+          community.docker
+          ansible.posix
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Run deploy
+        working-directory: ansible
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml

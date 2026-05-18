@@ -37,8 +37,8 @@
 
     - name: Copy req.txt for building a docker image
       ansible.builtin.copy:
-        dest: "{{ docker_temp_directory.path }}/prod.txt"
-        src: "../../../../sources/prod.txt"
+        dest: "{{ docker_temp_directory.path }}/requirements.txt"
+        src: "../../../../sources/requirements.txt"
 
     - name: Copy sources
       ansible.posix.synchronize:
@@ -90,7 +90,6 @@
           YOUTUBE_API_KEY: "{{ youtube_api_key }}"
           SPOTIFY_API_CLIENT_ID: "{{ spotify_api_client_id }}"
           SPOTIFY_API_CLIENT_SECRET: "{{ spotify_api_client_secret }}"
-          LASTFM_API_KEY: "{{ lastfm_api_key }}"
           DB_LOGIN: "{{ db_login }}"
           DB_PASSWORD: "{{ db_password }}"
           DB_HOST: "{{ db_host }}"

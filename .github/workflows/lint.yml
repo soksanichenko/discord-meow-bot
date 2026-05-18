@@ -18,3 +18,8 @@ jobs:
         uses: astral-sh/ruff-action@v3
         with:
           args: "check sources/"
+
+      - name: Run ruff format check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check sources/"
