@@ -1,7 +1,7 @@
 """Drop guild_music_player_settings table — music player feature removed
 
 Revision ID: a1b2c3d4e5f6
-Revises: f0a1b2c3d4e5
+Revises: e2f3a4b5c6d7
 Create Date: 2026-04-28 00:00:00.000000
 """
 
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = 'a1b2c3d4e5f6'
-down_revision = 'f0a1b2c3d4e5'
+down_revision = 'e2f3a4b5c6d7'
 branch_labels = None
 depends_on = None
 
