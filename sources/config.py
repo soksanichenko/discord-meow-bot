@@ -37,7 +37,6 @@ class Config(BaseSettings):
     youtube_api_key: str = ''
     spotify_api_client_id: str = ''
     spotify_api_client_secret: str = ''
-    lastfm_api_key: str = ''
     sync_db_url: str = (
         f'postgresql+psycopg2://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
