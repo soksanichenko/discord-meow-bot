@@ -6,10 +6,26 @@ from sources.lib.db import AsyncSession
 from sources.lib.db.models import DomainFixer, GuildDomainFixer
 
 DEFAULT_DOMAIN_FIXERS: list[dict] = [
-    {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',   'override_subdomain': None},
-    {'source_domain': 'x.com',       'replacement_domain': 'fixupx',   'override_subdomain': None},
-    {'source_domain': 'twitter.com', 'replacement_domain': 'fxtwitter', 'override_subdomain': None},
-    {'source_domain': 'tiktok.com',  'replacement_domain': 'tnktok',   'override_subdomain': None},
+    {
+        'source_domain': 'reddit.com',
+        'replacement_domain': 'rxddit',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'x.com',
+        'replacement_domain': 'fixupx',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'twitter.com',
+        'replacement_domain': 'fxtwitter',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'tiktok.com',
+        'replacement_domain': 'tnktok',
+        'override_subdomain': None,
+    },
 ]
 
 
@@ -32,13 +48,15 @@ async def _find_or_create_rule(
     Returns:
         Existing or newly created DomainFixer instance.
     """
-    rule = (await db_session.scalars(
-        select(DomainFixer).where(
-            DomainFixer.source_domain == source_domain,
-            DomainFixer.replacement_domain == replacement_domain,
-            DomainFixer.override_subdomain.is_not_distinct_from(override_subdomain),
+    rule = (
+        await db_session.scalars(
+            select(DomainFixer).where(
+                DomainFixer.source_domain == source_domain,
+                DomainFixer.replacement_domain == replacement_domain,
+                DomainFixer.override_subdomain.is_not_distinct_from(override_subdomain),
+            )
         )
-    )).one_or_none()
+    ).one_or_none()
 
     if rule is None:
         rule = DomainFixer(
@@ -90,21 +108,26 @@ async def upsert_domain_fixer(
     """
     async with AsyncSession() as db_session:
         # Remove any existing association for this guild + source_domain
-        existing_junction = (await db_session.scalars(
-            select(GuildDomainFixer)
-            .join(DomainFixer, DomainFixer.id == GuildDomainFixer.domain_fixer_id)
-            .where(
-                GuildDomainFixer.guild_id == guild_id,
-                DomainFixer.source_domain == source_domain,
+        existing_junction = (
+            await db_session.scalars(
+                select(GuildDomainFixer)
+                .join(DomainFixer, DomainFixer.id == GuildDomainFixer.domain_fixer_id)
+                .where(
+                    GuildDomainFixer.guild_id == guild_id,
+                    DomainFixer.source_domain == source_domain,
+                )
             )
-        )).one_or_none()
+        ).one_or_none()
 
         if existing_junction is not None:
             await db_session.delete(existing_junction)
             await db_session.flush()
 
         rule = await _find_or_create_rule(
-            db_session, source_domain, replacement_domain, override_subdomain,
+            db_session,
+            source_domain,
+            replacement_domain,
+            override_subdomain,
         )
         db_session.add(GuildDomainFixer(guild_id=guild_id, domain_fixer_id=rule.id))
         await db_session.commit()
@@ -138,14 +161,16 @@ async def delete_domain_fixer(guild_id: int, source_domain: str) -> None:
         source_domain: Domain to remove.
     """
     async with AsyncSession() as db_session:
-        junction = (await db_session.scalars(
-            select(GuildDomainFixer)
-            .join(DomainFixer, DomainFixer.id == GuildDomainFixer.domain_fixer_id)
-            .where(
-                GuildDomainFixer.guild_id == guild_id,
-                DomainFixer.source_domain == source_domain,
+        junction = (
+            await db_session.scalars(
+                select(GuildDomainFixer)
+                .join(DomainFixer, DomainFixer.id == GuildDomainFixer.domain_fixer_id)
+                .where(
+                    GuildDomainFixer.guild_id == guild_id,
+                    DomainFixer.source_domain == source_domain,
+                )
             )
-        )).one_or_none()
+        ).one_or_none()
 
         if junction is not None:
             await db_session.delete(junction)

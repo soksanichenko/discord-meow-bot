@@ -24,7 +24,9 @@ class UserCog(commands.Cog):
         description='Set a current timezone of user',
     )
     @app_commands.autocomplete(timezone=autocomplete_timezone)
-    async def set_timezone(self, interaction: discord.Interaction, timezone: str) -> None:
+    async def set_timezone(
+        self, interaction: discord.Interaction, timezone: str
+    ) -> None:
         """Set a current timezone of user."""
         user = interaction.user
         await upsert_user(
@@ -68,7 +70,9 @@ class UserCog(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name='my-settings', description='View your personal bot settings')
+    @app_commands.command(
+        name='my-settings', description='View your personal bot settings'
+    )
     async def my_settings(self, interaction: discord.Interaction) -> None:
         """Display personal bot settings for the calling user.
 
@@ -84,8 +88,12 @@ class UserCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.describe(time='Please input a time in any suitable format in your region')
-    @app_commands.describe(date='Please input a date in any suitable format in your region')
+    @app_commands.describe(
+        time='Please input a time in any suitable format in your region'
+    )
+    @app_commands.describe(
+        date='Please input a date in any suitable format in your region'
+    )
     @app_commands.command(
         name='get-timestamp',
         description='Get formatted timestamp for any date and/or time',

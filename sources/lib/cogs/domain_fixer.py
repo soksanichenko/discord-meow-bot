@@ -28,7 +28,9 @@ class DomainFixerCog(commands.Cog):
         default_permissions=discord.Permissions(administrator=True),
     )
 
-    @group.command(name='init', description='Load default domain replacement rules for this server')
+    @group.command(
+        name='init', description='Load default domain replacement rules for this server'
+    )
     async def init_fixers(self, interaction: discord.Interaction) -> None:
         """Upsert the default domain fixer rules for this guild.
 
@@ -38,16 +40,22 @@ class DomainFixerCog(commands.Cog):
         Args:
             interaction: The Discord interaction context.
         """
-        await upsert_guild(guild_id=interaction.guild_id, guild_name=interaction.guild.name)
+        await upsert_guild(
+            guild_id=interaction.guild_id, guild_name=interaction.guild.name
+        )
         await seed_default_domain_fixers(guild_id=interaction.guild_id)
-        self.logger.info('Default domain fixers seeded for guild %s', interaction.guild_id)
+        self.logger.info(
+            'Default domain fixers seeded for guild %s', interaction.guild_id
+        )
         names = ', '.join(f'`{f["source_domain"]}`' for f in DEFAULT_DOMAIN_FIXERS)
         await interaction.response.send_message(
             f'Default rules loaded: {names}',
             ephemeral=True,
         )
 
-    @group.command(name='list', description='Show all configured domain replacement rules')
+    @group.command(
+        name='list', description='Show all configured domain replacement rules'
+    )
     async def list_fixers(self, interaction: discord.Interaction) -> None:
         """List all domain fixer rules for this guild.
 
@@ -56,13 +64,21 @@ class DomainFixerCog(commands.Cog):
         """
         fixers = await get_all_domain_fixers(guild_id=interaction.guild_id)
         if not fixers:
-            await interaction.response.send_message('No domain fixer rules configured.', ephemeral=True)
+            await interaction.response.send_message(
+                'No domain fixer rules configured.', ephemeral=True
+            )
             return
 
         lines = ['**Domain fixer rules:**']
         for fixer in fixers:
-            subdomain_info = f' (subdomain: `{fixer.override_subdomain}`)' if fixer.override_subdomain else ''
-            lines.append(f'• `{fixer.source_domain}` → `{fixer.replacement_domain}`{subdomain_info}')
+            subdomain_info = (
+                f' (subdomain: `{fixer.override_subdomain}`)'
+                if fixer.override_subdomain
+                else ''
+            )
+            lines.append(
+                f'• `{fixer.source_domain}` → `{fixer.replacement_domain}`{subdomain_info}'
+            )
 
         await interaction.response.send_message('\n'.join(lines), ephemeral=True)
 
@@ -87,14 +103,21 @@ class DomainFixerCog(commands.Cog):
             replacement: Domain name to replace with.
             subdomain: Optional subdomain override.
         """
-        await upsert_guild(guild_id=interaction.guild_id, guild_name=interaction.guild.name)
+        await upsert_guild(
+            guild_id=interaction.guild_id, guild_name=interaction.guild.name
+        )
         await upsert_domain_fixer(
             guild_id=interaction.guild_id,
             source_domain=source,
             replacement_domain=replacement,
             override_subdomain=subdomain or None,
         )
-        self.logger.info('Domain fixer upserted: %s -> %s (guild %s)', source, replacement, interaction.guild_id)
+        self.logger.info(
+            'Domain fixer upserted: %s -> %s (guild %s)',
+            source,
+            replacement,
+            interaction.guild_id,
+        )
         subdomain_info = f', subdomain override: `{subdomain}`' if subdomain else ''
         await interaction.response.send_message(
             f'Rule saved: `{source}` → `{replacement}`{subdomain_info}',
@@ -137,7 +160,9 @@ class DomainFixerCog(commands.Cog):
             source: Source domain to remove.
         """
         await delete_domain_fixer(guild_id=interaction.guild_id, source_domain=source)
-        self.logger.info('Domain fixer removed: %s (guild %s)', source, interaction.guild_id)
+        self.logger.info(
+            'Domain fixer removed: %s (guild %s)', source, interaction.guild_id
+        )
         await interaction.response.send_message(
             f'Rule removed: `{source}`',
             ephemeral=True,

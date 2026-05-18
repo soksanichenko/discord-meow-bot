@@ -192,7 +192,9 @@ class RemindersCog(commands.Cog):
         return choices[:25]
 
     @reminders.command(name='cancel', description='Cancel a pending reminder')
-    @app_commands.describe(reminder_id='The reminder to cancel (start typing to search)')
+    @app_commands.describe(
+        reminder_id='The reminder to cancel (start typing to search)'
+    )
     @app_commands.autocomplete(reminder_id=_autocomplete_reminder_id)
     async def reminders_cancel(
         self,

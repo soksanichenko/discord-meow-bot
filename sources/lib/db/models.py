@@ -61,7 +61,9 @@ class DomainFixer(Base):
     __table_args__ = (
         Index(
             'uq_domain_fixers_rule',
-            'source_domain', 'replacement_domain', 'override_subdomain',
+            'source_domain',
+            'replacement_domain',
+            'override_subdomain',
             unique=True,
             postgresql_nulls_not_distinct=True,
         ),
@@ -74,10 +76,14 @@ class GuildDomainFixer(Base):
     __tablename__ = 'guild_domain_fixers'
 
     guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
     )
     domain_fixer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey('domain_fixers.id', ondelete='CASCADE'), primary_key=True,
+        Integer,
+        ForeignKey('domain_fixers.id', ondelete='CASCADE'),
+        primary_key=True,
     )
 
 
@@ -87,7 +93,9 @@ class GuildSettings(Base):
     __tablename__ = 'guild_settings'
 
     guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
     )
     birthday_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     birthday_role_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -102,7 +110,9 @@ class GuildMemberBirthday(Base):
     __tablename__ = 'guild_member_birthdays'
 
     guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
     )
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     birthday_day: Mapped[int] = mapped_column(SmallInteger, nullable=False)
@@ -121,7 +131,9 @@ class MusicLinksChannel(Base):
     __tablename__ = 'music_links_channels'
 
     guild_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey('guilds.id', ondelete='CASCADE'), primary_key=True,
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
     )
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 

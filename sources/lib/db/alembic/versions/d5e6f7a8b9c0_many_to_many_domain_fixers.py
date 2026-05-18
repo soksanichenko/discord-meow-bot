@@ -23,10 +23,26 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _DEFAULT_FIXERS = [
-    {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',    'override_subdomain': None},
-    {'source_domain': 'x.com',       'replacement_domain': 'fixupx',    'override_subdomain': None},
-    {'source_domain': 'twitter.com', 'replacement_domain': 'fxtwitter',  'override_subdomain': None},
-    {'source_domain': 'tiktok.com',  'replacement_domain': 'tnktok',    'override_subdomain': None},
+    {
+        'source_domain': 'reddit.com',
+        'replacement_domain': 'rxddit',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'x.com',
+        'replacement_domain': 'fixupx',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'twitter.com',
+        'replacement_domain': 'fxtwitter',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'tiktok.com',
+        'replacement_domain': 'tnktok',
+        'override_subdomain': None,
+    },
 ]
 
 
@@ -59,7 +75,9 @@ def upgrade() -> None:
         sa.Column('guild_id', sa.BigInteger(), nullable=False),
         sa.Column('domain_fixer_id', sa.Integer(), nullable=False),
         sa.ForeignKeyConstraint(['guild_id'], ['guilds.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['domain_fixer_id'], ['domain_fixers.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(
+            ['domain_fixer_id'], ['domain_fixers.id'], ondelete='CASCADE'
+        ),
         sa.PrimaryKeyConstraint('guild_id', 'domain_fixer_id'),
     )
 
@@ -78,22 +96,27 @@ def upgrade() -> None:
         ).fetchone()
         fixer_ids.append(row[0])
 
-    op.bulk_insert(guild_domain_fixers, [
-        {'guild_id': guild_id, 'domain_fixer_id': fixer_id}
-        for guild_id in guild_ids
-        for fixer_id in fixer_ids
-    ])
+    op.bulk_insert(
+        guild_domain_fixers,
+        [
+            {'guild_id': guild_id, 'domain_fixer_id': fixer_id}
+            for guild_id in guild_ids
+            for fixer_id in fixer_ids
+        ],
+    )
 
 
 def downgrade() -> None:
     """Restore flat guild-scoped domain_fixers table."""
     conn = op.get_bind()
 
-    rows = conn.execute(sa.text(
-        'SELECT gdf.guild_id, df.source_domain, df.replacement_domain, df.override_subdomain '
-        'FROM guild_domain_fixers gdf '
-        'JOIN domain_fixers df ON df.id = gdf.domain_fixer_id'
-    )).fetchall()
+    rows = conn.execute(
+        sa.text(
+            'SELECT gdf.guild_id, df.source_domain, df.replacement_domain, df.override_subdomain '
+            'FROM guild_domain_fixers gdf '
+            'JOIN domain_fixers df ON df.id = gdf.domain_fixer_id'
+        )
+    ).fetchall()
 
     op.drop_table('guild_domain_fixers')
     op.drop_table('domain_fixers')
@@ -109,12 +132,15 @@ def downgrade() -> None:
     )
 
     if rows:
-        op.bulk_insert(domain_fixers, [
-            {
-                'guild_id': r[0],
-                'source_domain': r[1],
-                'replacement_domain': r[2],
-                'override_subdomain': r[3],
-            }
-            for r in rows
-        ])
+        op.bulk_insert(
+            domain_fixers,
+            [
+                {
+                    'guild_id': r[0],
+                    'source_domain': r[1],
+                    'replacement_domain': r[2],
+                    'override_subdomain': r[3],
+                }
+                for r in rows
+            ],
+        )

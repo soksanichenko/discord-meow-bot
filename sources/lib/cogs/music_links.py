@@ -25,9 +25,7 @@ _YT_PATTERN = re.compile(
 _YT_MUSIC_PATTERN = re.compile(
     r'https?://music\.youtube\.com/watch\?(?:[^&\s]*&)*v=([a-zA-Z0-9_-]{11})'
 )
-_SPOTIFY_PATTERN = re.compile(
-    r'https?://open\.spotify\.com/track/([a-zA-Z0-9]+)'
-)
+_SPOTIFY_PATTERN = re.compile(r'https?://open\.spotify\.com/track/([a-zA-Z0-9]+)')
 
 
 class MusicLinksCog(commands.Cog):
@@ -57,9 +55,13 @@ class MusicLinksCog(commands.Cog):
         self._session = aiohttp.ClientSession()
         self._spotify = SpotifyClient(self._session)
         if not config.youtube_api_key:
-            self._logger.warning('YOUTUBE_API_KEY is not set — music link conversion disabled')
+            self._logger.warning(
+                'YOUTUBE_API_KEY is not set — music link conversion disabled'
+            )
         if not config.spotify_api_client_id or not config.spotify_api_client_secret:
-            self._logger.warning('Spotify credentials are not set — music link conversion disabled')
+            self._logger.warning(
+                'Spotify credentials are not set — music link conversion disabled'
+            )
 
     async def cog_unload(self) -> None:
         """Close the shared HTTP session."""
@@ -83,7 +85,11 @@ class MusicLinksCog(commands.Cog):
         try:
             async with self._session.get(
                 'https://www.googleapis.com/youtube/v3/videos',
-                params={'id': video_id, 'part': 'snippet', 'key': config.youtube_api_key},
+                params={
+                    'id': video_id,
+                    'part': 'snippet',
+                    'key': config.youtube_api_key,
+                },
             ) as resp:
                 if resp.status != 200:
                     self._logger.warning('YouTube videos API returned %d', resp.status)
@@ -219,27 +225,38 @@ class MusicLinksCog(commands.Cog):
         if yt_music_match:
             result = await self._youtube_to_spotify(yt_music_match.group(1))
             if result:
-                await message.reply(f'This track is also available on Spotify:\n{result}', mention_author=False)
+                await message.reply(
+                    f'This track is also available on Spotify:\n{result}',
+                    mention_author=False,
+                )
             return
 
         yt_match = _YT_PATTERN.search(content)
         if yt_match:
             result = await self._youtube_to_spotify(yt_match.group(1))
             if result:
-                await message.reply(f'This track is also available on Spotify:\n{result}', mention_author=False)
+                await message.reply(
+                    f'This track is also available on Spotify:\n{result}',
+                    mention_author=False,
+                )
             return
 
         spotify_match = _SPOTIFY_PATTERN.search(content)
         if spotify_match:
             result = await self._spotify_to_youtube(spotify_match.group(1))
             if result:
-                await message.reply(f'This track is also available on YouTube Music:\n{result}', mention_author=False)
+                await message.reply(
+                    f'This track is also available on YouTube Music:\n{result}',
+                    mention_author=False,
+                )
 
     # ------------------------------------------------------------------
     # Admin commands
     # ------------------------------------------------------------------
 
-    @music_links.command(name='channel-add', description='Add a channel to the music links allowlist')
+    @music_links.command(
+        name='channel-add', description='Add a channel to the music links allowlist'
+    )
     @app_commands.describe(channel='The channel to allow music link conversion in')
     @app_commands.default_permissions(manage_guild=True)
     async def channel_add(
@@ -265,7 +282,10 @@ class MusicLinksCog(commands.Cog):
             ephemeral=True,
         )
 
-    @music_links.command(name='channel-remove', description='Remove a channel from the music links allowlist')
+    @music_links.command(
+        name='channel-remove',
+        description='Remove a channel from the music links allowlist',
+    )
     @app_commands.describe(channel='The channel to remove')
     @app_commands.default_permissions(manage_guild=True)
     async def channel_remove(
@@ -291,7 +311,10 @@ class MusicLinksCog(commands.Cog):
             ephemeral=True,
         )
 
-    @music_links.command(name='channel-list', description='List channels where music link conversion is active')
+    @music_links.command(
+        name='channel-list',
+        description='List channels where music link conversion is active',
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def channel_list(self, interaction: discord.Interaction) -> None:
         """Show the allowlist for this server.
@@ -308,9 +331,11 @@ class MusicLinksCog(commands.Cog):
             return
 
         mentions = [
-            (interaction.guild.get_channel(cid).mention
-             if interaction.guild.get_channel(cid)
-             else f'*unknown channel ({cid})*')
+            (
+                interaction.guild.get_channel(cid).mention
+                if interaction.guild.get_channel(cid)
+                else f'*unknown channel ({cid})*'
+            )
             for cid in allowed
         ]
         await interaction.response.send_message(

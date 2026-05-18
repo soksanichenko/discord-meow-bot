@@ -7,11 +7,16 @@ from sources.lib.db.crud.base import get_db_entity, update_db_entity_or_create
 from sources.lib.db.models import GuildMemberBirthday, GuildSettings
 
 
-async def get_guild_member_birthday(guild_id: int, user_id: int) -> GuildMemberBirthday | None:
+async def get_guild_member_birthday(
+    guild_id: int, user_id: int
+) -> GuildMemberBirthday | None:
     """Return the birthday record for a specific guild member, or None."""
     async with AsyncSession() as session:
         return await get_db_entity(
-            session, GuildMemberBirthday, guild_id=guild_id, user_id=user_id,
+            session,
+            GuildMemberBirthday,
+            guild_id=guild_id,
+            user_id=user_id,
         )
 
 
@@ -57,7 +62,10 @@ async def remove_guild_member_birthday(guild_id: int, user_id: int) -> bool:
     """
     async with AsyncSession() as session:
         record = await get_db_entity(
-            session, GuildMemberBirthday, guild_id=guild_id, user_id=user_id,
+            session,
+            GuildMemberBirthday,
+            guild_id=guild_id,
+            user_id=user_id,
         )
         if record is None:
             return False
@@ -76,7 +84,9 @@ async def get_guild_birthdays(guild_id: int) -> list[GuildMemberBirthday]:
         rows = await session.scalars(
             select(GuildMemberBirthday)
             .where(GuildMemberBirthday.guild_id == guild_id)
-            .order_by(GuildMemberBirthday.birthday_month, GuildMemberBirthday.birthday_day)
+            .order_by(
+                GuildMemberBirthday.birthday_month, GuildMemberBirthday.birthday_day
+            )
         )
         return list(rows)
 
@@ -114,7 +124,10 @@ async def mark_birthday_announced(guild_id: int, user_id: int, year: int) -> Non
     """
     async with AsyncSession() as session:
         record = await get_db_entity(
-            session, GuildMemberBirthday, guild_id=guild_id, user_id=user_id,
+            session,
+            GuildMemberBirthday,
+            guild_id=guild_id,
+            user_id=user_id,
         )
         if record is not None:
             record.last_announced_year = year

@@ -13,11 +13,22 @@ class VoiceCog(commands.Cog):
     @staticmethod
     def _get_member_activity(
         members: list[discord.Member],
-    ) -> discord.Activity | discord.Game | discord.CustomActivity | discord.Streaming | discord.Spotify | None:
+    ) -> (
+        discord.Activity
+        | discord.Game
+        | discord.CustomActivity
+        | discord.Streaming
+        | discord.Spotify
+        | None
+    ):
         """Get a member activity."""
         for member in members:
             game = next(
-                (a for a in member.activities if a.type == discord.ActivityType.playing),
+                (
+                    a
+                    for a in member.activities
+                    if a.type == discord.ActivityType.playing
+                ),
                 None,
             )
             if game:

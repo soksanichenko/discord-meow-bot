@@ -50,11 +50,15 @@ def _build_reminder_embed(reminder: Reminder) -> discord.Embed:
     if not reminder.message_content and not reminder.message_url and not reminder.note:
         embed.description = 'You asked me to remind you — here I am!'
 
-    embed.set_footer(text=f"Set on {reminder.created_at.strftime('%d %b %Y at %H:%M UTC')}")
+    embed.set_footer(
+        text=f'Set on {reminder.created_at.strftime("%d %b %Y at %H:%M UTC")}'
+    )
     return embed
 
 
-async def _fire_reminder(reminder_id: int, bot: Bot, scheduler: ReminderScheduler) -> None:
+async def _fire_reminder(
+    reminder_id: int, bot: Bot, scheduler: ReminderScheduler
+) -> None:
     """Fetch a reminder from DB, send a DM to the user, and mark it as sent.
 
     Falls back to the original channel if the DM cannot be delivered.
@@ -115,7 +119,9 @@ async def _fire_reminder(reminder_id: int, bot: Bot, scheduler: ReminderSchedule
                     value='Your server DMs appear to be disabled, so this reminder was posted publicly.',
                     inline=False,
                 )
-                await channel.send(f'<@{reminder.user_id}>', embed=public_embed, view=view)
+                await channel.send(
+                    f'<@{reminder.user_id}>', embed=public_embed, view=view
+                )
             except Exception as exc:
                 logger.warning(
                     'Channel fallback failed for reminder %d: %s',
@@ -182,7 +188,9 @@ class ReminderScheduler:
             id=f'reminder_{reminder.id}',
             replace_existing=True,
         )
-        self._logger.debug('Scheduled reminder %d for %s', reminder.id, run_date.isoformat())
+        self._logger.debug(
+            'Scheduled reminder %d for %s', reminder.id, run_date.isoformat()
+        )
 
     def cancel(self, reminder_id: int) -> None:
         """Remove a scheduled reminder job if it exists.

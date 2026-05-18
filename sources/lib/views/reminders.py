@@ -171,7 +171,9 @@ class RescheduleView(discord.ui.View):
         self.message_url = message_url
         self.message_content = message_content
 
-    @discord.ui.button(label='Reschedule', style=discord.ButtonStyle.secondary, emoji='🔁')
+    @discord.ui.button(
+        label='Reschedule', style=discord.ButtonStyle.secondary, emoji='🔁'
+    )
     async def reschedule(
         self,
         interaction: discord.Interaction,
@@ -191,5 +193,3 @@ class RescheduleView(discord.ui.View):
                 message_content=self.message_content,
             )
         )
-
-

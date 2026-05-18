@@ -18,10 +18,26 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _DEFAULT_FIXERS = [
-    {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',    'override_subdomain': None},
-    {'source_domain': 'x.com',       'replacement_domain': 'fixupx',    'override_subdomain': None},
-    {'source_domain': 'twitter.com', 'replacement_domain': 'fxtwitter',  'override_subdomain': None},
-    {'source_domain': 'tiktok.com',  'replacement_domain': 'tnktok',    'override_subdomain': None},
+    {
+        'source_domain': 'reddit.com',
+        'replacement_domain': 'rxddit',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'x.com',
+        'replacement_domain': 'fixupx',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'twitter.com',
+        'replacement_domain': 'fxtwitter',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'tiktok.com',
+        'replacement_domain': 'tnktok',
+        'override_subdomain': None,
+    },
 ]
 
 

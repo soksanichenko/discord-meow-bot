@@ -22,10 +22,26 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _DEFAULT_FIXERS = [
-    {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',    'override_subdomain': None},
-    {'source_domain': 'x.com',       'replacement_domain': 'fixupx',    'override_subdomain': None},
-    {'source_domain': 'twitter.com', 'replacement_domain': 'fxtwitter',  'override_subdomain': None},
-    {'source_domain': 'tiktok.com',  'replacement_domain': 'tnktok',    'override_subdomain': None},
+    {
+        'source_domain': 'reddit.com',
+        'replacement_domain': 'rxddit',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'x.com',
+        'replacement_domain': 'fixupx',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'twitter.com',
+        'replacement_domain': 'fxtwitter',
+        'override_subdomain': None,
+    },
+    {
+        'source_domain': 'tiktok.com',
+        'replacement_domain': 'tnktok',
+        'override_subdomain': None,
+    },
 ]
 
 
@@ -33,7 +49,9 @@ def upgrade() -> None:
     """Drop global domain_fixers table, recreate it scoped to guilds, seed defaults."""
     conn = op.get_bind()
 
-    guild_ids = [row[0] for row in conn.execute(sa.text('SELECT id FROM guilds')).fetchall()]
+    guild_ids = [
+        row[0] for row in conn.execute(sa.text('SELECT id FROM guilds')).fetchall()
+    ]
 
     op.drop_table('domain_fixers')
     domain_fixers = op.create_table(
@@ -47,11 +65,14 @@ def upgrade() -> None:
     )
 
     if guild_ids:
-        op.bulk_insert(domain_fixers, [
-            {'guild_id': guild_id, **fixer}
-            for guild_id in guild_ids
-            for fixer in _DEFAULT_FIXERS
-        ])
+        op.bulk_insert(
+            domain_fixers,
+            [
+                {'guild_id': guild_id, **fixer}
+                for guild_id in guild_ids
+                for fixer in _DEFAULT_FIXERS
+            ],
+        )
 
 
 def downgrade() -> None:
@@ -63,9 +84,28 @@ def downgrade() -> None:
         sa.Column('replacement_domain', sa.Text(), nullable=False),
         sa.Column('override_subdomain', sa.Text(), nullable=True),
     )
-    op.bulk_insert(domain_fixers, [
-        {'source_domain': 'reddit.com',  'replacement_domain': 'rxddit',   'override_subdomain': None},
-        {'source_domain': 'x.com',       'replacement_domain': 'fixupx',   'override_subdomain': None},
-        {'source_domain': 'twitter.com', 'replacement_domain': 'fxtwitter', 'override_subdomain': None},
-        {'source_domain': 'tiktok.com',  'replacement_domain': 'tnktok',   'override_subdomain': None},
-    ])
+    op.bulk_insert(
+        domain_fixers,
+        [
+            {
+                'source_domain': 'reddit.com',
+                'replacement_domain': 'rxddit',
+                'override_subdomain': None,
+            },
+            {
+                'source_domain': 'x.com',
+                'replacement_domain': 'fixupx',
+                'override_subdomain': None,
+            },
+            {
+                'source_domain': 'twitter.com',
+                'replacement_domain': 'fxtwitter',
+                'override_subdomain': None,
+            },
+            {
+                'source_domain': 'tiktok.com',
+                'replacement_domain': 'tnktok',
+                'override_subdomain': None,
+            },
+        ],
+    )

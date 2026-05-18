@@ -39,9 +39,9 @@ _CONTENT_TYPE_TO_EXT = {
     'image/webp': 'webp',
 }
 _DEFAULT_MESSAGE = '🎂 Happy birthday, {mention}! 🎉'
-_DEFAULT_MESSAGE_WITH_AGE = "🎂 Happy birthday, {mention}! You're turning **{age}** today! 🎉"
-
-
+_DEFAULT_MESSAGE_WITH_AGE = (
+    "🎂 Happy birthday, {mention}! You're turning **{age}** today! 🎉"
+)
 
 
 @dataclass
@@ -83,12 +83,14 @@ def _format_message(
     age = _format_ordinal(current_year - birth_year) if birth_year else ''
     if template is None:
         template = _DEFAULT_MESSAGE_WITH_AGE if birth_year else _DEFAULT_MESSAGE
-    return template.format_map(_SafeFormatDict(
-        mention=member.mention,
-        username=member.name,
-        display_name=member.display_name,
-        age=age,
-    ))
+    return template.format_map(
+        _SafeFormatDict(
+            mention=member.mention,
+            username=member.name,
+            display_name=member.display_name,
+            age=age,
+        )
+    )
 
 
 def _format_ordinal(n: int) -> str:
@@ -176,7 +178,9 @@ class BirthdaysCog(commands.Cog):
             if not settings or not settings.birthday_channel_id:
                 continue
 
-            birthdays = await get_all_unannounced_birthdays_for_guild(guild.id, now_utc.year)
+            birthdays = await get_all_unannounced_birthdays_for_guild(
+                guild.id, now_utc.year
+            )
 
             for bday in birthdays:
                 if guild.get_member(bday.user_id) is None:
@@ -191,23 +195,30 @@ class BirthdaysCog(commands.Cog):
                 try:
                     tz = pytz.timezone(tz_str)
                 except pytz.UnknownTimeZoneError:
-                    self._logger.warning('Unknown timezone %r for user %d', tz_str, bday.user_id)
+                    self._logger.warning(
+                        'Unknown timezone %r for user %d', tz_str, bday.user_id
+                    )
                     continue
 
                 local_now = now_utc.astimezone(tz)
                 if local_now.hour != _ANNOUNCEMENT_HOUR:
                     continue
-                if local_now.month != bday.birthday_month or local_now.day != bday.birthday_day:
+                if (
+                    local_now.month != bday.birthday_month
+                    or local_now.day != bday.birthday_day
+                ):
                     continue
 
-                events.append(_BirthdayEvent(
-                    guild_id=guild.id,
-                    user_id=bday.user_id,
-                    channel_id=settings.birthday_channel_id,
-                    role_id=settings.birthday_role_id,
-                    birth_year=bday.birth_year,
-                    record=bday,
-                ))
+                events.append(
+                    _BirthdayEvent(
+                        guild_id=guild.id,
+                        user_id=bday.user_id,
+                        channel_id=settings.birthday_channel_id,
+                        role_id=settings.birthday_role_id,
+                        birth_year=bday.birth_year,
+                        record=bday,
+                    )
+                )
 
         return events
 
@@ -231,7 +242,9 @@ class BirthdaysCog(commands.Cog):
             channel = guild.get_channel(event.channel_id)
             if channel is None:
                 self._logger.warning(
-                    'Birthday channel %d not found in guild %d', event.channel_id, event.guild_id,
+                    'Birthday channel %d not found in guild %d',
+                    event.channel_id,
+                    event.guild_id,
                 )
                 continue
 
@@ -251,16 +264,22 @@ class BirthdaysCog(commands.Cog):
 
             settings = await get_guild_settings(event.guild_id)
             try:
-                await self._send_announcement(channel, member, event.birth_year, settings, today.year)
+                await self._send_announcement(
+                    channel, member, event.birth_year, settings, today.year
+                )
             except (discord.Forbidden, discord.HTTPException) as exc:
                 self._logger.warning(
-                    'Failed to send birthday message in guild %d: %s', event.guild_id, exc,
+                    'Failed to send birthday message in guild %d: %s',
+                    event.guild_id,
+                    exc,
                 )
                 continue
 
             await mark_birthday_announced(event.guild_id, event.user_id, today.year)
             self._logger.info(
-                'Birthday announced for user %d in guild %d', event.user_id, event.guild_id,
+                'Birthday announced for user %d in guild %d',
+                event.user_id,
+                event.guild_id,
             )
 
     @staticmethod
@@ -313,13 +332,19 @@ class BirthdaysCog(commands.Cog):
 
             for member in role.members:
                 bday = await get_guild_member_birthday(guild.id, member.id)
-                if bday is None or bday.birthday_month != today.month or bday.birthday_day != today.day:
+                if (
+                    bday is None
+                    or bday.birthday_month != today.month
+                    or bday.birthday_day != today.day
+                ):
                     try:
                         await member.remove_roles(role, reason='Birthday ended')
                     except (discord.Forbidden, discord.HTTPException) as exc:
                         self._logger.warning(
                             'Failed to remove birthday role from %d in guild %d: %s',
-                            member.id, guild.id, exc,
+                            member.id,
+                            guild.id,
+                            exc,
                         )
 
     async def _birthday_cron_job(self) -> None:
@@ -329,7 +354,9 @@ class BirthdaysCog(commands.Cog):
             await self._remove_expired_birthday_roles()
             events = await self._get_todays_birthday_events()
             await self._send_birthday_greetings(events)
-            self._logger.info('Birthday job complete — announced %d birthday(s)', len(events))
+            self._logger.info(
+                'Birthday job complete — announced %d birthday(s)', len(events)
+            )
         except Exception as exc:
             self._logger.error('Birthday cron job failed: %s', exc)
 
@@ -390,14 +417,18 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='remove', description='Remove your birthday from this server')
+    @birthday.command(
+        name='remove', description='Remove your birthday from this server'
+    )
     async def birthday_remove(self, interaction: discord.Interaction) -> None:
         """Remove your birthday record from this server.
 
         Args:
             interaction: The Discord interaction.
         """
-        deleted = await remove_guild_member_birthday(interaction.guild_id, interaction.user.id)
+        deleted = await remove_guild_member_birthday(
+            interaction.guild_id, interaction.user.id
+        )
         if not deleted:
             await interaction.response.send_message(
                 "You don't have a birthday set on this server.",
@@ -410,7 +441,9 @@ class BirthdaysCog(commands.Cog):
         )
 
     @birthday.command(name='view', description="View your or another member's birthday")
-    @app_commands.describe(user='The member whose birthday you want to see (defaults to yourself)')
+    @app_commands.describe(
+        user='The member whose birthday you want to see (defaults to yourself)'
+    )
     async def birthday_view(
         self,
         interaction: discord.Interaction,
@@ -429,7 +462,9 @@ class BirthdaysCog(commands.Cog):
             if target == interaction.user:
                 msg = "You don't have a birthday set on this server."
             else:
-                msg = f'**{target.display_name}** has not set a birthday on this server.'
+                msg = (
+                    f'**{target.display_name}** has not set a birthday on this server.'
+                )
             await interaction.response.send_message(msg, ephemeral=True)
             return
 
@@ -456,7 +491,9 @@ class BirthdaysCog(commands.Cog):
         birthdays = await get_guild_birthdays(interaction.guild_id)
 
         if not birthdays:
-            await interaction.followup.send('No birthdays have been set on this server.')
+            await interaction.followup.send(
+                'No birthdays have been set on this server.'
+            )
             return
 
         embed = discord.Embed(
@@ -504,8 +541,12 @@ class BirthdaysCog(commands.Cog):
     # Admin commands
     # ------------------------------------------------------------------
 
-    @birthday.command(name='channel-set', description='Set the birthday announcement channel')
-    @app_commands.describe(channel='The text channel where birthday announcements will be posted')
+    @birthday.command(
+        name='channel-set', description='Set the birthday announcement channel'
+    )
+    @app_commands.describe(
+        channel='The text channel where birthday announcements will be posted'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def channel_set(
         self,
@@ -518,13 +559,18 @@ class BirthdaysCog(commands.Cog):
             interaction: The Discord interaction.
             channel: The target text channel.
         """
-        await upsert_guild_settings(interaction.guild_id, birthday_channel_id=channel.id)
+        await upsert_guild_settings(
+            interaction.guild_id, birthday_channel_id=channel.id
+        )
         await interaction.response.send_message(
             f'Birthday announcements will be posted in {channel.mention}.',
             ephemeral=True,
         )
 
-    @birthday.command(name='channel-remove', description='Remove the configured birthday announcement channel')
+    @birthday.command(
+        name='channel-remove',
+        description='Remove the configured birthday announcement channel',
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def channel_remove(self, interaction: discord.Interaction) -> None:
         """Clear the birthday announcement channel for this server.
@@ -572,7 +618,9 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='role-remove', description='Remove the configured birthday role')
+    @birthday.command(
+        name='role-remove', description='Remove the configured birthday role'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def role_remove(self, interaction: discord.Interaction) -> None:
         """Clear the birthday role for this server.
@@ -586,10 +634,14 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='message-set', description='Set a custom birthday announcement message')
-    @app_commands.describe(message=(
-        'Message text. Variables: {mention}, {username}, {display_name}, {age}'
-    ))
+    @birthday.command(
+        name='message-set', description='Set a custom birthday announcement message'
+    )
+    @app_commands.describe(
+        message=(
+            'Message text. Variables: {mention}, {username}, {display_name}, {age}'
+        )
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def message_set(self, interaction: discord.Interaction, message: str) -> None:
         """Set a custom birthday announcement message template for this server.
@@ -604,7 +656,10 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='message-remove', description='Remove the custom birthday announcement message')
+    @birthday.command(
+        name='message-remove',
+        description='Remove the custom birthday announcement message',
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def message_remove(self, interaction: discord.Interaction) -> None:
         """Clear the custom birthday message, reverting to the default.
@@ -618,10 +673,14 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='image-set', description='Set a custom image for birthday announcements')
+    @birthday.command(
+        name='image-set', description='Set a custom image for birthday announcements'
+    )
     @app_commands.describe(image='Image file (PNG, JPG, GIF, WebP — max 2 MB)')
     @app_commands.default_permissions(manage_guild=True)
-    async def image_set(self, interaction: discord.Interaction, image: discord.Attachment) -> None:
+    async def image_set(
+        self, interaction: discord.Interaction, image: discord.Attachment
+    ) -> None:
         """Upload and save a custom birthday announcement image for this server.
 
         Args:
@@ -654,13 +713,17 @@ class BirthdaysCog(commands.Cog):
         image_path = images_dir / f'guild_{interaction.guild_id}_birthday.{ext}'
         await asyncio.to_thread(image_path.write_bytes, data)
 
-        await upsert_guild_settings(interaction.guild_id, birthday_image_path=str(image_path))
+        await upsert_guild_settings(
+            interaction.guild_id, birthday_image_path=str(image_path)
+        )
         await interaction.followup.send(
             'Birthday announcement image has been set.',
             ephemeral=True,
         )
 
-    @birthday.command(name='image-remove', description='Remove the custom birthday announcement image')
+    @birthday.command(
+        name='image-remove', description='Remove the custom birthday announcement image'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def image_remove(self, interaction: discord.Interaction) -> None:
         """Delete the stored birthday image and clear the setting for this server.
@@ -681,7 +744,9 @@ class BirthdaysCog(commands.Cog):
         )
 
     @birthday.command(name='preview', description='Preview the birthday announcement')
-    @app_commands.describe(user='Member to use as the birthday person (defaults to yourself)')
+    @app_commands.describe(
+        user='Member to use as the birthday person (defaults to yourself)'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def preview(
         self,
@@ -721,7 +786,9 @@ class BirthdaysCog(commands.Cog):
         else:
             await interaction.followup.send(embed=embed)
 
-    @birthday.command(name='force', description='Set a birthday for another member (admin)')
+    @birthday.command(
+        name='force', description='Set a birthday for another member (admin)'
+    )
     @app_commands.describe(
         user='The member whose birthday to set',
         day='Day of birth (1–31)',
@@ -778,7 +845,9 @@ class BirthdaysCog(commands.Cog):
             ephemeral=True,
         )
 
-    @birthday.command(name='purge', description="Remove a member's birthday from this server (admin)")
+    @birthday.command(
+        name='purge', description="Remove a member's birthday from this server (admin)"
+    )
     @app_commands.describe(user='The member whose birthday to remove')
     @app_commands.default_permissions(manage_guild=True)
     async def purge_birthday(

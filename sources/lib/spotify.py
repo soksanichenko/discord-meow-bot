@@ -34,7 +34,9 @@ def clean_yt_title(title: str) -> str:
 @dataclass
 class _SpotifyToken:
     access_token: str
-    expires_at: datetime = field(default_factory=lambda: datetime.min.replace(tzinfo=UTC))
+    expires_at: datetime = field(
+        default_factory=lambda: datetime.min.replace(tzinfo=UTC)
+    )
 
     def is_valid(self) -> bool:
         """Return True if the token has not expired yet."""

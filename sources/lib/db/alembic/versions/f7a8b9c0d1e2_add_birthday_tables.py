@@ -55,6 +55,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop guild_member_birthdays and guild_settings tables."""
-    op.drop_index('ix_guild_member_birthdays_month_day', table_name='guild_member_birthdays')
+    op.drop_index(
+        'ix_guild_member_birthdays_month_day', table_name='guild_member_birthdays'
+    )
     op.drop_table('guild_member_birthdays')
     op.drop_table('guild_settings')

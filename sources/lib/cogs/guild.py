@@ -36,7 +36,9 @@ class GuildCog(commands.Cog):
 
         embed = discord.Embed(title='Server settings', colour=discord.Colour.blurple())
 
-        timezone_value = settings.timezone if settings and settings.timezone else '*not set*'
+        timezone_value = (
+            settings.timezone if settings and settings.timezone else '*not set*'
+        )
         embed.add_field(name='Timezone', value=timezone_value, inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -71,7 +73,9 @@ class GuildCog(commands.Cog):
             ephemeral=True,
         )
 
-    @server.command(name='timezone-remove', description='Remove the configured server timezone')
+    @server.command(
+        name='timezone-remove', description='Remove the configured server timezone'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def timezone_remove(self, interaction: discord.Interaction) -> None:
         """Clear the guild-level timezone.
@@ -102,7 +106,9 @@ class GuildCog(commands.Cog):
             value=guild.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             inline=False,
         )
-        embed_var.add_field(name='Members count', value=guild.member_count, inline=False)
+        embed_var.add_field(
+            name='Members count', value=guild.member_count, inline=False
+        )
         embed_var.add_field(
             name='Nitro boost',
             value=f'Tier {guild.premium_tier}: '
@@ -115,7 +121,9 @@ class GuildCog(commands.Cog):
             inline=False,
         )
         embed_var.add_field(name='Emoji limit', value=guild.emoji_limit, inline=False)
-        embed_var.add_field(name='Sticker limit', value=guild.sticker_limit, inline=False)
+        embed_var.add_field(
+            name='Sticker limit', value=guild.sticker_limit, inline=False
+        )
         embed_var.add_field(
             name='File size limit',
             value=f'{guild.filesize_limit // 1024 // 1024} MB',
@@ -129,7 +137,9 @@ class GuildCog(commands.Cog):
         """Print a role members."""
         role_obj = interaction.guild.get_role(int(role))
         if not role_obj:
-            await interaction.response.send_message('Role does not found', ephemeral=True)
+            await interaction.response.send_message(
+                'Role does not found', ephemeral=True
+            )
             return
         members = sorted([member.mention for member in role_obj.members])
         embed = discord.Embed(
@@ -154,7 +164,9 @@ class GuildCog(commands.Cog):
         await upsert_guild(guild_id=guild.id, guild_name=guild.name)
 
     @commands.Cog.listener('on_guild_update')
-    async def on_guild_update(self, before: discord.Guild, after: discord.Guild) -> None:
+    async def on_guild_update(
+        self, before: discord.Guild, after: discord.Guild
+    ) -> None:
         """Update a guild in DB when it is updated."""
         await upsert_guild(guild_id=after.id, guild_name=after.name)
 

@@ -20,8 +20,12 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add birthday_message and birthday_image_path columns to guild_settings."""
-    op.add_column('guild_settings', sa.Column('birthday_message', sa.Text(), nullable=True))
-    op.add_column('guild_settings', sa.Column('birthday_image_path', sa.Text(), nullable=True))
+    op.add_column(
+        'guild_settings', sa.Column('birthday_message', sa.Text(), nullable=True)
+    )
+    op.add_column(
+        'guild_settings', sa.Column('birthday_image_path', sa.Text(), nullable=True)
+    )
 
 
 def downgrade() -> None:
