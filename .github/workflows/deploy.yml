@@ -39,4 +39,5 @@ jobs:
         working-directory: ansible
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          BWS_BASE_URL: ${{ vars.BWS_BASE_URL }}
         run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml
