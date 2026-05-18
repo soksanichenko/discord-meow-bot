@@ -9,4 +9,4 @@ pydantic-settings==2.13.1
 SQLAlchemy-Utils==0.42.1
 SQLAlchemy[asyncio]==2.0.48
 tldextract==5.3.1
-yt-dlp==2025.3.31
+yt-dlp==2026.3.17
