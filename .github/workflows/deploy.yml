@@ -26,11 +26,8 @@ jobs:
         run: pip install ansible bitwarden-sdk
 
       - name: Install Ansible collections
-        run: >-
-          ansible-galaxy collection install
-          bitwarden.secrets
-          community.docker
-          ansible.posix
+        run: ansible-galaxy collection install -r requirements.yml
+        working-directory: ansible
 
       - name: Set up SSH key
         run: |
