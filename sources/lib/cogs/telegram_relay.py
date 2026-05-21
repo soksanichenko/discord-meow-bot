@@ -1,7 +1,9 @@
 """Telegram relay cog — forward public Telegram channels to Discord via RSSHub."""
 
 import asyncio
+import re
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 
 import aiohttp
 import discord
@@ -23,6 +25,53 @@ from sources.lib.utils import Logger
 
 _POLL_INTERVAL_MINUTES = 5
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
+
+class _HtmlToMarkdown(HTMLParser):
+    """Convert Telegram HTML formatting to Discord Markdown."""
+
+    # Tags that map to a Markdown wrapper applied symmetrically on open and close.
+    _WRAPPERS = {'b': '**', 'strong': '**', 'i': '*', 'em': '*', 's': '~~', 'code': '`'}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._href_stack: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == 'br':
+            self._parts.append('\n')
+        elif tag in ('p', 'pre', 'div'):
+            pass  # newline added on close
+        elif tag == 'a':
+            href = dict(attrs).get('href') or ''
+            self._href_stack.append(href)
+            self._parts.append('[')
+        elif wrapper := self._WRAPPERS.get(tag):
+            self._parts.append(wrapper)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ('p', 'pre', 'div'):
+            self._parts.append('\n')
+        elif tag == 'a':
+            href = self._href_stack.pop() if self._href_stack else ''
+            self._parts.append(f']({href})' if href else ']')
+        elif wrapper := self._WRAPPERS.get(tag):
+            self._parts.append(wrapper)
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def result(self) -> str:
+        text = ''.join(self._parts).strip()
+        return re.sub(r'\n{3,}', '\n\n', text)
+
+
+def _html_to_markdown(html: str) -> str:
+    """Strip HTML and convert basic Telegram formatting tags to Discord Markdown."""
+    parser = _HtmlToMarkdown()
+    parser.feed(html)
+    return parser.result()
 
 
 class TelegramRelayCog(commands.Cog):
@@ -311,8 +360,8 @@ class TelegramRelayCog(commands.Cog):
         Returns:
             A Discord Embed ready to send.
         """
-        title = (entry.get('title') or '')[:256]
-        summary = (entry.get('summary') or '')[:4096]
+        title = _html_to_markdown(entry.get('title') or '')[:256]
+        summary = _html_to_markdown(entry.get('summary') or '')[:4096]
         link = entry.get('link', '')
 
         embed = discord.Embed(
