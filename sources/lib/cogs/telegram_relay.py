@@ -217,6 +217,12 @@ class TelegramRelayCog(commands.Cog):
             return
 
         feed = feedparser.parse(content)
+        self.logger.info(
+            'Polling @%s: %d entries in feed, last_entry_id=%r',
+            relay.tg_username,
+            len(feed.entries),
+            relay.last_entry_id,
+        )
         if not feed.entries:
             return
 
@@ -226,17 +232,23 @@ class TelegramRelayCog(commands.Cog):
                 break
             new_entries.append(entry)
 
+        self.logger.info(
+            'Polling @%s: %d new entry(ies) found', relay.tg_username, len(new_entries)
+        )
         if not new_entries:
             return
 
         channel = self.bot.get_channel(relay.discord_channel_id)
         if channel is None:
-            self.logger.warning(
-                'Channel %d not found for relay @%s',
-                relay.discord_channel_id,
-                relay.tg_username,
-            )
-            return
+            try:
+                channel = await self.bot.fetch_channel(relay.discord_channel_id)
+            except discord.NotFound:
+                self.logger.warning(
+                    'Channel %d not found for relay @%s',
+                    relay.discord_channel_id,
+                    relay.tg_username,
+                )
+                return
 
         # Post oldest-first so the channel reads chronologically.
         for entry in reversed(new_entries):
