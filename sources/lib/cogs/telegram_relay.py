@@ -379,7 +379,7 @@ class TelegramRelayCog(commands.Cog):
             List of Discord Embeds (always at least one).
         """
         text, images = _html_to_markdown(entry.get('summary') or '')
-        text = re.sub(r'^Video is too big$', '', text, flags=re.MULTILINE).strip()
+        text = text.replace('Video is too big', '').strip()
         link = entry.get('link') or None
 
         # Fallback: enclosures and media extensions when no <img> in HTML
@@ -391,8 +391,10 @@ class TelegramRelayCog(commands.Cog):
                 if url := thumb.get('url'):
                     images.append(url)
 
+        # RSSHub returns 'Telegram Channel' as a placeholder when the channel has no name.
+        effective_title = channel_title if channel_title != 'Telegram Channel' else None
         main = discord.Embed(
-            title=channel_title or f'@{username}',
+            title=effective_title or f'@{username}',
             description=text[:4096] or None,
             url=link,
             colour=_TELEGRAM_COLOUR,
