@@ -276,6 +276,9 @@ class TelegramRelayCog(commands.Cog):
         try:
             async with self._session.get(url, timeout=_REQUEST_TIMEOUT) as resp:
                 if resp.status >= 400:
+                    self.logger.warning(
+                        'RSS fetch @%s returned HTTP %d', username, resp.status
+                    )
                     return False, None
                 content = await resp.text()
         except Exception as exc:
@@ -284,6 +287,9 @@ class TelegramRelayCog(commands.Cog):
 
         feed = feedparser.parse(content)
         if feed.bozo and not feed.entries:
+            self.logger.warning(
+                'RSS feed @%s is malformed: %s', username, feed.get('bozo_exception')
+            )
             return False, None
         latest = feed.entries[0].get('id') if feed.entries else None
         return True, latest

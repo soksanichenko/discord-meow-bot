@@ -14,6 +14,17 @@
     name: "{{ docker_network }}"
   when: not docker_network_result.exists
 
+- name: Start RSSHub container
+  community.docker.docker_container:
+    name: rsshub
+    image: "diygod/rsshub:latest"
+    state: started
+    restart_policy: always
+    networks:
+      - name: "{{ docker_network }}"
+    log_driver: journald
+  become: yes
+
 - name: Create temporary build directory
   ansible.builtin.tempfile:
     state: directory
@@ -96,6 +107,7 @@
           DB_HOST: "{{ db_host }}"
           DB_DATABASE: "{{ db_database }}"
           DB_PORT: "{{ db_port | string }}"
+          RSSHUB_URL: "http://rsshub:1200"
         log_driver: journald
       become: yes
 
