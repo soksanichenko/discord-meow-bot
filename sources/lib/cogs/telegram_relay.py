@@ -25,6 +25,7 @@ from sources.lib.utils import Logger
 
 _POLL_INTERVAL_MINUTES = 5
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
+_TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)
 
 
 class _HtmlToMarkdown(HTMLParser):
@@ -307,9 +308,11 @@ class TelegramRelayCog(commands.Cog):
                 )
                 return
 
+        channel_title: str | None = feed.feed.get('title')
+
         # Post oldest-first so the channel reads chronologically.
         for entry in reversed(new_entries):
-            embeds = self._build_embeds(entry, relay.tg_username)
+            embeds = self._build_embeds(entry, relay.tg_username, channel_title)
             try:
                 await channel.send(embeds=embeds)
             except discord.Forbidden:
@@ -359,33 +362,44 @@ class TelegramRelayCog(commands.Cog):
 
     @staticmethod
     def _build_embeds(
-        entry: feedparser.FeedParserDict, username: str
+        entry: feedparser.FeedParserDict,
+        username: str,
+        channel_title: str | None = None,
     ) -> list[discord.Embed]:
         """Build Discord embeds for a single RSS entry.
 
-        Returns multiple embeds when the post contains several images — Discord
-        renders them as a gallery when all embeds share the same url.
+        Mimics Discord's native Telegram link preview: author line shows
+        'Telegram', title is the channel name and links to the post,
+        thumbnail sits to the right of the text.
 
         Args:
             entry: A feedparser entry dict.
-            username: Telegram channel username used for the footer.
+            username: Telegram channel username (used in footer and as title fallback).
+            channel_title: Display name of the Telegram channel from the RSS feed.
 
         Returns:
             List of Discord Embeds (always at least one).
         """
         text, images = _html_to_markdown(entry.get('summary') or '')
-        # Strip RSSHub noise for oversized media
         text = re.sub(r'^Video is too big$', '', text, flags=re.MULTILINE).strip()
         link = entry.get('link') or None
 
-        # When there's no caption, show the post URL so the message isn't linkless.
-        description = text[:4096] if text else link
+        # Fallback: enclosures and media extensions when no <img> in HTML
+        if not images:
+            for enc in entry.get('enclosures', []):
+                if enc.get('type', '').startswith('image/'):
+                    images.append(enc['url'])
+            for thumb in entry.get('media_thumbnail', []):
+                if url := thumb.get('url'):
+                    images.append(url)
 
         main = discord.Embed(
-            description=description,
+            title=channel_title or f'@{username}',
+            description=text[:4096] or None,
             url=link,
-            colour=discord.Colour.blue(),
+            colour=_TELEGRAM_COLOUR,
         )
+        main.set_author(name='Telegram')
         main.set_footer(text=f'@{username}')
 
         published = entry.get('published_parsed')
@@ -393,12 +407,11 @@ class TelegramRelayCog(commands.Cog):
             main.timestamp = datetime(*published[:6], tzinfo=UTC)
 
         if images:
-            main.set_image(url=images[0])
+            main.set_thumbnail(url=images[0])
 
         embeds = [main]
-        # Embeds sharing the same url are rendered as a gallery by Discord.
         for img_url in images[1:10]:
-            extra = discord.Embed(url=link, colour=discord.Colour.blue())
+            extra = discord.Embed(url=link, colour=_TELEGRAM_COLOUR)
             extra.set_image(url=img_url)
             embeds.append(extra)
 
