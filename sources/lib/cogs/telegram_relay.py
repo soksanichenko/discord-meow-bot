@@ -306,10 +306,7 @@ class TelegramRelayCog(commands.Cog):
                 )
                 return
 
-        raw_title = feed.feed.get('title') or ''
-        channel_title = (
-            re.sub(r'\s*-\s*Telegram Channel$', '', raw_title).strip() or None
-        )
+        channel_title = feed.feed.get('title') or None
 
         # Post oldest-first so the channel reads chronologically.
         for entry in reversed(new_entries):
@@ -382,7 +379,7 @@ class TelegramRelayCog(commands.Cog):
             List of Discord Embeds (always at least one).
         """
         text, images = _html_to_markdown(entry.get('summary') or '')
-        text = text.replace('Video is too big', '').strip()
+        text = re.sub(r'\*{0,2}Video is too big\*{0,2}', '', text).strip()
         link = entry.get('link') or None
 
         # Fallback: enclosures and media extensions when no <img> in HTML
