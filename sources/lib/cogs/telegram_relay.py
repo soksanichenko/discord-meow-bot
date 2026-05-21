@@ -220,12 +220,6 @@ class TelegramRelayCog(commands.Cog):
         if not feed.entries:
             return
 
-        # First poll after the relay was added to an empty channel — silently mark
-        # the latest entry so future polls only forward new posts.
-        if relay.last_entry_id is None:
-            await update_last_entry_id(relay.id, feed.entries[0]['id'])
-            return
-
         new_entries = []
         for entry in feed.entries:
             if entry.get('id') == relay.last_entry_id:
