@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, and message reminders. Deployed via Ansible + Docker on a remote server.
+A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, and message statistics/leaderboard. Deployed via Ansible + Docker on a remote server.
 
 ## Project Structure
 
@@ -20,6 +20,7 @@ sources/
 │   │   ├── messages.py   # URL domain fixing listener (on_message)
 │   │   ├── music_links.py  # /music-links group + cross-platform link conversion
 │   │   ├── reminders.py  # /reminders group (add, list, delete, reschedule)
+│   │   ├── stats.py      # /stats group + on_message counter + background import
 │   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
 │   │   └── voice.py      # Voice channel auto-status
 │   ├── commands/         # Reusable command helpers
@@ -31,7 +32,7 @@ sources/
 │   │   ├── utils.py      # DB helper utilities
 │   │   ├── crud/base.py  # Generic CRUD (get, create, update, delete, upsert)
 │   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
-│   │   │                 #   music_links.py, reminders.py
+│   │   │                 #   music_links.py, reminders.py, stats.py
 │   │   └── alembic/      # Migrations
 │   ├── on_message/
 │   │   └── domains_fixer.py  # URL rewriting logic
@@ -46,7 +47,7 @@ deploy.sh                 # Runs ansible-playbook for zelgray.work inventory
 ## Architecture Principles
 
 - **Cogs** are the top-level feature boundaries. Each cog registers its own Discord commands and event listeners. Add new features by creating a new cog and loading it in `setup_hook()` in `main.py`.
-- **Async everywhere.** Use `asyncpg` for DB, `discord.py` 2.x async API, `asyncio`-scoped sessions. Never block the event loop.
+- **Async everywhere.** Use `psycopg3` for DB, `discord.py` 2.x async API, `asyncio`-scoped sessions. Never block the event loop.
 - **CRUD layer is generic.** `crud/base.py` provides typed generic operations. Domain-specific logic (e.g., upsert a user) lives in `db/operations/`.
 - **Config is environment-driven.** All secrets come from environment variables (see `config.py`). No secrets in code or YAML.
 
@@ -97,6 +98,8 @@ Rules:
 - `GuildMemberBirthday(guild_id+user_id PK, birthday_day, birthday_month, birth_year nullable, last_announced_year nullable)` — per-guild birthday records
 - `MusicLinksChannel(guild_id+channel_id PK FK)` — channels where music link conversion is active
 - `Reminder(id PK, user_id, channel_id, message_url, message_content, note, remind_at, created_at, is_sent)` — scheduled reminders
+- `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
+- `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
 
 ### Migrations
 
@@ -141,15 +144,15 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/server list-members` | guild.py | List members |
 | `/server timezone-set/remove` | guild.py | Guild fallback timezone (admin) |
 | `/server settings` | guild.py | Show guild timezone (admin) |
-| `/music-player play/skip/pause/resume/stop/disconnect` | music_player.py | Playback control |
-| `/music-player queue/song` | music_player.py | Queue and current track info |
-| `/music-player autoplay/random/shuffle/volume` | music_player.py | Playback settings |
 | `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
 | `/reminders add/list/delete/reschedule` | reminders.py | Message reminders |
 | `/get-timestamp` | user.py | Generate Discord timestamp |
 | `/my-settings` | user.py | Show personal timezone |
 | `/force-timezone` | user.py | Set timezone for another user (admin) |
 | `/domain-fixer ...` | domain_fixer.py | URL domain rules (admin) |
+| `/stats leaderboard` | stats.py | Top message senders |
+| `/stats import [since]` | stats.py | Import message history (admin) |
+| `/stats import-status` | stats.py | Show import progress (admin) |
 
 ## Adding a New Feature
 
@@ -161,8 +164,8 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 ## Running Locally
 
 ```bash
-# Install dependencies
-pip install -r sources/prod.txt
+# Install dependencies and pre-commit hook
+./install_dependencies.sh
 
 # Set environment variables (DISCORD_TOKEN, DB_*)
 export DISCORD_TOKEN=...
@@ -205,10 +208,10 @@ There is no test suite. When adding logic that can be tested without Discord, co
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.py` | v2.7.1 (git) | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.48 | ORM |
-| `asyncpg` | 0.31.0 | Async PostgreSQL driver |
+| `SQLAlchemy[asyncio]` | 2.0.49 | ORM |
+| `psycopg[binary]` | 3.3.4 | Async + sync PostgreSQL driver |
 | `alembic` | 1.18.4 | DB migrations |
-| `pydantic-settings` | 2.13.1 | Config from env vars |
+| `pydantic-settings` | 2.14.1 | Config from env vars |
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.0 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery) |

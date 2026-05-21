@@ -12,6 +12,7 @@ A Discord bot with quality-of-life features for servers.
 - **Timestamp generator** — `/get-timestamp` converts a date/time to Discord's native timestamp format
 - **Timezone management** — `/set-timezone` stores your timezone for accurate time commands
 - **Guild info** — `/info` shows server details, `/list-members` lists members of a role
+- **Message statistics** — `/stats leaderboard` shows top senders; admins can import full history with `/stats import`
 
 ## Requirements
 
@@ -30,11 +31,15 @@ All configuration is done via environment variables:
 | `DB_HOST` | PostgreSQL host | required |
 | `DB_DATABASE` | Database name | required |
 | `DB_PORT` | PostgreSQL port | `5432` |
+| `BIRTHDAY_IMAGES_DIR` | Path for birthday images | `/tmp/meow-bot-images` |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key | — |
+| `SPOTIFY_API_CLIENT_ID` | Spotify Web API client ID | — |
+| `SPOTIFY_API_CLIENT_SECRET` | Spotify Web API client secret | — |
 
 ## Running
 
 ```bash
-pip install -r sources/prod.txt
+./install_dependencies.sh  # installs Python deps and pre-commit hook
 
 # First run only — creates the database
 python sources/scripts/create_db.py
@@ -54,7 +59,7 @@ Ansible-based deployment to a Docker container:
 ./deploy.sh
 ```
 
-Requires Ansible Vault password for secrets. See `ansible/` for playbooks and inventory.
+Secrets are managed via Bitwarden Secrets Manager. See `ansible/` for playbooks and inventory.
 
 ## License
 
