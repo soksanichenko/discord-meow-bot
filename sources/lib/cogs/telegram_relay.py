@@ -306,7 +306,10 @@ class TelegramRelayCog(commands.Cog):
                 )
                 return
 
-        channel_title: str | None = feed.feed.get('title')
+        raw_title = feed.feed.get('title') or ''
+        channel_title = (
+            re.sub(r'\s*-\s*Telegram Channel$', '', raw_title).strip() or None
+        )
 
         # Post oldest-first so the channel reads chronologically.
         for entry in reversed(new_entries):
@@ -391,10 +394,8 @@ class TelegramRelayCog(commands.Cog):
                 if url := thumb.get('url'):
                     images.append(url)
 
-        # RSSHub returns 'Telegram Channel' as a placeholder when the channel has no name.
-        effective_title = channel_title if channel_title != 'Telegram Channel' else None
         main = discord.Embed(
-            title=effective_title or f'@{username}',
+            title=channel_title or f'@{username}',
             description=text[:4096] or None,
             url=link,
             colour=_TELEGRAM_COLOUR,
