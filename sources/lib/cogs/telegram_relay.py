@@ -374,10 +374,15 @@ class TelegramRelayCog(commands.Cog):
             List of Discord Embeds (always at least one).
         """
         text, images = _html_to_markdown(entry.get('summary') or '')
+        # Strip RSSHub noise for oversized media
+        text = re.sub(r'^Video is too big$', '', text, flags=re.MULTILINE).strip()
         link = entry.get('link') or None
 
+        # When there's no caption, show the post URL so the message isn't linkless.
+        description = text[:4096] if text else link
+
         main = discord.Embed(
-            description=text[:4096] or None,
+            description=description,
             url=link,
             colour=discord.Colour.blue(),
         )
