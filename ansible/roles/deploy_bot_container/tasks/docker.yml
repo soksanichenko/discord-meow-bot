@@ -46,6 +46,7 @@
         src: "../../../../sources/"
         owner: false
         group: false
+        delete: yes
       become: yes
       register: sources_result
 
