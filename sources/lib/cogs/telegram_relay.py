@@ -23,7 +23,6 @@ from sources.lib.db.operations.telegram_relay import (
 )
 from sources.lib.utils import Logger
 
-_POLL_INTERVAL_MINUTES = 5
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)
 
@@ -105,17 +104,16 @@ class TelegramRelayCog(commands.Cog):
     async def cog_load(self) -> None:
         """Open the HTTP session and start the polling scheduler."""
         self._session = aiohttp.ClientSession()
+        interval = config.telegram_relay_poll_interval_minutes
         self._scheduler.add_job(
             self._poll_all,
             trigger='interval',
-            minutes=_POLL_INTERVAL_MINUTES,
+            minutes=interval,
             id='telegram_relay_poll',
             replace_existing=True,
         )
         self._scheduler.start()
-        self.logger.info(
-            'Telegram relay scheduler started (every %d min)', _POLL_INTERVAL_MINUTES
-        )
+        self.logger.info('Telegram relay scheduler started (every %d min)', interval)
 
     def cog_unload(self) -> None:
         """Stop the scheduler and close the HTTP session."""
@@ -177,7 +175,7 @@ class TelegramRelayCog(commands.Cog):
 
         await interaction.followup.send(
             f'Now relaying `@{username}` to {channel.mention}. '
-            f'New posts will appear within {_POLL_INTERVAL_MINUTES} minutes.',
+            f'New posts will appear within {config.telegram_relay_poll_interval_minutes} minutes.',
             ephemeral=True,
         )
         self.logger.info(

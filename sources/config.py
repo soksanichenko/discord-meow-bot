@@ -38,6 +38,7 @@ class Config(BaseSettings):
     spotify_api_client_id: str = ''
     spotify_api_client_secret: str = ''
     rsshub_url: str = 'https://rsshub.app'
+    telegram_relay_poll_interval_minutes: int = 5
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
