@@ -95,8 +95,8 @@ class TelegramRelayCog(commands.Cog):
         username = username.lstrip('@').lower()
         await interaction.response.defer(ephemeral=True)
 
-        last_entry_id = await self._fetch_latest_entry_id(username)
-        if last_entry_id is None:
+        reachable, last_entry_id = await self._fetch_latest_entry_id(username)
+        if not reachable:
             await interaction.followup.send(
                 f'Could not reach the RSS feed for `@{username}`. '
                 'Check that the channel is public and the username is correct.',
@@ -220,6 +220,12 @@ class TelegramRelayCog(commands.Cog):
         if not feed.entries:
             return
 
+        # First poll after the relay was added to an empty channel — silently mark
+        # the latest entry so future polls only forward new posts.
+        if relay.last_entry_id is None:
+            await update_last_entry_id(relay.id, feed.entries[0]['id'])
+            return
+
         new_entries = []
         for entry in feed.entries:
             if entry.get('id') == relay.last_entry_id:
@@ -256,29 +262,31 @@ class TelegramRelayCog(commands.Cog):
             'Relayed %d new post(s) from @%s', len(new_entries), relay.tg_username
         )
 
-    async def _fetch_latest_entry_id(self, username: str) -> str | None:
-        """Fetch the RSS feed and return the ID of the most recent entry.
-
-        Returns None if the feed cannot be fetched or is empty.
+    async def _fetch_latest_entry_id(self, username: str) -> tuple[bool, str | None]:
+        """Fetch the RSS feed and return reachability + latest entry ID.
 
         Args:
             username: Telegram channel username.
 
         Returns:
-            The latest RSS entry ID, or None on failure.
+            (reachable, latest_entry_id). reachable is False only on network/parse
+            failure. latest_entry_id is None when the channel exists but has no posts.
         """
         url = f'{config.rsshub_url}/telegram/channel/{username}'
         try:
             async with self._session.get(url, timeout=_REQUEST_TIMEOUT) as resp:
+                if resp.status >= 400:
+                    return False, None
                 content = await resp.text()
         except Exception as exc:
             self.logger.warning('Failed to fetch RSS for @%s on add: %s', username, exc)
-            return None
+            return False, None
 
         feed = feedparser.parse(content)
-        if not feed.entries:
-            return None
-        return feed.entries[0].get('id')
+        if feed.bozo and not feed.entries:
+            return False, None
+        latest = feed.entries[0].get('id') if feed.entries else None
+        return True, latest
 
     @staticmethod
     def _build_embed(entry: feedparser.FeedParserDict, username: str) -> discord.Embed:
