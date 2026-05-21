@@ -30,23 +30,27 @@ _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 class _HtmlToMarkdown(HTMLParser):
     """Convert Telegram HTML formatting to Discord Markdown."""
 
-    # Tags that map to a Markdown wrapper applied symmetrically on open and close.
     _WRAPPERS = {'b': '**', 'strong': '**', 'i': '*', 'em': '*', 's': '~~', 'code': '`'}
 
     def __init__(self) -> None:
         super().__init__()
         self._parts: list[str] = []
         self._href_stack: list[str] = []
+        self.images: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = dict(attrs)
         if tag == 'br':
             self._parts.append('\n')
         elif tag in ('p', 'pre', 'div'):
-            pass  # newline added on close
+            pass
         elif tag == 'a':
-            href = dict(attrs).get('href') or ''
-            self._href_stack.append(href)
+            self._href_stack.append(attrs_dict.get('href') or '')
             self._parts.append('[')
+        elif tag == 'img':
+            src = attrs_dict.get('src') or ''
+            if src:
+                self.images.append(src)
         elif wrapper := self._WRAPPERS.get(tag):
             self._parts.append(wrapper)
 
@@ -67,11 +71,15 @@ class _HtmlToMarkdown(HTMLParser):
         return re.sub(r'\n{3,}', '\n\n', text)
 
 
-def _html_to_markdown(html: str) -> str:
-    """Strip HTML and convert basic Telegram formatting tags to Discord Markdown."""
+def _html_to_markdown(html: str) -> tuple[str, list[str]]:
+    """Convert Telegram HTML to Discord Markdown and extract image URLs.
+
+    Returns:
+        (markdown_text, image_urls)
+    """
     parser = _HtmlToMarkdown()
     parser.feed(html)
-    return parser.result()
+    return parser.result(), parser.images
 
 
 class TelegramRelayCog(commands.Cog):
@@ -301,9 +309,9 @@ class TelegramRelayCog(commands.Cog):
 
         # Post oldest-first so the channel reads chronologically.
         for entry in reversed(new_entries):
-            embed = self._build_embed(entry, relay.tg_username)
+            embeds = self._build_embeds(entry, relay.tg_username)
             try:
-                await channel.send(embed=embed)
+                await channel.send(embeds=embeds)
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay @%s',
@@ -350,30 +358,43 @@ class TelegramRelayCog(commands.Cog):
         return True, latest
 
     @staticmethod
-    def _build_embed(entry: feedparser.FeedParserDict, username: str) -> discord.Embed:
-        """Build a Discord embed for a single RSS entry.
+    def _build_embeds(
+        entry: feedparser.FeedParserDict, username: str
+    ) -> list[discord.Embed]:
+        """Build Discord embeds for a single RSS entry.
+
+        Returns multiple embeds when the post contains several images — Discord
+        renders them as a gallery when all embeds share the same url.
 
         Args:
             entry: A feedparser entry dict.
             username: Telegram channel username used for the footer.
 
         Returns:
-            A Discord Embed ready to send.
+            List of Discord Embeds (always at least one).
         """
-        title = _html_to_markdown(entry.get('title') or '')[:256]
-        summary = _html_to_markdown(entry.get('summary') or '')[:4096]
-        link = entry.get('link', '')
+        text, images = _html_to_markdown(entry.get('summary') or '')
+        link = entry.get('link') or None
 
-        embed = discord.Embed(
-            title=title or None,
-            description=summary or None,
-            url=link or None,
+        main = discord.Embed(
+            description=text[:4096] or None,
+            url=link,
             colour=discord.Colour.blue(),
         )
-        embed.set_footer(text=f'@{username}')
+        main.set_footer(text=f'@{username}')
 
         published = entry.get('published_parsed')
         if published:
-            embed.timestamp = datetime(*published[:6], tzinfo=UTC)
+            main.timestamp = datetime(*published[:6], tzinfo=UTC)
 
-        return embed
+        if images:
+            main.set_image(url=images[0])
+
+        embeds = [main]
+        # Embeds sharing the same url are rendered as a gallery by Discord.
+        for img_url in images[1:10]:
+            extra = discord.Embed(url=link, colour=discord.Colour.blue())
+            extra.set_image(url=img_url)
+            embeds.append(extra)
+
+        return embeds
