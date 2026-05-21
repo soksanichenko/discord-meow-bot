@@ -23,7 +23,9 @@ _CHECKPOINT_EVERY = 500
 class StatsCog(commands.Cog):
     """Message statistics commands and realtime on_message listener."""
 
-    stats = app_commands.Group(name='stats', description='Message statistics and leaderboard')
+    stats = app_commands.Group(
+        name='stats', description='Message statistics and leaderboard'
+    )
 
     def __init__(self, bot: commands.Bot) -> None:
         """Initialise the cog.
@@ -58,7 +60,9 @@ class StatsCog(commands.Cog):
             return
         await increment_message_counts(message.guild.id, {message.author.id: 1})
 
-    @stats.command(name='leaderboard', description='Show top message senders in this server')
+    @stats.command(
+        name='leaderboard', description='Show top message senders in this server'
+    )
     async def leaderboard(self, interaction: discord.Interaction) -> None:
         """Display the message count leaderboard for this guild.
 
@@ -89,7 +93,9 @@ class StatsCog(commands.Cog):
         embed.description = '\n'.join(lines)
         await interaction.response.send_message(embed=embed)
 
-    @stats.command(name='import', description='Import message history to build statistics')
+    @stats.command(
+        name='import', description='Import message history to build statistics'
+    )
     @app_commands.describe(
         since='Only import messages from this date forward (YYYY-MM-DD). Ignored when resuming.'
     )
@@ -133,7 +139,9 @@ class StatsCog(commands.Cog):
             ephemeral=True,
         )
 
-    @stats.command(name='import-status', description='Show message history import progress')
+    @stats.command(
+        name='import-status', description='Show message history import progress'
+    )
     @app_commands.default_permissions(manage_guild=True)
     async def import_status(self, interaction: discord.Interaction) -> None:
         """Show the current state of the historical import for this guild.
@@ -162,10 +170,14 @@ class StatsCog(commands.Cog):
             inline=True,
         )
         if in_progress:
-            embed.add_field(name='In progress', value=f'{in_progress} channel(s)', inline=True)
+            embed.add_field(
+                name='In progress', value=f'{in_progress} channel(s)', inline=True
+            )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def _run_import(self, guild: discord.Guild, since_dt: datetime | None) -> None:
+    async def _run_import(
+        self, guild: discord.Guild, since_dt: datetime | None
+    ) -> None:
         """Scan all readable text channels and accumulate per-user message counts.
 
         Saves a checkpoint to the database every _CHECKPOINT_EVERY messages so the
@@ -181,7 +193,9 @@ class StatsCog(commands.Cog):
             if ch.permissions_for(guild.me).read_message_history
         ]
         self.logger.info(
-            'Stats import started for guild %s: %d channels', guild.name, len(text_channels)
+            'Stats import started for guild %s: %d channels',
+            guild.name,
+            len(text_channels),
         )
 
         for channel in text_channels:
@@ -212,7 +226,9 @@ class StatsCog(commands.Cog):
                         if counts:
                             await increment_message_counts(guild.id, counts)
                             counts = {}
-                        await save_channel_progress(guild.id, channel.id, last_id, False)
+                        await save_channel_progress(
+                            guild.id, channel.id, last_id, False
+                        )
                         self.logger.info(
                             'Stats import: %s — checkpoint at %d messages',
                             channel.name,
@@ -223,7 +239,9 @@ class StatsCog(commands.Cog):
                     await increment_message_counts(guild.id, counts)
                 await save_channel_progress(guild.id, channel.id, last_id, True)
                 self.logger.info(
-                    'Stats import: channel %s done (%d messages)', channel.name, processed
+                    'Stats import: channel %s done (%d messages)',
+                    channel.name,
+                    processed,
                 )
 
             except discord.Forbidden:
