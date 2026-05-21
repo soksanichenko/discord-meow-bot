@@ -152,3 +152,33 @@ class Reminder(Base):
     remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     is_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MessageStats(Base):
+    """Aggregate message count per user per guild."""
+
+    __tablename__ = 'message_stats'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class StatsImportProgress(Base):
+    """Per-channel checkpoint for historical message import."""
+
+    __tablename__ = 'stats_import_progress'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
+    )
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # Snowflake ID of the last processed message; NULL means not yet started.
+    last_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
