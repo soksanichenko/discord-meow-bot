@@ -67,6 +67,7 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `YOUTUBE_API_KEY` | YouTube Data API v3 key (music link conversion) |
 | `SPOTIFY_API_CLIENT_ID` | Spotify Web API client ID |
 | `SPOTIFY_API_CLIENT_SECRET` | Spotify Web API client secret |
+| `RSSHUB_URL` | RSSHub base URL for Telegram relay (default: `https://rsshub.app`) |
 
 Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from the DB_* variables.
 
@@ -100,6 +101,7 @@ Rules:
 - `Reminder(id PK, user_id, channel_id, message_url, message_content, note, remind_at, created_at, is_sent)` — scheduled reminders
 - `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
 - `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
+- `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 
 ### Migrations
 
@@ -153,6 +155,9 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/stats leaderboard` | stats.py | Top message senders |
 | `/stats import [since]` | stats.py | Import message history (admin) |
 | `/stats import-status` | stats.py | Show import progress (admin) |
+| `/telegram-relay add` | telegram_relay.py | Forward a Telegram channel to Discord (admin) |
+| `/telegram-relay remove` | telegram_relay.py | Stop forwarding a Telegram channel (admin) |
+| `/telegram-relay list` | telegram_relay.py | Show active Telegram relays (admin) |
 
 ## Adding a New Feature
 

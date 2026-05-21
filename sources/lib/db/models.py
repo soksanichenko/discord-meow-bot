@@ -154,6 +154,33 @@ class Reminder(Base):
     is_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class TelegramRelay(Base):
+    """A Telegram public channel relayed to a Discord channel."""
+
+    __tablename__ = 'telegram_relays'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    tg_username: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # RSS entry ID of the last post sent — NULL means "silently sync on first poll".
+    last_entry_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            'uq_telegram_relays',
+            'guild_id',
+            'tg_username',
+            'discord_channel_id',
+            unique=True,
+        ),
+    )
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 
