@@ -9,19 +9,29 @@
   delegate_to: localhost
   become: no
 
-- name: Load secrets from Infisical
+- name: Load secrets from Infisical (/shared)
+  infisical.vault.read_secrets:
+    login_data: "{{ infisical_login.login_data }}"
+    project_id: "{{ infisical_project_id }}"
+    env_slug: "prod"
+    path: "/shared"
+    as_dict: true
+  register: _infisical_shared
+  delegate_to: localhost
+  become: no
+
+- name: Load secrets from Infisical ({{ infisical_path }})
   infisical.vault.read_secrets:
     login_data: "{{ infisical_login.login_data }}"
     project_id: "{{ infisical_project_id }}"
     env_slug: "prod"
     path: "{{ infisical_path }}"
-    include_imports: true
     as_dict: true
-  register: _infisical_raw
+  register: _infisical_path
   delegate_to: localhost
   become: no
 
 - name: Set infisical_secrets fact
   ansible.builtin.set_fact:
-    infisical_secrets: "{{ _infisical_raw }}"
+    infisical_secrets: "{{ {'secrets': _infisical_shared.secrets | combine(_infisical_path.secrets)} }}"
 ...
