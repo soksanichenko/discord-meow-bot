@@ -8,6 +8,7 @@
   register: infisical_login
   delegate_to: localhost
   become: no
+  no_log: true
 
 - name: Load secrets from Infisical (/shared)
   infisical.vault.read_secrets:
@@ -19,6 +20,7 @@
   register: _infisical_shared
   delegate_to: localhost
   become: no
+  no_log: true
 
 - name: Load secrets from Infisical ({{ infisical_path }})
   infisical.vault.read_secrets:
@@ -30,8 +32,10 @@
   register: _infisical_path
   delegate_to: localhost
   become: no
+  no_log: true
 
 - name: Set infisical_secrets fact
   ansible.builtin.set_fact:
     infisical_secrets: "{{ {'secrets': _infisical_shared.secrets | combine(_infisical_path.secrets)} }}"
+  no_log: true
 ...
