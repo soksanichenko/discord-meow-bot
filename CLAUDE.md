@@ -64,10 +64,11 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `DB_DATABASE` | Database name |
 | `DB_PORT` | PostgreSQL port (default: 5432) |
 | `BIRTHDAY_IMAGES_DIR` | Local path for stored birthday images (default: `/tmp/meow-bot-images`) |
-| `YOUTUBE_API_KEY` | YouTube Data API v3 key (music link conversion) |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (music link conversion + YouTube relay) |
 | `SPOTIFY_API_CLIENT_ID` | Spotify Web API client ID |
 | `SPOTIFY_API_CLIENT_SECRET` | Spotify Web API client secret |
 | `RSSHUB_URL` | RSSHub base URL for Telegram relay (default: `https://rsshub.app`) |
+| `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
 
 Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from the DB_* variables.
 
@@ -158,6 +159,9 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/telegram-relay add` | telegram_relay.py | Forward a Telegram channel to Discord (admin) |
 | `/telegram-relay remove` | telegram_relay.py | Stop forwarding a Telegram channel (admin) |
 | `/telegram-relay list` | telegram_relay.py | Show active Telegram relays (admin) |
+| `/youtube-relay add` | youtube_relay.py | Forward a YouTube channel's uploads to Discord (admin) |
+| `/youtube-relay remove` | youtube_relay.py | Stop forwarding a YouTube channel (admin) |
+| `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
 
 ## Adding a New Feature
 

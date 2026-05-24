@@ -181,6 +181,37 @@ class TelegramRelay(Base):
     )
 
 
+class YouTubeRelay(Base):
+    """A YouTube channel relayed to a Discord channel."""
+
+    __tablename__ = 'youtube_relays'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    yt_channel_id: Mapped[str] = mapped_column(Text, nullable=False)
+    yt_channel_title: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Video ID of the last posted video — NULL means post all new videos since relay was added.
+    last_video_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    post_videos: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    post_shorts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    post_lives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index(
+            'uq_youtube_relays',
+            'guild_id',
+            'yt_channel_id',
+            'discord_channel_id',
+            unique=True,
+        ),
+    )
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 

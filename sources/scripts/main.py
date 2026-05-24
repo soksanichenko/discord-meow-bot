@@ -18,6 +18,7 @@ from sources.lib.cogs.stats import StatsCog
 from sources.lib.cogs.telegram_relay import TelegramRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
+from sources.lib.cogs.youtube_relay import YouTubeRelayCog
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -42,6 +43,7 @@ class MeowBot(Bot):
         await self.add_cog(StatsCog(self))
         await self.add_cog(TelegramRelayCog(self))
         await self.add_cog(UserCog(self))
+        await self.add_cog(YouTubeRelayCog(self))
         await self.add_cog(VoiceCog(self))
 
 
