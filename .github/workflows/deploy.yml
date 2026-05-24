@@ -23,8 +23,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Ansible and Bitwarden SDK
-        run: pip install ansible bitwarden-sdk
+      - name: Install Ansible and Infisical SDK
+        run: pip install ansible infisicalsdk==1.0.16
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml
@@ -39,6 +39,7 @@ jobs:
       - name: Run deploy
         working-directory: ansible
         env:
-          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-          BWS_BASE_URL: ${{ vars.BWS_BASE_URL }}
+          INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
         run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml

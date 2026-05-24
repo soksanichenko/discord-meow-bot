@@ -1,0 +1,3 @@
+-r sources/requirements.txt
+pre-commit==4.6.0
+infisicalsdk==1.0.16

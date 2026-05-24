@@ -1,7 +1,6 @@
 ---
 collections:
-  - name: https://github.com/soksanichenko/sm-ansible.git
-    type: git
-    version: patch-1
+  - name: infisical.vault
   - name: community.docker
   - name: ansible.posix
+...

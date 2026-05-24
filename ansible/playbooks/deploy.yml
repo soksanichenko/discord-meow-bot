@@ -1,6 +1,8 @@
 ---
 - name: Deploy discord bot
   hosts: all
+  pre_tasks:
+    - import_tasks: pre_tasks/infisical.yml
   tasks:
     - import_role:
         name: deploy_bot_container

@@ -1,0 +1,27 @@
+---
+- name: Login to Infisical
+  infisical.vault.login:
+    url: "{{ lookup('env', 'INFISICAL_API_URL') }}"
+    auth_method: universal_auth
+    universal_auth_client_id: "{{ lookup('env', 'INFISICAL_CLIENT_ID') }}"
+    universal_auth_client_secret: "{{ lookup('env', 'INFISICAL_CLIENT_SECRET') }}"
+  register: infisical_login
+  delegate_to: localhost
+  become: no
+
+- name: Load secrets from Infisical
+  infisical.vault.read_secrets:
+    login_data: "{{ infisical_login.login_data }}"
+    project_id: "{{ infisical_project_id }}"
+    env_slug: "prod"
+    path: "{{ infisical_path }}"
+    include_imports: true
+    as_dict: true
+  register: _infisical_raw
+  delegate_to: localhost
+  become: no
+
+- name: Set infisical_secrets fact
+  ansible.builtin.set_fact:
+    infisical_secrets: "{{ _infisical_raw }}"
+...
