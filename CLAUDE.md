@@ -21,8 +21,10 @@ sources/
 │   │   ├── music_links.py  # /music-links group + cross-platform link conversion
 │   │   ├── reminders.py  # /reminders group (add, list, delete, reschedule)
 │   │   ├── stats.py      # /stats group + on_message counter + background import
+│   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
 │   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
-│   │   └── voice.py      # Voice channel auto-status
+│   │   ├── voice.py      # Voice channel auto-status
+│   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── commands/         # Reusable command helpers
 │   │   ├── get_timestamp.py
 │   │   └── utils.py
@@ -68,7 +70,9 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `SPOTIFY_API_CLIENT_ID` | Spotify Web API client ID |
 | `SPOTIFY_API_CLIENT_SECRET` | Spotify Web API client secret |
 | `RSSHUB_URL` | RSSHub base URL for Telegram relay (default: `https://rsshub.app`) |
+| `TELEGRAM_RELAY_POLL_INTERVAL_MINUTES` | Telegram relay polling interval in minutes (default: 5) |
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
+| `HEALTH_PORT` | Port for the internal HTTP health endpoint (default: `8080`) |
 
 Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from the DB_* variables.
 
@@ -103,6 +107,7 @@ Rules:
 - `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
 - `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
+- `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, post_videos, post_shorts, post_lives)` — YouTube channel → Discord channel relay
 
 ### Migrations
 
@@ -189,9 +194,18 @@ alembic -c sources/alembic.ini upgrade head
 python sources/scripts/main.py
 ```
 
+## Health Endpoint
+
+`main.py` starts an aiohttp HTTP server alongside the bot on `HEALTH_PORT` (default `8080`):
+
+- `GET /health` → `200 {"status": "ok", "latency_ms": N}` when bot is ready
+- `GET /health` → `503 {"status": "starting"}` while connecting to Discord
+
+The port is published only to `127.0.0.1` on the host (Docker `published_ports`), so it is not externally reachable. The nginx role in the `infra` repo proxies it at `https://zelgray.work/discord-bot/health` behind `auth_basic`.
+
 ## Deployment
 
-Ansible-based, targets `zelgray.work` inventory. Secrets are managed via **Bitwarden Secrets Manager** (Ansible BSM lookup plugin) — not ansible-vault.
+Ansible-based, targets `zelgray.work` inventory. Secrets are managed via **Infisical** (Ansible `infisical.vault` collection) — not ansible-vault.
 
 ```bash
 # Deploy
@@ -207,6 +221,7 @@ Deployment does:
 4. Bind mounts:
    - `sources/` → `/code/sources` (read-only)
    - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
+5. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
 
 ## No Tests
 
