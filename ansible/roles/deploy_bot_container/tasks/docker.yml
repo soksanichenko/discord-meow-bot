@@ -94,10 +94,13 @@
             target: "/code/images"
             read_only: no
             type: bind
+        published_ports:
+          - "127.0.0.1:{{ health_port }}:{{ health_port }}"
         networks:
           - name: "{{ docker_network }}"
         env:
           DISCORD_TOKEN: "{{ discord_token }}"
+          HEALTH_PORT: "{{ health_port | string }}"
           BIRTHDAY_IMAGES_DIR: "/code/images"
           YOUTUBE_API_KEY: "{{ youtube_api_key }}"
           SPOTIFY_API_CLIENT_ID: "{{ spotify_api_client_id }}"
@@ -117,4 +120,13 @@
       ansible.builtin.file:
         path: "{{ docker_temp_directory.path }}"
         state: absent
+
+- name: Wait for the bot health endpoint to become ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ health_port }}/health"
+    status_code: 200
+  register: health_result
+  retries: 18
+  delay: 10
+  until: health_result.status == 200
 ...

@@ -1,8 +1,10 @@
 """Main module of the bot"""
 
 import asyncio
+import json
 
 import discord
+from aiohttp import web
 from discord import utils
 from discord.ext.commands import Bot
 
@@ -19,6 +21,34 @@ from sources.lib.cogs.telegram_relay import TelegramRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
+
+
+async def _health_handler(request: web.Request) -> web.Response:
+    """Return bot readiness and WebSocket latency."""
+    bot_instance: MeowBot = request.app['bot']
+    if not bot_instance.is_ready():
+        return web.Response(
+            status=503,
+            content_type='application/json',
+            text=json.dumps({'status': 'starting'}),
+        )
+    return web.Response(
+        content_type='application/json',
+        text=json.dumps(
+            {'status': 'ok', 'latency_ms': round(bot_instance.latency * 1000, 1)}
+        ),
+    )
+
+
+async def _start_health_server(bot_instance: 'MeowBot') -> None:
+    """Start the health HTTP server in the background."""
+    app = web.Application()
+    app['bot'] = bot_instance
+    app.router.add_get('/health', _health_handler)
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', config.health_port).start()
+
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -58,10 +88,8 @@ bot = MeowBot(
 async def main():
     """Main run function."""
     utils.setup_logging()
-    await bot.start(
-        token=config.discord_token,
-        reconnect=True,
-    )
+    await _start_health_server(bot)
+    await bot.start(token=config.discord_token, reconnect=True)
 
 
 if __name__ == '__main__':

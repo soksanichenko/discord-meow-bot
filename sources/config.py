@@ -33,6 +33,7 @@ class Config(BaseSettings):
     __db: DBConfig = DBConfig()
 
     discord_token: str
+    health_port: int = 8080
     birthday_images_dir: str = '/tmp/meow-bot-images'
     youtube_api_key: str = ''
     spotify_api_client_id: str = ''
