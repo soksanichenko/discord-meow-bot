@@ -484,6 +484,19 @@ class YouTubeRelayCog(commands.Cog):
             if self._video_id_from_entry(entry) == relay.last_video_id:
                 break
             new_entries.append(entry)
+        else:
+            # Sentinel was never found — it has aged out of the RSS window.
+            # Resync silently to avoid flooding historical videos.
+            latest_id = self._video_id_from_entry(feed.entries[0])
+            if latest_id:
+                await update_last_video_id(relay.id, latest_id)
+            self.logger.warning(
+                'Relay %s: last_video_id %r not found in feed (aged out); resynced to %s',
+                relay.yt_channel_id,
+                relay.last_video_id,
+                latest_id,
+            )
+            return
 
         self.logger.info(
             'Polling %s: %d new video(s)', relay.yt_channel_id, len(new_entries)
