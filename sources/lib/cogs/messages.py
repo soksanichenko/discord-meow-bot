@@ -57,8 +57,20 @@ class MessagesCog(commands.Cog):
         if content == message.content:
             Logger().info('The original message is already fine')
             return
+        # Cross-server subscription messages arrive via webhook and may carry
+        # @everyone/@here from the originating server; break them so the bot
+        # cannot fire a broadcast it has no business sending.
+        if message.webhook_id is not None:
+            content = content.replace('@everyone', '@​everyone').replace(
+                '@here', '@​here'
+            )
+        allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
         if message.reference is None or message.reference.resolved is None:
-            await message.channel.send(content=content, silent=True)
+            await message.channel.send(
+                content=content, silent=True, allowed_mentions=allowed
+            )
         else:
-            await message.reference.resolved.reply(content=content, silent=True)
+            await message.reference.resolved.reply(
+                content=content, silent=True, allowed_mentions=allowed
+            )
         await message.delete()

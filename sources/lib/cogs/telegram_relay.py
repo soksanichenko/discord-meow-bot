@@ -25,6 +25,8 @@ from sources.lib.utils import Logger
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)
+# Telegram usernames: 5–32 chars, letters/digits/underscores.
+_TG_USERNAME_RE = re.compile(r'^[a-z0-9_]{5,32}$')
 
 
 class _HtmlToMarkdown(HTMLParser):
@@ -149,6 +151,12 @@ class TelegramRelayCog(commands.Cog):
             channel: The Discord channel to receive new posts.
         """
         username = username.lstrip('@').lower()
+        if not _TG_USERNAME_RE.match(username):
+            await interaction.response.send_message(
+                'Invalid Telegram username. Must be 5–32 characters: letters, digits, and underscores only.',
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True)
 
         reachable, last_entry_id = await self._fetch_latest_entry_id(username)
