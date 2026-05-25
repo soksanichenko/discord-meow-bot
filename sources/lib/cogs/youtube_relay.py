@@ -267,7 +267,8 @@ class YouTubeRelayCog(commands.Cog):
             ch = interaction.guild.get_channel(r.discord_channel_id)
             ch_mention = ch.mention if ch else f'<#{r.discord_channel_id}>'
             types = _content_types_label(r.post_videos, r.post_shorts, r.post_lives)
-            lines.append(f'**{r.yt_channel_title}** → {ch_mention} ({types})')
+            yt_url = f'https://www.youtube.com/channel/{r.yt_channel_id}'
+            lines.append(f'[{r.yt_channel_title}]({yt_url}) → {ch_mention} ({types})')
         embed.description = '\n'.join(lines)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
