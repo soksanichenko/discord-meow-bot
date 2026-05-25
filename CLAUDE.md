@@ -17,6 +17,7 @@ sources/
 │   │   ├── birthdays.py  # /birthday group + hourly announcement scheduler
 │   │   ├── domain_fixer.py  # /domain-fixer group (admin URL rule management)
 │   │   ├── guild.py      # /server group: info, list-members, timezone, settings
+│   │   ├── help.py       # /help — dynamic help from live command tree
 │   │   ├── messages.py   # URL domain fixing listener (on_message)
 │   │   ├── music_links.py  # /music-links group + cross-platform link conversion
 │   │   ├── reminders.py  # /reminders group (add, list, delete, reschedule)
@@ -167,6 +168,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/youtube-relay add` | youtube_relay.py | Forward a YouTube channel's uploads to Discord (admin) |
 | `/youtube-relay remove` | youtube_relay.py | Stop forwarding a YouTube channel (admin) |
 | `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
+| `/help [command]` | help.py | List all commands or show details for one; auto-reflects new commands |
 
 ## Adding a New Feature
 

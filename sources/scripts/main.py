@@ -13,6 +13,7 @@ from sources.lib.cogs.admin import AdminCog
 from sources.lib.cogs.birthdays import BirthdaysCog
 from sources.lib.cogs.domain_fixer import DomainFixerCog
 from sources.lib.cogs.guild import GuildCog
+from sources.lib.cogs.help import HelpCog
 from sources.lib.cogs.messages import MessagesCog
 from sources.lib.cogs.music_links import MusicLinksCog
 from sources.lib.cogs.reminders import RemindersCog
@@ -64,6 +65,7 @@ class MeowBot(Bot):
     async def setup_hook(self) -> None:
         """Load all cogs before bot starts."""
         await self.add_cog(AdminCog(self))
+        await self.add_cog(HelpCog(self))
         await self.add_cog(BirthdaysCog(self))
         await self.add_cog(DomainFixerCog(self))
         await self.add_cog(GuildCog(self))
