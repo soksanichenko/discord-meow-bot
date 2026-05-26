@@ -17,6 +17,7 @@ from sources.lib.db.operations.youtube_relay import (
     get_all_relays,
     get_guild_relays,
     remove_relay,
+    set_relay_message,
     update_last_video_id,
 )
 from sources.lib.utils import Logger
@@ -272,6 +273,107 @@ class YouTubeRelayCog(commands.Cog):
         embed.description = '\n'.join(lines)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    async def _relay_channel_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        relays = await get_guild_relays(interaction.guild_id)
+        return [
+            app_commands.Choice(name=r.yt_channel_title, value=r.yt_channel_id)
+            for r in relays
+            if current.lower() in r.yt_channel_title.lower()
+        ][:25]
+
+    @relay.command(
+        name='set-message',
+        description='Set a custom notification message for a YouTube relay',
+    )
+    @app_commands.describe(
+        channel='YouTube channel to configure',
+        kind='Content type to customise',
+        message='Notification text posted before the video link',
+    )
+    @app_commands.autocomplete(channel=_relay_channel_autocomplete)
+    @app_commands.choices(
+        kind=[
+            app_commands.Choice(name='Video', value='video'),
+            app_commands.Choice(name='Short', value='short'),
+            app_commands.Choice(name='Live', value='live'),
+        ]
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_set_message(
+        self,
+        interaction: discord.Interaction,
+        channel: str,
+        kind: app_commands.Choice[str],
+        message: str,
+    ) -> None:
+        """Set a custom notification message for a relay content type.
+
+        Args:
+            interaction: The Discord interaction.
+            channel: YouTube channel ID (UCxxx) from autocomplete.
+            kind: Content type (video, short, or live).
+            message: Custom text to post before the video link.
+        """
+        title = await set_relay_message(
+            interaction.guild_id, channel, kind.value, message
+        )
+        if title is None:
+            await interaction.response.send_message(
+                'Relay not found. Add one first with `/youtube-relay add`.',
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f'Custom {kind.name.lower()} message for **{title}** set.',
+            ephemeral=True,
+        )
+
+    @relay.command(
+        name='remove-message',
+        description='Reset the notification message for a YouTube relay to the default',
+    )
+    @app_commands.describe(
+        channel='YouTube channel to configure',
+        kind='Content type to reset',
+    )
+    @app_commands.autocomplete(channel=_relay_channel_autocomplete)
+    @app_commands.choices(
+        kind=[
+            app_commands.Choice(name='Video', value='video'),
+            app_commands.Choice(name='Short', value='short'),
+            app_commands.Choice(name='Live', value='live'),
+        ]
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_remove_message(
+        self,
+        interaction: discord.Interaction,
+        channel: str,
+        kind: app_commands.Choice[str],
+    ) -> None:
+        """Reset a relay's custom message back to the built-in default.
+
+        Args:
+            interaction: The Discord interaction.
+            channel: YouTube channel ID (UCxxx) from autocomplete.
+            kind: Content type whose message to reset (video, short, or live).
+        """
+        title = await set_relay_message(interaction.guild_id, channel, kind.value, None)
+        if title is None:
+            await interaction.response.send_message(
+                'Relay not found.',
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f'{kind.name} message for **{title}** reset to default.',
+            ephemeral=True,
+        )
+
     # ------------------------------------------------------------------ helpers
 
     async def _resolve_channel(self, raw: str) -> tuple[str, str] | None:
@@ -428,6 +530,28 @@ class YouTubeRelayCog(commands.Cog):
         is_short, is_live = await asyncio.gather(check_short(), check_live())
         return is_short, is_live
 
+    @staticmethod
+    def _notification_message(
+        relay: YouTubeRelay, is_short: bool, is_live: bool
+    ) -> str:
+        """Return the notification message for a new video.
+
+        Args:
+            relay: The relay whose custom messages are checked first.
+            is_short: True if the video is a YouTube Short.
+            is_live: True if the video is a live stream.
+
+        Returns:
+            Message text to prepend before the video URL.
+        """
+        if is_live:
+            return (
+                relay.message_live or f'**{relay.yt_channel_title}** is streaming now'
+            )
+        if is_short:
+            return relay.message_short or f'New short from **{relay.yt_channel_title}**'
+        return relay.message_video or f'New video from **{relay.yt_channel_title}**'
+
     # ------------------------------------------------------------------ polling
 
     async def _poll_all(self) -> None:
@@ -517,28 +641,26 @@ class YouTubeRelayCog(commands.Cog):
                 )
                 return
 
-        needs_classification = not (
-            relay.post_videos and relay.post_shorts and relay.post_lives
-        )
-
         for entry in reversed(new_entries):
             link = entry.get('link')
             if not link:
                 continue
 
-            if needs_classification:
-                video_id = self._video_id_from_entry(entry)
-                if video_id:
-                    is_short, is_live = await self._classify_video(video_id)
-                    if is_live and not relay.post_lives:
-                        continue
-                    if is_short and not relay.post_shorts:
-                        continue
-                    if not is_live and not is_short and not relay.post_videos:
-                        continue
+            video_id = self._video_id_from_entry(entry)
+            is_short, is_live = False, False
+            if video_id:
+                is_short, is_live = await self._classify_video(video_id)
 
+            if is_live and not relay.post_lives:
+                continue
+            if is_short and not relay.post_shorts:
+                continue
+            if not is_live and not is_short and not relay.post_videos:
+                continue
+
+            message = self._notification_message(relay, is_short, is_live)
             try:
-                await channel.send(link)
+                await channel.send(f'{message}\n{link}')
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay %s',

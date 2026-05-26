@@ -105,6 +105,42 @@ async def remove_relay(guild_id: int, yt_channel_id: str) -> bool:
         return True
 
 
+async def set_relay_message(
+    guild_id: int,
+    yt_channel_id: str,
+    content_type: str,
+    message: str | None,
+) -> str | None:
+    """Set or clear the custom notification message for one content type.
+
+    Args:
+        guild_id: Discord guild ID.
+        yt_channel_id: YouTube channel ID (UCxxx).
+        content_type: One of 'video', 'short', 'live'.
+        message: Custom text, or None to reset to the built-in default.
+
+    Returns:
+        The channel title if the relay was found and updated, None if not found.
+    """
+    field_map = {
+        'video': 'message_video',
+        'short': 'message_short',
+        'live': 'message_live',
+    }
+    async with AsyncSession() as session:
+        relay = await session.scalar(
+            select(YouTubeRelay).where(
+                YouTubeRelay.guild_id == guild_id,
+                YouTubeRelay.yt_channel_id == yt_channel_id,
+            )
+        )
+        if relay is None:
+            return None
+        setattr(relay, field_map[content_type], message)
+        await session.commit()
+        return relay.yt_channel_title
+
+
 async def update_last_video_id(relay_id: int, last_video_id: str) -> None:
     """Persist the ID of the last relayed video.
 

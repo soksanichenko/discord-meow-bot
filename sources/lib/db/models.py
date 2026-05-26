@@ -200,6 +200,10 @@ class YouTubeRelay(Base):
     post_videos: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     post_shorts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     post_lives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Custom notification messages; NULL means use the built-in default.
+    message_video: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_short: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_live: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index(
