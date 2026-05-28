@@ -4,3 +4,4 @@ vault-pass
 *.pyc
 __pycache__
 IDEAS.md
+.coverage

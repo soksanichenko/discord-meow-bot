@@ -13,7 +13,7 @@ Default rules:
 - `x.com` / `twitter.com` → `fxtwitter.com` / `fixupx.com`
 - `tiktok.com` → `tnktok.com`
 
-Admins can add, remove, and list custom rules with `/domain-fixer`.
+Admins can add, remove, list, and initialise default rules with `/domain-fixer`.
 
 ### Birthday Reminders
 Tracks members' birthdays per server and announces them at 9:00 in the
@@ -35,8 +35,7 @@ the original channel.
 
 - `/reminders add` — set a reminder on the current or any message
 - `/reminders list` — list your pending reminders
-- `/reminders delete` — cancel a reminder
-- `/reminders reschedule` — change the time of an existing reminder
+- `/reminders cancel` — cancel a pending reminder
 
 ### Cross-Platform Music Link Conversion
 When a user posts a YouTube, YouTube Music, or Spotify link in a configured
@@ -75,6 +74,9 @@ Data API.
 
 - `/youtube-relay add <channel> <#channel>` — start forwarding (admin)
   - Optional: `post_videos`, `post_shorts`, `post_lives` (all `True` by default)
+- `/youtube-relay modify <channel>` — change the Discord channel or content type filters (admin)
+- `/youtube-relay set-message <channel> <type>` — set a custom notification message per content type (admin)
+- `/youtube-relay remove-message <channel> <type>` — reset a notification message to default (admin)
 - `/youtube-relay remove <channel>` — stop forwarding (admin)
 - `/youtube-relay list` — show active relays (admin)
 
@@ -122,6 +124,7 @@ All configuration is done via environment variables:
 | `RSSHUB_URL` | RSSHub base URL for Telegram relay | `https://rsshub.app` |
 | `TELEGRAM_RELAY_POLL_INTERVAL_MINUTES` | Telegram relay polling interval | `5` |
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval | `5` |
+| `HEALTH_PORT` | Port for the internal HTTP health endpoint | `8080` |
 
 ## Running
 

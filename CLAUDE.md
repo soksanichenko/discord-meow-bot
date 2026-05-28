@@ -20,7 +20,7 @@ sources/
 │   │   ├── help.py       # /help — dynamic help from live command tree
 │   │   ├── messages.py   # URL domain fixing listener (on_message)
 │   │   ├── music_links.py  # /music-links group + cross-platform link conversion
-│   │   ├── reminders.py  # /reminders group (add, list, delete, reschedule)
+│   │   ├── reminders.py  # /reminders group (add, list, cancel)
 │   │   ├── stats.py      # /stats group + on_message counter + background import
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
 │   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
@@ -35,7 +35,8 @@ sources/
 │   │   ├── utils.py      # DB helper utilities
 │   │   ├── crud/base.py  # Generic CRUD (get, create, update, delete, upsert)
 │   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
-│   │   │                 #   music_links.py, reminders.py, stats.py
+│   │   │                 #   music_links.py, reminders.py, stats.py,
+│   │   │                 #   telegram_relay.py, youtube_relay.py, youtube_live_session.py
 │   │   └── alembic/      # Migrations
 │   ├── on_message/
 │   │   └── domains_fixer.py  # URL rewriting logic
@@ -108,7 +109,8 @@ Rules:
 - `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
 - `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
-- `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, post_videos, post_shorts, post_lives)` — YouTube channel → Discord channel relay
+- `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `message_*` are custom notification texts (NULL = use built-in default)
+- `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
 
 ### Migrations
 
@@ -154,7 +156,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/server timezone-set/remove` | guild.py | Guild fallback timezone (admin) |
 | `/server settings` | guild.py | Show guild timezone (admin) |
 | `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
-| `/reminders add/list/delete/reschedule` | reminders.py | Message reminders |
+| `/reminders add/list/cancel` | reminders.py | Message reminders |
 | `/get-timestamp` | user.py | Generate Discord timestamp |
 | `/my-settings` | user.py | Show personal timezone |
 | `/force-timezone` | user.py | Set timezone for another user (admin) |
@@ -166,6 +168,9 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/telegram-relay remove` | telegram_relay.py | Stop forwarding a Telegram channel (admin) |
 | `/telegram-relay list` | telegram_relay.py | Show active Telegram relays (admin) |
 | `/youtube-relay add` | youtube_relay.py | Forward a YouTube channel's uploads to Discord (admin) |
+| `/youtube-relay modify` | youtube_relay.py | Change Discord channel or content type filters for a relay (admin) |
+| `/youtube-relay set-message` | youtube_relay.py | Set a custom notification message per content type (admin) |
+| `/youtube-relay remove-message` | youtube_relay.py | Reset a notification message to default (admin) |
 | `/youtube-relay remove` | youtube_relay.py | Stop forwarding a YouTube channel (admin) |
 | `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
 | `/help [command]` | help.py | List all commands or show details for one; auto-reflects new commands |
@@ -225,16 +230,16 @@ Deployment does:
    - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
 5. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
 
-## No Tests
+## Tests
 
-There is no test suite. When adding logic that can be tested without Discord, consider adding pytest tests in a `tests/` directory.
+`tests/` contains a pytest suite covering pure logic and DB operations with mocked sessions. Run with `python -m pytest tests/ -q`. No Discord connection required.
 
 ## Key Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.py` | v2.7.1 (git) | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.49 | ORM |
+| `SQLAlchemy[asyncio]` | 2.0.50 | ORM |
 | `psycopg[binary]` | 3.3.4 | Async + sync PostgreSQL driver |
 | `alembic` | 1.18.4 | DB migrations |
 | `pydantic-settings` | 2.14.1 | Config from env vars |
@@ -242,4 +247,4 @@ There is no test suite. When adding logic that can be tested without Discord, co
 | `dateparser` | 1.4.0 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery) |
 | `aiohttp` | 3.13.5 | HTTP client (YouTube API, Spotify API) |
-| `psycopg2-binary` | 2.9.11 | Sync PostgreSQL driver (alembic migrations) |
+| `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay) |
