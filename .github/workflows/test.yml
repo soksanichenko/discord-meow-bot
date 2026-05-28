@@ -1,0 +1,26 @@
+---
+name: Test
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r sources/requirements.txt pytest==8.3.5 pytest-asyncio==0.25.3
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short

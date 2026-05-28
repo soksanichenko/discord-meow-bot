@@ -2,8 +2,10 @@
 name: Deploy
 
 on:
-  push:
-    branches: ["master"]
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
+    branches: [master]
 
 concurrency:
   group: deploy
@@ -14,23 +16,28 @@ jobs:
     name: deploy
     runs-on: ubuntu-latest
     environment: production
-    if: "!contains(github.event.head_commit.message, '[skip deploy]')"
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip deploy]')
     steps:
       - name: Verify actor is a collaborator
         uses: actions/github-script@v7
         with:
           script: |
+            const actor = context.payload.workflow_run.actor.login;
             try {
               await github.rest.repos.checkCollaborator({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                username: context.actor,
+                username: actor,
               });
             } catch {
-              core.setFailed(`${context.actor} is not a repository collaborator — deploy blocked`);
+              core.setFailed(`${actor} is not a repository collaborator — deploy blocked`);
             }
 
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
