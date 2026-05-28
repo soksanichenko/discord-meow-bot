@@ -141,6 +141,134 @@ async def set_relay_message(
         return relay.yt_channel_title
 
 
+async def enable_relay_type(
+    guild_id: int,
+    yt_channel_id: str,
+    yt_channel_title: str,
+    discord_channel_id: int,
+    flag_key: str,
+    last_video_id: str | None,
+) -> None:
+    """Enable a single content type on the relay for the given Discord channel.
+
+    Creates the relay row if it does not exist, inheriting last_video_id so the
+    poller does not replay historical videos.
+
+    Args:
+        guild_id: Discord guild ID.
+        yt_channel_id: YouTube channel ID (UCxxx).
+        yt_channel_title: Display name of the YouTube channel.
+        discord_channel_id: Discord channel to post to.
+        flag_key: One of 'post_videos', 'post_shorts', 'post_lives'.
+        last_video_id: Sentinel video ID to start tracking from.
+    """
+    async with AsyncSession() as session:
+        relay = await session.scalar(
+            select(YouTubeRelay).where(
+                YouTubeRelay.guild_id == guild_id,
+                YouTubeRelay.yt_channel_id == yt_channel_id,
+                YouTubeRelay.discord_channel_id == discord_channel_id,
+            )
+        )
+        if relay is None:
+            relay = YouTubeRelay(
+                guild_id=guild_id,
+                yt_channel_id=yt_channel_id,
+                yt_channel_title=yt_channel_title,
+                discord_channel_id=discord_channel_id,
+                last_video_id=last_video_id,
+                post_videos=False,
+                post_shorts=False,
+                post_lives=False,
+            )
+            session.add(relay)
+        setattr(relay, flag_key, True)
+        await session.commit()
+
+
+async def update_relay_content_flags(
+    relay_id: int,
+    post_videos: bool,
+    post_shorts: bool,
+    post_lives: bool,
+) -> None:
+    """Update the content type flags for a relay row.
+
+    Args:
+        relay_id: Primary key of the YouTubeRelay row.
+        post_videos: New value for the post_videos flag.
+        post_shorts: New value for the post_shorts flag.
+        post_lives: New value for the post_lives flag.
+    """
+    async with AsyncSession() as session:
+        relay = await session.get(YouTubeRelay, relay_id)
+        if relay is not None:
+            relay.post_videos = post_videos
+            relay.post_shorts = post_shorts
+            relay.post_lives = post_lives
+            await session.commit()
+
+
+async def get_relay_by_id(relay_id: int) -> YouTubeRelay | None:
+    """Return a single relay by primary key.
+
+    Args:
+        relay_id: Primary key of the YouTubeRelay row.
+
+    Returns:
+        The YouTubeRelay row, or None if not found.
+    """
+    async with AsyncSession() as session:
+        return await session.get(YouTubeRelay, relay_id)
+
+
+async def remove_relay_by_id(relay_id: int) -> bool:
+    """Remove a YouTube relay by its primary key.
+
+    Args:
+        relay_id: Primary key of the YouTubeRelay row.
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    async with AsyncSession() as session:
+        relay = await session.get(YouTubeRelay, relay_id)
+        if relay is None:
+            return False
+        await session.delete(relay)
+        await session.commit()
+        return True
+
+
+async def set_relay_message_by_id(
+    relay_id: int,
+    content_type: str,
+    message: str | None,
+) -> str | None:
+    """Set or clear the custom notification message for one content type.
+
+    Args:
+        relay_id: Primary key of the YouTubeRelay row.
+        content_type: One of 'video', 'short', 'live'.
+        message: Custom text, or None to reset to the built-in default.
+
+    Returns:
+        The channel title if found and updated, None if not found.
+    """
+    field_map = {
+        'video': 'message_video',
+        'short': 'message_short',
+        'live': 'message_live',
+    }
+    async with AsyncSession() as session:
+        relay = await session.get(YouTubeRelay, relay_id)
+        if relay is None:
+            return None
+        setattr(relay, field_map[content_type], message)
+        await session.commit()
+        return relay.yt_channel_title
+
+
 async def update_last_video_id(relay_id: int, last_video_id: str) -> None:
     """Persist the ID of the last relayed video.
 

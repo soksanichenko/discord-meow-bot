@@ -242,12 +242,18 @@ class TelegramRelayCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(title='Telegram Relays', colour=discord.Colour.blue())
+        embed = discord.Embed(colour=discord.Colour.blue())
+        embed.set_author(
+            name='Telegram Relays',
+            icon_url='https://telegram.org/img/apple-touch-icon.png',
+        )
         lines = []
         for r in relays:
             ch = interaction.guild.get_channel(r.discord_channel_id)
             ch_mention = ch.mention if ch else f'<#{r.discord_channel_id}>'
-            lines.append(f'`@{r.tg_username}` → {ch_mention}')
+            lines.append(
+                f'[@{r.tg_username}](https://t.me/{r.tg_username}) → {ch_mention}'
+            )
         embed.description = '\n'.join(lines)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

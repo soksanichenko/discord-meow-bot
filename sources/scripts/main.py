@@ -1,7 +1,9 @@
 """Main module of the bot"""
 
 import asyncio
+import hashlib
 import json
+import pathlib
 
 import discord
 from aiohttp import web
@@ -22,6 +24,7 @@ from sources.lib.cogs.telegram_relay import TelegramRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
+from sources.lib.utils import Logger
 
 
 async def _health_handler(request: web.Request) -> web.Response:
@@ -59,11 +62,15 @@ intents.members = True
 intents.presences = True
 
 
+_SYNC_HASH_PATH = pathlib.Path('/tmp/.discord_sync_hash')
+_logger = Logger()
+
+
 class MeowBot(Bot):
     """Discord bot."""
 
     async def setup_hook(self) -> None:
-        """Load all cogs before bot starts."""
+        """Load all cogs and sync the slash command tree with Discord if it changed."""
         await self.add_cog(AdminCog(self))
         await self.add_cog(HelpCog(self))
         await self.add_cog(BirthdaysCog(self))
@@ -77,6 +84,57 @@ class MeowBot(Bot):
         await self.add_cog(UserCog(self))
         await self.add_cog(YouTubeRelayCog(self))
         await self.add_cog(VoiceCog(self))
+        await self._sync_command_tree()
+
+    async def _sync_command_tree(self) -> None:
+        """Sync slash commands with Discord only when the tree has changed.
+
+        Computes a hash of the current command payloads and compares it with the
+        last synced hash stored in a temp file. Skips the API call if unchanged.
+        """
+        current_hash = self._hash_command_tree()
+        stored_hash = (
+            _SYNC_HASH_PATH.read_text().strip() if _SYNC_HASH_PATH.exists() else ''
+        )
+
+        if current_hash == stored_hash:
+            _logger.info('Command tree unchanged, skipping sync')
+            return
+
+        await self.tree.sync()
+        _SYNC_HASH_PATH.write_text(current_hash)
+        _logger.info('Command tree synced')
+
+    def _hash_command_tree(self) -> str:
+        """Compute a SHA-1 hash of the current command tree structure.
+
+        Captures names, descriptions, subcommands, and parameter signatures.
+        """
+
+        def serialize(
+            cmd: discord.app_commands.Command
+            | discord.app_commands.Group
+            | discord.app_commands.ContextMenu,
+        ) -> dict:
+            if isinstance(cmd, discord.app_commands.ContextMenu):
+                return {'name': cmd.name, 'type': 'context_menu'}
+            base: dict = {'name': cmd.name, 'description': cmd.description}
+            if isinstance(cmd, discord.app_commands.Group):
+                base['commands'] = sorted(
+                    [serialize(c) for c in cmd.commands], key=lambda x: x['name']
+                )
+            else:
+                base['params'] = sorted(
+                    [{'name': p.name, 'required': p.required} for p in cmd.parameters],
+                    key=lambda x: x['name'],
+                )
+            return base
+
+        payload = sorted(
+            [serialize(cmd) for cmd in self.tree.get_commands()],
+            key=lambda x: x['name'],
+        )
+        return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 bot = MeowBot(

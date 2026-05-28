@@ -216,6 +216,26 @@ class YouTubeRelay(Base):
     )
 
 
+class YouTubeLiveSession(Base):
+    """Tracks an ongoing YouTube live stream so the bot can post an end-of-stream notice."""
+
+    __tablename__ = 'youtube_live_sessions'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    relay_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey('youtube_relays.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    video_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # Snowflake ID of the Discord message that announced the stream — used to edit it on end.
+    discord_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        Index('uq_youtube_live_sessions', 'relay_id', 'video_id', unique=True),
+    )
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 

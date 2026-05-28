@@ -2,6 +2,7 @@
 
 import asyncio
 import urllib.parse
+from collections import Counter
 
 import aiohttp
 import discord
@@ -12,13 +13,21 @@ from discord.ext import commands
 
 from sources.config import config
 from sources.lib.db.models import YouTubeRelay
+from sources.lib.db.operations.youtube_live_session import (
+    add_live_session,
+    get_all_live_sessions,
+    remove_live_session,
+)
 from sources.lib.db.operations.youtube_relay import (
     add_relay,
+    enable_relay_type,
     get_all_relays,
     get_guild_relays,
-    remove_relay,
-    set_relay_message,
+    get_relay_by_id,
+    remove_relay_by_id,
+    set_relay_message_by_id,
     update_last_video_id,
+    update_relay_content_flags,
 )
 from sources.lib.utils import Logger
 
@@ -26,6 +35,13 @@ _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'
 _YT_API_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos'
 _YT_RSS_BASE = 'https://www.youtube.com/feeds/videos.xml'
+
+# Ordered list of (flag_key, display_label) for all content types.
+_CONTENT_TYPES: list[tuple[str, str]] = [
+    ('post_videos', 'Videos'),
+    ('post_shorts', 'Shorts'),
+    ('post_lives', 'Lives'),
+]
 
 
 def _content_types_label(post_videos: bool, post_shorts: bool, post_lives: bool) -> str:
@@ -39,14 +55,403 @@ def _content_types_label(post_videos: bool, post_shorts: bool, post_lives: bool)
     Returns:
         Comma-separated label, e.g. 'videos, shorts'.
     """
-    parts = []
-    if post_videos:
-        parts.append('videos')
-    if post_shorts:
-        parts.append('shorts')
-    if post_lives:
-        parts.append('lives')
-    return ', '.join(parts)
+    flags = {
+        'post_videos': post_videos,
+        'post_shorts': post_shorts,
+        'post_lives': post_lives,
+    }
+    return ', '.join(label.lower() for key, label in _CONTENT_TYPES if flags[key])
+
+
+class _RelayView(discord.ui.View):
+    """Base class for relay configuration views.
+
+    Stores the original interaction for timeout cleanup and provides a helper
+    to disable all child components.
+    """
+
+    def __init__(self, interaction: discord.Interaction, timeout: float = 180) -> None:
+        """Initialise the view.
+
+        Args:
+            interaction: The original interaction (used to edit the message on timeout).
+            timeout: View timeout in seconds.
+        """
+        super().__init__(timeout=timeout)
+        self._interaction = interaction
+
+    def _disable_all(self) -> None:
+        for item in self.children:
+            item.disabled = True
+
+    async def on_timeout(self) -> None:
+        """Disable all components when the view times out."""
+        self._disable_all()
+        try:
+            await self._interaction.edit_original_response(view=self)
+        except discord.HTTPException:
+            pass
+
+
+class _RelaySetupView(_RelayView):
+    """Per-type channel selector shown after resolving a YouTube channel."""
+
+    def __init__(
+        self,
+        interaction: discord.Interaction,
+        yt_channel_id: str,
+        yt_channel_title: str,
+        last_video_id: str | None,
+    ) -> None:
+        """Initialise the view.
+
+        Args:
+            interaction: The original deferred interaction.
+            yt_channel_id: Resolved YouTube channel ID (UCxxx).
+            yt_channel_title: Display name of the YouTube channel.
+            last_video_id: Latest video ID to use as the relay sentinel.
+        """
+        super().__init__(interaction)
+        self.yt_channel_id = yt_channel_id
+        self.yt_channel_title = yt_channel_title
+        self.last_video_id = last_video_id
+        self._new: dict[str, int | None] = {key: None for key, _ in _CONTENT_TYPES}
+
+        for row, (flag_key, label) in enumerate(_CONTENT_TYPES, start=1):
+            select = discord.ui.ChannelSelect(
+                placeholder=f'{label} → Discord channel (leave empty to skip)',
+                min_values=0,
+                max_values=1,
+                channel_types=[discord.ChannelType.text],
+                row=row,
+            )
+            select.callback = self._make_callback(flag_key, select)
+            self.add_item(select)
+
+        confirm = discord.ui.Button(
+            label='Confirm', style=discord.ButtonStyle.green, row=4
+        )
+        confirm.callback = self._on_confirm
+        self.add_item(confirm)
+
+    def _make_callback(self, flag_key: str, select: discord.ui.ChannelSelect):
+        async def callback(interaction: discord.Interaction) -> None:
+            self._new[flag_key] = select.values[0].id if select.values else None
+            await interaction.response.defer()
+
+        return callback
+
+    async def _on_confirm(self, interaction: discord.Interaction) -> None:
+        """Create relay rows and replace the message with a summary.
+
+        Types targeting the same Discord channel are merged into one relay row.
+
+        Args:
+            interaction: The component interaction.
+        """
+        if not any(self._new.values()):
+            await interaction.response.send_message(
+                'Select at least one Discord channel before confirming.',
+                ephemeral=True,
+            )
+            return
+
+        # Merge types sharing the same Discord channel into one relay row.
+        channel_flags: dict[int, dict[str, bool]] = {}
+        for flag_key, _ in _CONTENT_TYPES:
+            ch_id = self._new[flag_key]
+            if ch_id is None:
+                continue
+            if ch_id not in channel_flags:
+                channel_flags[ch_id] = {k: False for k, _ in _CONTENT_TYPES}
+            channel_flags[ch_id][flag_key] = True
+
+        added, skipped = 0, 0
+        for discord_channel_id, flags in channel_flags.items():
+            inserted = await add_relay(
+                guild_id=interaction.guild_id,
+                yt_channel_id=self.yt_channel_id,
+                yt_channel_title=self.yt_channel_title,
+                discord_channel_id=discord_channel_id,
+                last_video_id=self.last_video_id,
+                **flags,
+            )
+            if inserted:
+                added += 1
+            else:
+                skipped += 1
+
+        lines = []
+        for discord_channel_id, flags in channel_flags.items():
+            ch = interaction.guild.get_channel(discord_channel_id)
+            ch_mention = ch.mention if ch else f'<#{discord_channel_id}>'
+            types = _content_types_label(**flags)
+            lines.append(f'{ch_mention} — {types}')
+
+        note = (
+            f'\n{skipped} relay(s) already existed and were skipped.' if skipped else ''
+        )
+        self._disable_all()
+        await interaction.response.edit_message(
+            content=(
+                f'Relay configured for **{self.yt_channel_title}**:\n'
+                + '\n'.join(lines)
+                + note
+            ),
+            view=self,
+        )
+
+
+class _RelayModifyView(_RelayView):
+    """Per-type channel selector for modifying an existing relay configuration."""
+
+    def __init__(
+        self,
+        interaction: discord.Interaction,
+        relays: list[YouTubeRelay],
+    ) -> None:
+        """Initialise the view with ChannelSelects pre-filled from the current config.
+
+        Args:
+            interaction: The original interaction.
+            relays: All relay rows for the YouTube channel being modified.
+        """
+        super().__init__(interaction)
+        self._relays = relays
+
+        # Current state: flag_key → (relay_id, discord_channel_id) or None.
+        self._current: dict[str, tuple[int, int] | None] = {
+            k: None for k, _ in _CONTENT_TYPES
+        }
+        for r in relays:
+            for flag_key, _ in _CONTENT_TYPES:
+                if getattr(r, flag_key):
+                    self._current[flag_key] = (r.id, r.discord_channel_id)
+
+        # Mutable new selections; start equal to current.
+        self._new: dict[str, int | None] = {
+            k: v[1] if v else None for k, v in self._current.items()
+        }
+
+        for row, (flag_key, label) in enumerate(_CONTENT_TYPES, start=1):
+            ch_id = self._current[flag_key][1] if self._current[flag_key] else None
+            select = discord.ui.ChannelSelect(
+                placeholder=f'{label} → Discord channel (empty to stop)',
+                min_values=0,
+                max_values=1,
+                channel_types=[discord.ChannelType.text],
+                default_values=[discord.Object(id=ch_id)] if ch_id else [],
+                row=row,
+            )
+            select.callback = self._make_callback(flag_key, select)
+            self.add_item(select)
+
+        save = discord.ui.Button(label='Save', style=discord.ButtonStyle.green, row=4)
+        save.callback = self._on_confirm
+        self.add_item(save)
+
+    def _make_callback(self, flag_key: str, select: discord.ui.ChannelSelect):
+        async def callback(interaction: discord.Interaction) -> None:
+            self._new[flag_key] = select.values[0].id if select.values else None
+            await interaction.response.defer()
+
+        return callback
+
+    async def _on_confirm(self, interaction: discord.Interaction) -> None:
+        """Apply changes: update/delete existing relay rows, enable types on new channels.
+
+        Pass 1 — for each relay row, disable flags whose target channel changed.
+        Pass 2 — enable moved flags on their new Discord channels (creating rows as needed,
+        inheriting last_video_id so history is not replayed).
+
+        Args:
+            interaction: The component interaction.
+        """
+        relay = self._relays[0]
+        guild_id = interaction.guild_id
+        latest_video_id = next(
+            (r.last_video_id for r in self._relays if r.last_video_id), None
+        )
+
+        for r in self._relays:
+            new_flags = {
+                flag_key: getattr(r, flag_key)
+                and self._new[flag_key] == r.discord_channel_id
+                for flag_key, _ in _CONTENT_TYPES
+            }
+            old_flags = {
+                flag_key: getattr(r, flag_key) for flag_key, _ in _CONTENT_TYPES
+            }
+            if new_flags == old_flags:
+                continue
+            if not any(new_flags.values()):
+                await remove_relay_by_id(r.id)
+            else:
+                await update_relay_content_flags(r.id, **new_flags)
+
+        for flag_key, _ in _CONTENT_TYPES:
+            old_ch = self._current[flag_key][1] if self._current[flag_key] else None
+            new_ch = self._new[flag_key]
+            if new_ch is None or new_ch == old_ch:
+                continue
+            await enable_relay_type(
+                guild_id,
+                relay.yt_channel_id,
+                relay.yt_channel_title,
+                new_ch,
+                flag_key,
+                latest_video_id,
+            )
+
+        self._disable_all()
+        await interaction.response.edit_message(
+            content=f'**{relay.yt_channel_title}** relay updated.',
+            view=self,
+        )
+
+
+class _RelayRemoveView(_RelayView):
+    """Type-based removal view — lets the user pick which content types to stop relaying."""
+
+    def __init__(
+        self,
+        interaction: discord.Interaction,
+        relays: list[YouTubeRelay],
+    ) -> None:
+        """Initialise the view.
+
+        Args:
+            interaction: The original interaction.
+            relays: All relay rows for the YouTube channel being configured.
+        """
+        super().__init__(interaction, timeout=60)
+        self._relays = relays
+        self._selected: set[str] = set()
+
+        active_options = [
+            discord.SelectOption(label=label, value=flag_key)
+            for flag_key, label in _CONTENT_TYPES
+            if any(getattr(r, flag_key) for r in relays)
+        ]
+        self.type_select = discord.ui.Select(
+            placeholder='Select content types to remove',
+            min_values=1,
+            max_values=len(active_options),
+            options=active_options,
+        )
+        self.type_select.callback = self._on_select
+        self.add_item(self.type_select)
+
+        remove = discord.ui.Button(label='Remove', style=discord.ButtonStyle.danger)
+        remove.callback = self._on_confirm
+        self.add_item(remove)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        self._selected = set(self.type_select.values)
+        await interaction.response.defer()
+
+    async def _on_confirm(self, interaction: discord.Interaction) -> None:
+        """Apply removal: update or delete relay rows based on remaining active types.
+
+        Args:
+            interaction: The component interaction.
+        """
+        if not self._selected:
+            await interaction.response.send_message(
+                'Select at least one content type first.',
+                ephemeral=True,
+            )
+            return
+
+        for relay in self._relays:
+            new_flags = {
+                flag_key: getattr(relay, flag_key) and flag_key not in self._selected
+                for flag_key, _ in _CONTENT_TYPES
+            }
+            old_flags = {
+                flag_key: getattr(relay, flag_key) for flag_key, _ in _CONTENT_TYPES
+            }
+            if new_flags == old_flags:
+                continue
+            if not any(new_flags.values()):
+                await remove_relay_by_id(relay.id)
+            else:
+                await update_relay_content_flags(relay.id, **new_flags)
+
+        removed_labels = [
+            label for flag_key, label in _CONTENT_TYPES if flag_key in self._selected
+        ]
+        self._disable_all()
+        await interaction.response.edit_message(
+            content=(
+                f'Removed **{", ".join(removed_labels)}** '
+                f'from **{self._relays[0].yt_channel_title}**.'
+            ),
+            view=self,
+        )
+
+
+class _StreamEndedView(discord.ui.View):
+    """Persistent view shown when a YouTube live stream ends — contains a channel link button."""
+
+    def __init__(self, yt_channel_id: str) -> None:
+        """Initialise the view.
+
+        Args:
+            yt_channel_id: YouTube channel ID (UCxxx) used to build the channel URL.
+        """
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Button(
+                label='Visit Channel ↗',
+                url=f'https://www.youtube.com/channel/{yt_channel_id}',
+                style=discord.ButtonStyle.link,
+            )
+        )
+
+
+class _SetMessageModal(discord.ui.Modal):
+    """Modal for editing a relay's custom notification message."""
+
+    def __init__(self, relay: YouTubeRelay, kind: str, kind_label: str) -> None:
+        """Initialise the modal.
+
+        Args:
+            relay: The relay whose message is being edited.
+            kind: Content type key ('video', 'short', or 'live').
+            kind_label: Human-readable label shown in the title.
+        """
+        super().__init__(title=f'Set {kind_label} message')
+        self.relay = relay
+        self.kind = kind
+
+        field_map = {
+            'video': relay.message_video,
+            'short': relay.message_short,
+            'live': relay.message_live,
+        }
+        self.message_input = discord.ui.TextInput(
+            label='Notification message',
+            style=discord.TextStyle.paragraph,
+            default=field_map[kind] or '',
+            max_length=500,
+            required=True,
+        )
+        self.add_item(self.message_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Save the edited message on modal submit.
+
+        Args:
+            interaction: The Discord interaction from the modal submission.
+        """
+        text = self.message_input.value.strip() or None
+        await set_relay_message_by_id(self.relay.id, self.kind, text)
+        label = 'reset to default' if text is None else 'updated'
+        await interaction.response.send_message(
+            f'Custom {self.kind} message for **{self.relay.yt_channel_title}** {label}.',
+            ephemeral=True,
+        )
 
 
 class YouTubeRelayCog(commands.Cog):
@@ -89,6 +494,54 @@ class YouTubeRelayCog(commands.Cog):
         if self._session and not self._session.closed:
             asyncio.create_task(self._session.close())
 
+    # ------------------------------------------------------------------ autocomplete
+
+    async def _yt_channel_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return one deduplicated choice per configured YouTube channel.
+
+        Used by remove and modify, where the user picks a YouTube channel first.
+        """
+        relays = await get_guild_relays(interaction.guild_id)
+        seen: set[str] = set()
+        choices = []
+        for r in relays:
+            if r.yt_channel_id in seen:
+                continue
+            seen.add(r.yt_channel_id)
+            if current.lower() in r.yt_channel_title.lower():
+                choices.append(
+                    app_commands.Choice(name=r.yt_channel_title, value=r.yt_channel_id)
+                )
+        return choices[:25]
+
+    async def _relay_channel_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return one choice per relay row (value = relay ID).
+
+        When a YouTube channel has multiple Discord targets, each is listed with
+        the Discord channel name in parentheses to disambiguate.
+        """
+        relays = await get_guild_relays(interaction.guild_id)
+        yt_counts = Counter(r.yt_channel_id for r in relays)
+
+        choices = []
+        for r in relays:
+            name = r.yt_channel_title
+            if yt_counts[r.yt_channel_id] > 1:
+                ch = interaction.guild.get_channel(r.discord_channel_id)
+                ch_name = f'#{ch.name}' if ch else f'#{r.discord_channel_id}'
+                name = f'{name} ({ch_name})'
+            if current.lower() in name.lower():
+                choices.append(app_commands.Choice(name=name, value=str(r.id)))
+        return choices[:25]
+
     # ------------------------------------------------------------------ commands
 
     @relay.command(
@@ -96,45 +549,27 @@ class YouTubeRelayCog(commands.Cog):
         description="Forward a YouTube channel's uploads to a Discord channel",
     )
     @app_commands.describe(
-        channel='YouTube channel URL, @handle, or channel ID (UCxxx)',
-        discord_channel='Discord channel to post new videos to',
-        post_videos='Post regular videos (default: True)',
-        post_shorts='Post Shorts (default: True)',
-        post_lives='Post live streams (default: True)',
+        channel='YouTube channel URL, @handle, or channel ID (UCxxx)'
     )
     @app_commands.default_permissions(manage_guild=True)
     async def relay_add(
         self,
         interaction: discord.Interaction,
         channel: str,
-        discord_channel: discord.TextChannel,
-        post_videos: bool = True,
-        post_shorts: bool = True,
-        post_lives: bool = True,
     ) -> None:
         """Add a YouTube → Discord relay for this guild.
 
-        Resolves the channel via the YouTube API and records the latest video so
-        existing uploads are not flooded into the channel.
+        Resolves the channel via the YouTube API, then shows a per-type channel
+        selector so videos, Shorts, and live streams can route to different
+        Discord channels.
 
         Args:
             interaction: The Discord interaction.
             channel: YouTube channel URL, @handle, or UCxxx channel ID.
-            discord_channel: The Discord channel to receive new uploads.
-            post_videos: Whether to post regular videos.
-            post_shorts: Whether to post Shorts.
-            post_lives: Whether to post live streams.
         """
         if not config.youtube_api_key:
             await interaction.response.send_message(
                 'YouTube API key is not configured. Set the `YOUTUBE_API_KEY` environment variable.',
-                ephemeral=True,
-            )
-            return
-
-        if not post_videos and not post_shorts and not post_lives:
-            await interaction.response.send_message(
-                'At least one content type must be enabled.',
                 ephemeral=True,
             )
             return
@@ -159,89 +594,55 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
-        inserted = await add_relay(
-            guild_id=interaction.guild_id,
-            yt_channel_id=yt_channel_id,
-            yt_channel_title=yt_channel_title,
-            discord_channel_id=discord_channel.id,
-            last_video_id=last_video_id,
-            post_videos=post_videos,
-            post_shorts=post_shorts,
-            post_lives=post_lives,
+        view = _RelaySetupView(
+            interaction, yt_channel_id, yt_channel_title, last_video_id
         )
-        if not inserted:
-            await interaction.followup.send(
-                f'**{yt_channel_title}** → {discord_channel.mention} is already configured.',
-                ephemeral=True,
-            )
-            return
-
-        types = _content_types_label(post_videos, post_shorts, post_lives)
         await interaction.followup.send(
-            f'Now relaying **{yt_channel_title}** to {discord_channel.mention} ({types}). '
-            f'New videos will appear within {config.youtube_relay_poll_interval_minutes} minutes.',
+            f'**{yt_channel_title}** — select a Discord channel for each content type.\n'
+            'Leave a type empty to not forward it.',
+            view=view,
             ephemeral=True,
         )
         self.logger.info(
-            'Relay added: %s (%s) → #%s (guild %d) [%s]',
+            'Relay setup started: %s (%s) (guild %d)',
             yt_channel_title,
             yt_channel_id,
-            discord_channel.name,
             interaction.guild_id,
-            types,
         )
 
     @relay.command(name='remove', description='Stop forwarding a YouTube channel')
-    @app_commands.describe(
-        channel='YouTube channel URL, @handle, or channel ID (UCxxx)'
-    )
+    @app_commands.describe(channel='YouTube channel to remove')
+    @app_commands.autocomplete(channel=_yt_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
     async def relay_remove(
         self,
         interaction: discord.Interaction,
         channel: str,
     ) -> None:
-        """Remove a YouTube relay for this guild.
+        """Remove relay types for a YouTube channel in this guild.
+
+        Shows a content-type selector (Videos / Shorts / Lives). Relay rows with
+        no remaining active types after removal are deleted automatically.
 
         Args:
             interaction: The Discord interaction.
-            channel: YouTube channel URL, @handle, or UCxxx channel ID to stop relaying.
+            channel: YouTube channel ID (UCxxx) from autocomplete.
         """
-        if not config.youtube_api_key:
+        all_relays = await get_guild_relays(interaction.guild_id)
+        relays = [r for r in all_relays if r.yt_channel_id == channel]
+
+        if not relays:
             await interaction.response.send_message(
-                'YouTube API key is not configured. Set the `YOUTUBE_API_KEY` environment variable.',
+                'No relay found for this channel.',
                 ephemeral=True,
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        resolved = await self._resolve_channel(channel)
-        if resolved is None:
-            await interaction.followup.send(
-                f'Could not find a YouTube channel for `{channel}`.',
-                ephemeral=True,
-            )
-            return
-
-        yt_channel_id, yt_channel_title = resolved
-        deleted = await remove_relay(interaction.guild_id, yt_channel_id)
-        if not deleted:
-            await interaction.followup.send(
-                f'No relay found for **{yt_channel_title}**.',
-                ephemeral=True,
-            )
-            return
-
-        await interaction.followup.send(
-            f'Relay for **{yt_channel_title}** removed.',
+        view = _RelayRemoveView(interaction, relays)
+        await interaction.response.send_message(
+            f'**{relays[0].yt_channel_title}** — select the content types to stop relaying:',
+            view=view,
             ephemeral=True,
-        )
-        self.logger.info(
-            'Relay removed: %s (%s) (guild %d)',
-            yt_channel_title,
-            yt_channel_id,
-            interaction.guild_id,
         )
 
     @relay.command(
@@ -262,37 +663,77 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(title='YouTube Relays', colour=discord.Colour.red())
-        lines = []
+        grouped: dict[str, list[YouTubeRelay]] = {}
         for r in relays:
-            ch = interaction.guild.get_channel(r.discord_channel_id)
-            ch_mention = ch.mention if ch else f'<#{r.discord_channel_id}>'
-            types = _content_types_label(r.post_videos, r.post_shorts, r.post_lives)
-            yt_url = f'https://www.youtube.com/channel/{r.yt_channel_id}'
-            lines.append(f'[{r.yt_channel_title}]({yt_url}) → {ch_mention} ({types})')
-        embed.description = '\n'.join(lines)
+            grouped.setdefault(r.yt_channel_id, []).append(r)
+
+        sections = []
+        for yt_channel_id, channel_relays in grouped.items():
+            yt_url = f'https://www.youtube.com/channel/{yt_channel_id}'
+            title = channel_relays[0].yt_channel_title
+            lines = [f'**[{title}]({yt_url})**']
+            for r in channel_relays:
+                ch = interaction.guild.get_channel(r.discord_channel_id)
+                ch_mention = ch.mention if ch else f'<#{r.discord_channel_id}>'
+                types = _content_types_label(r.post_videos, r.post_shorts, r.post_lives)
+                lines.append(f'{ch_mention} — {types}')
+            sections.append('\n'.join(lines))
+
+        embed = discord.Embed(
+            description='\n\n'.join(sections), colour=discord.Colour.red()
+        )
+        embed.set_author(
+            name='YouTube Relays',
+            icon_url='https://www.gstatic.com/youtube/img/branding/favicon/favicon_96x96.png',
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def _relay_channel_autocomplete(
+    @relay.command(
+        name='modify',
+        description='Change the Discord channel routing for a YouTube relay',
+    )
+    @app_commands.describe(channel='YouTube channel to modify')
+    @app_commands.autocomplete(channel=_yt_channel_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_modify(
         self,
         interaction: discord.Interaction,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        relays = await get_guild_relays(interaction.guild_id)
-        return [
-            app_commands.Choice(name=r.yt_channel_title, value=r.yt_channel_id)
-            for r in relays
-            if current.lower() in r.yt_channel_title.lower()
-        ][:25]
+        channel: str,
+    ) -> None:
+        """Modify per-type Discord channel routing for an existing relay.
+
+        Shows a channel selector pre-filled with the current configuration.
+        Moving a type to a new channel updates the relay rows; clearing a type
+        disables it (and deletes the row if no types remain).
+
+        Args:
+            interaction: The Discord interaction.
+            channel: YouTube channel ID (UCxxx) from autocomplete.
+        """
+        all_relays = await get_guild_relays(interaction.guild_id)
+        relays = [r for r in all_relays if r.yt_channel_id == channel]
+
+        if not relays:
+            await interaction.response.send_message(
+                'No relay found for this channel.',
+                ephemeral=True,
+            )
+            return
+
+        view = _RelayModifyView(interaction, relays)
+        await interaction.response.send_message(
+            f'**{relays[0].yt_channel_title}** — update the Discord channel for each content type:',
+            view=view,
+            ephemeral=True,
+        )
 
     @relay.command(
         name='set-message',
-        description='Set a custom notification message for a YouTube relay',
+        description='Edit the custom notification message for a YouTube relay',
     )
     @app_commands.describe(
         channel='YouTube channel to configure',
         kind='Content type to customise',
-        message='Notification text posted before the video link',
     )
     @app_commands.autocomplete(channel=_relay_channel_autocomplete)
     @app_commands.choices(
@@ -308,28 +749,33 @@ class YouTubeRelayCog(commands.Cog):
         interaction: discord.Interaction,
         channel: str,
         kind: app_commands.Choice[str],
-        message: str,
     ) -> None:
-        """Set a custom notification message for a relay content type.
+        """Open a modal to edit the custom notification message for a relay.
 
         Args:
             interaction: The Discord interaction.
-            channel: YouTube channel ID (UCxxx) from autocomplete.
+            channel: Relay ID from autocomplete.
             kind: Content type (video, short, or live).
-            message: Custom text to post before the video link.
         """
-        title = await set_relay_message(
-            interaction.guild_id, channel, kind.value, message
-        )
-        if title is None:
+        try:
+            relay_id = int(channel)
+        except ValueError:
+            await interaction.response.send_message(
+                'Please select a channel from the list.',
+                ephemeral=True,
+            )
+            return
+
+        relay = await get_relay_by_id(relay_id)
+        if relay is None or relay.guild_id != interaction.guild_id:
             await interaction.response.send_message(
                 'Relay not found. Add one first with `/youtube-relay add`.',
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
-            f'Custom {kind.name.lower()} message for **{title}** set.',
-            ephemeral=True,
+
+        await interaction.response.send_modal(
+            _SetMessageModal(relay, kind.value, kind.name)
         )
 
     @relay.command(
@@ -359,10 +805,19 @@ class YouTubeRelayCog(commands.Cog):
 
         Args:
             interaction: The Discord interaction.
-            channel: YouTube channel ID (UCxxx) from autocomplete.
+            channel: Relay ID from autocomplete.
             kind: Content type whose message to reset (video, short, or live).
         """
-        title = await set_relay_message(interaction.guild_id, channel, kind.value, None)
+        try:
+            relay_id = int(channel)
+        except ValueError:
+            await interaction.response.send_message(
+                'Please select a channel from the list.',
+                ephemeral=True,
+            )
+            return
+
+        title = await set_relay_message_by_id(relay_id, kind.value, None)
         if title is None:
             await interaction.response.send_message(
                 'Relay not found.',
@@ -555,77 +1010,203 @@ class YouTubeRelayCog(commands.Cog):
     # ------------------------------------------------------------------ polling
 
     async def _poll_all(self) -> None:
-        """Poll every configured relay and forward new videos to Discord."""
+        """Poll every configured relay and forward new videos to Discord.
+
+        Relays are grouped by YouTube channel so the RSS feed is fetched once
+        per channel even when multiple Discord targets are configured.
+        """
         relays = await get_all_relays()
-        for entry in relays:
+
+        # Build a per-relay set of already-tracked live video IDs so resumed streams
+        # (same video ID re-appearing in the feed) are not re-posted.
+        live_sessions = await get_all_live_sessions()
+        active_live_ids: dict[int, set[str]] = {}
+        for s in live_sessions:
+            active_live_ids.setdefault(s.relay_id, set()).add(s.video_id)
+
+        grouped: dict[str, list[YouTubeRelay]] = {}
+        for r in relays:
+            grouped.setdefault(r.yt_channel_id, []).append(r)
+
+        for yt_channel_id, channel_relays in grouped.items():
             try:
-                await self._poll_relay(entry)
+                await self._poll_youtube_channel(
+                    yt_channel_id, channel_relays, active_live_ids
+                )
             except Exception:
                 self.logger.exception(
-                    'Unexpected error polling YouTube relay %s', entry.yt_channel_id
+                    'Unexpected error polling YouTube channel %s', yt_channel_id
                 )
 
-    async def _poll_relay(self, relay: YouTubeRelay) -> None:
-        """Fetch the RSS feed for one relay and post new videos.
+        try:
+            await self._check_live_sessions()
+        except Exception:
+            self.logger.exception('Unexpected error checking live sessions')
+
+    async def _check_live_sessions(self) -> None:
+        """Check all tracked live streams and post end-of-stream notices for ones that ended.
+
+        Batches video IDs into requests of up to 50 (YouTube API limit). A session is
+        removed when the stream ends, is gone (deleted/private), or cannot be found.
+        API errors are treated conservatively — sessions are kept alive.
+        """
+        sessions = await get_all_live_sessions()
+        if not sessions:
+            return
+
+        unique_ids = list({s.video_id for s in sessions})
+
+        # 'live' → still streaming; 'ended' → actualEndTime set; 'gone' → not in API response.
+        status: dict[str, str] = {vid: 'gone' for vid in unique_ids}
+
+        for i in range(0, len(unique_ids), 50):
+            batch = unique_ids[i : i + 50]
+            try:
+                async with self._session.get(
+                    _YT_API_VIDEOS,
+                    params={
+                        'part': 'liveStreamingDetails',
+                        'id': ','.join(batch),
+                        'key': config.youtube_api_key,
+                    },
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp:
+                    data = await resp.json()
+            except Exception as exc:
+                self.logger.warning('Failed to check live sessions batch: %s', exc)
+                for vid in batch:
+                    status[vid] = 'live'  # keep alive on error
+                continue
+
+            for item in data.get('items', []):
+                vid = item['id']
+                details = item.get('liveStreamingDetails', {})
+                status[vid] = 'ended' if details.get('actualEndTime') else 'live'
+
+        for s in sessions:
+            vid_status = status.get(s.video_id, 'live')
+            if vid_status == 'live':
+                continue
+
+            if vid_status == 'ended':
+                relay = await get_relay_by_id(s.relay_id)
+                if relay is not None:
+                    channel = self.bot.get_channel(relay.discord_channel_id)
+                    if channel is None:
+                        try:
+                            channel = await self.bot.fetch_channel(
+                                relay.discord_channel_id
+                            )
+                        except discord.NotFound:
+                            channel = None
+                    if channel is not None:
+                        end_content = (
+                            f'**{relay.yt_channel_title}** has finished streaming'
+                        )
+                        view = _StreamEndedView(relay.yt_channel_id)
+                        edited = False
+                        if s.discord_message_id:
+                            try:
+                                original = await channel.fetch_message(
+                                    s.discord_message_id
+                                )
+                                await original.edit(content=end_content, view=view)
+                                edited = True
+                            except (discord.NotFound, discord.Forbidden):
+                                pass
+                        if not edited:
+                            try:
+                                await channel.send(end_content, view=view)
+                            except discord.Forbidden:
+                                self.logger.warning(
+                                    'No permission to post stream end in channel %d',
+                                    relay.discord_channel_id,
+                                )
+
+            await remove_live_session(s.id)
+            self.logger.info(
+                'Live session removed for video %s (status: %s)', s.video_id, vid_status
+            )
+
+    async def _poll_youtube_channel(
+        self,
+        yt_channel_id: str,
+        relays: list[YouTubeRelay],
+        active_live_ids: dict[int, set[str]],
+    ) -> None:
+        """Fetch the RSS feed once and dispatch new entries to all relay rows.
 
         Args:
-            relay: The YouTubeRelay row to process.
+            yt_channel_id: YouTube channel ID to poll.
+            relays: All relay rows for this YouTube channel.
+            active_live_ids: Per-relay set of live video IDs already being tracked.
         """
-        url = f'{_YT_RSS_BASE}?channel_id={relay.yt_channel_id}'
+        url = f'{_YT_RSS_BASE}?channel_id={yt_channel_id}'
         try:
             async with self._session.get(url, timeout=_REQUEST_TIMEOUT) as resp:
                 content = await resp.text()
         except Exception as exc:
-            self.logger.warning(
-                'Failed to fetch RSS for %s: %s', relay.yt_channel_id, exc
-            )
+            self.logger.warning('Failed to fetch RSS for %s: %s', yt_channel_id, exc)
             return
 
         feed = feedparser.parse(content)
-        self.logger.info(
-            'Polling %s: %d entries, last_video_id=%r',
-            relay.yt_channel_id,
-            len(feed.entries),
-            relay.last_video_id,
-        )
+        self.logger.info('Polling %s: %d entries', yt_channel_id, len(feed.entries))
         if not feed.entries:
             return
 
-        # last_video_id is None only if the channel was empty when the relay was added.
-        # Silently sync to the current latest to avoid flooding historical videos.
+        # Cache classifications so each video is checked once across all relay rows.
+        classification_cache: dict[str, tuple[bool, bool]] = {}
+        for relay in relays:
+            await self._poll_relay(
+                relay, feed.entries, classification_cache, active_live_ids
+            )
+
+    async def _poll_relay(
+        self,
+        relay: YouTubeRelay,
+        entries: list,
+        classification_cache: dict[str, tuple[bool, bool]],
+        active_live_ids: dict[int, set[str]],
+    ) -> None:
+        """Forward new entries from an already-fetched feed to one relay row.
+
+        Args:
+            relay: The relay row to process.
+            entries: Parsed feed entries for this YouTube channel.
+            classification_cache: Shared cache of (is_short, is_live) per video ID.
+            active_live_ids: Per-relay set of live video IDs already being tracked.
+        """
         if relay.last_video_id is None:
-            latest_id = self._video_id_from_entry(feed.entries[0])
+            # Channel was empty when relay was added; sync silently without posting.
+            latest_id = self._video_id_from_entry(entries[0])
             if latest_id:
                 await update_last_video_id(relay.id, latest_id)
                 self.logger.info(
-                    'Initial sync for %s: set last_video_id=%s',
+                    'Initial sync for relay %d (%s): last_video_id=%s',
+                    relay.id,
                     relay.yt_channel_id,
                     latest_id,
                 )
             return
 
         new_entries = []
-        for entry in feed.entries:
+        for entry in entries:
             if self._video_id_from_entry(entry) == relay.last_video_id:
                 break
             new_entries.append(entry)
         else:
-            # Sentinel was never found — it has aged out of the RSS window.
-            # Resync silently to avoid flooding historical videos.
-            latest_id = self._video_id_from_entry(feed.entries[0])
+            # Sentinel aged out of the RSS window; resync silently.
+            latest_id = self._video_id_from_entry(entries[0])
             if latest_id:
                 await update_last_video_id(relay.id, latest_id)
             self.logger.warning(
-                'Relay %s: last_video_id %r not found in feed (aged out); resynced to %s',
-                relay.yt_channel_id,
+                'Relay %d: last_video_id %r aged out of feed; resynced to %s',
+                relay.id,
                 relay.last_video_id,
                 latest_id,
             )
             return
 
-        self.logger.info(
-            'Polling %s: %d new video(s)', relay.yt_channel_id, len(new_entries)
-        )
         if not new_entries:
             return
 
@@ -635,12 +1216,13 @@ class YouTubeRelayCog(commands.Cog):
                 channel = await self.bot.fetch_channel(relay.discord_channel_id)
             except discord.NotFound:
                 self.logger.warning(
-                    'Channel %d not found for relay %s',
+                    'Channel %d not found for relay %d',
                     relay.discord_channel_id,
-                    relay.yt_channel_id,
+                    relay.id,
                 )
                 return
 
+        posted = 0
         for entry in reversed(new_entries):
             link = entry.get('link')
             if not link:
@@ -649,7 +1231,11 @@ class YouTubeRelayCog(commands.Cog):
             video_id = self._video_id_from_entry(entry)
             is_short, is_live = False, False
             if video_id:
-                is_short, is_live = await self._classify_video(video_id)
+                if video_id not in classification_cache:
+                    classification_cache[video_id] = await self._classify_video(
+                        video_id
+                    )
+                is_short, is_live = classification_cache[video_id]
 
             if is_live and not relay.post_lives:
                 continue
@@ -658,20 +1244,29 @@ class YouTubeRelayCog(commands.Cog):
             if not is_live and not is_short and not relay.post_videos:
                 continue
 
+            # Skip live streams already tracked — same video ID re-appeared in feed (resume).
+            if (
+                is_live
+                and video_id
+                and video_id in active_live_ids.get(relay.id, set())
+            ):
+                continue
+
             message = self._notification_message(relay, is_short, is_live)
             try:
-                await channel.send(f'{message}\n{link}')
+                sent = await channel.send(f'{message}\n{link}')
+                posted += 1
+                if is_live and video_id:
+                    await add_live_session(relay.id, video_id, sent.id)
             except discord.Forbidden:
                 self.logger.warning(
-                    'No permission to post in channel %d for relay %s',
+                    'No permission to post in channel %d for relay %d',
                     relay.discord_channel_id,
-                    relay.yt_channel_id,
+                    relay.id,
                 )
                 return
 
-        latest_id = self._video_id_from_entry(feed.entries[0])
+        latest_id = self._video_id_from_entry(entries[0])
         if latest_id:
             await update_last_video_id(relay.id, latest_id)
-        self.logger.info(
-            'Relayed %d new video(s) from %s', len(new_entries), relay.yt_channel_title
-        )
+        self.logger.info('Relay %d: posted %d new video(s)', relay.id, posted)
