@@ -638,9 +638,10 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
+        summary = self._routing_summary(relays, interaction.guild)
         view = _RelayRemoveView(interaction, relays)
         await interaction.response.send_message(
-            f'**{relays[0].yt_channel_title}** — select the content types to stop relaying:',
+            f'**{relays[0].yt_channel_title}** — current routing:\n{summary}\n\nSelect the content types to stop relaying:',
             view=view,
             ephemeral=True,
         )
@@ -720,9 +721,10 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
+        summary = self._routing_summary(relays, interaction.guild)
         view = _RelayModifyView(interaction, relays)
         await interaction.response.send_message(
-            f'**{relays[0].yt_channel_title}** — update the Discord channel for each content type:',
+            f'**{relays[0].yt_channel_title}** — current routing:\n{summary}\n\nUse the dropdowns below to update each type.',
             view=view,
             ephemeral=True,
         )
@@ -1006,6 +1008,30 @@ class YouTubeRelayCog(commands.Cog):
         if is_short:
             return relay.message_short or f'New short from **{relay.yt_channel_title}**'
         return relay.message_video or f'New video from **{relay.yt_channel_title}**'
+
+    @staticmethod
+    def _routing_summary(relays: list[YouTubeRelay], guild: discord.Guild) -> str:
+        """Build a human-readable per-type routing summary for a set of relay rows.
+
+        Args:
+            relays: All relay rows for one YouTube channel.
+            guild: The Discord guild, used to resolve channel mentions.
+
+        Returns:
+            Multi-line string, one line per content type, e.g. 'Videos → #general'.
+        """
+        lines = []
+        for flag_key, label in _CONTENT_TYPES:
+            ch_id = next(
+                (r.discord_channel_id for r in relays if getattr(r, flag_key)), None
+            )
+            if ch_id:
+                ch = guild.get_channel(ch_id)
+                ch_str = ch.mention if ch else f'<#{ch_id}>'
+            else:
+                ch_str = '*not configured*'
+            lines.append(f'{label} → {ch_str}')
+        return '\n'.join(lines)
 
     # ------------------------------------------------------------------ polling
 
