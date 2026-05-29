@@ -339,6 +339,7 @@ class TwitchRelayCog(commands.Cog):
         """
         twitch_user_id = event['broadcaster_user_id']
         twitch_login = event.get('broadcaster_user_login', twitch_user_id)
+        twitch_display_name = event.get('broadcaster_user_name', twitch_login)
 
         self.logger.info('stream.online: %s (user_id=%s)', twitch_login, twitch_user_id)
         relays = await get_all_relays()
@@ -365,7 +366,7 @@ class TwitchRelayCog(commands.Cog):
 
             message = (
                 relay.custom_message
-                or f'**{relay.twitch_login}** is now live on Twitch!'
+                or f'**{twitch_display_name}** is now live on Twitch!'
             )
             try:
                 sent = await channel.send(f'{message}\n{url}')
@@ -394,6 +395,7 @@ class TwitchRelayCog(commands.Cog):
         """
         twitch_user_id = event['broadcaster_user_id']
         twitch_login = event.get('broadcaster_user_login', twitch_user_id)
+        twitch_display_name = event.get('broadcaster_user_name', twitch_login)
 
         sessions = await get_live_sessions_for_user(twitch_user_id)
         if not sessions:
@@ -402,7 +404,7 @@ class TwitchRelayCog(commands.Cog):
         relays = await get_all_relays()
         relay_map = {r.id: r for r in relays if r.twitch_user_id == twitch_user_id}
 
-        end_content = f'**{twitch_login}** has finished streaming'
+        end_content = f'**{twitch_display_name}** has finished streaming'
         view = _StreamEndedView(twitch_login)
 
         for session in sessions:
