@@ -137,6 +137,7 @@ class TwitchRelayCog(commands.Cog):
         if not self._refresh_token:
             raise RuntimeError('No Twitch auth token. Run /twitch-relay authorize.')
         await self._refresh_user_token()
+        assert self._token is not None
         return self._token
 
     async def _refresh_user_token(self) -> None:
@@ -164,6 +165,7 @@ class TwitchRelayCog(commands.Cog):
         self._refresh_token = data['refresh_token']
         self._token_expires_at = time.monotonic() + data['expires_in']
         expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
+        assert self._token is not None and self._refresh_token is not None
         await save_auth(self._token, self._refresh_token, expires_at)
         self.logger.info('Twitch token refreshed (expires in %ds)', data['expires_in'])
 
@@ -499,6 +501,7 @@ class TwitchRelayCog(commands.Cog):
                 self._refresh_token = data['refresh_token']
                 self._token_expires_at = time.monotonic() + data['expires_in']
                 expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
+                assert self._token is not None and self._refresh_token is not None
                 await save_auth(self._token, self._refresh_token, expires_at)
                 self.logger.info('Twitch authorization successful')
 
