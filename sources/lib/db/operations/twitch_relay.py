@@ -69,7 +69,7 @@ async def add_relay(
         return result.rowcount == 1
 
 
-async def remove_relay(relay_id: int, guild_id: int) -> str | None:
+async def remove_relay(relay_id: int, guild_id: int) -> tuple[str, str] | None:
     """Remove a Twitch relay by ID, scoped to a guild.
 
     Args:
@@ -77,7 +77,7 @@ async def remove_relay(relay_id: int, guild_id: int) -> str | None:
         guild_id: Discord guild ID (guards against cross-guild deletion).
 
     Returns:
-        twitch_login of the removed relay, or None if not found.
+        (twitch_login, twitch_user_id) of the removed relay, or None if not found.
     """
     async with AsyncSession() as session:
         relay = await session.scalar(
@@ -88,10 +88,10 @@ async def remove_relay(relay_id: int, guild_id: int) -> str | None:
         )
         if relay is None:
             return None
-        login = relay.twitch_login
+        result = relay.twitch_login, relay.twitch_user_id
         await session.delete(relay)
         await session.commit()
-        return login
+        return result
 
 
 async def get_relay_by_id(relay_id: int, guild_id: int) -> TwitchRelay | None:

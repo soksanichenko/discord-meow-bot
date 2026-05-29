@@ -241,7 +241,6 @@ class TwitchAuth(Base):
 
     __tablename__ = 'twitch_auth'
 
-    # Always id=1; use session.merge() to upsert.
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     access_token: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)

@@ -70,8 +70,28 @@ _logger = Logger()
 class MeowBot(Bot):
     """Discord bot."""
 
+    async def on_tree_error(
+        self,
+        interaction: discord.Interaction,
+        error: discord.app_commands.AppCommandError,
+    ) -> None:
+        """Log all unhandled app-command errors through the main discord logger."""
+        cmd = interaction.command.name if interaction.command else '<unknown>'
+        _logger.error(
+            'App command error in /%s: %s: %s',
+            cmd,
+            type(error).__name__,
+            error,
+            exc_info=error,
+        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                'An internal error occurred.', ephemeral=True
+            )
+
     async def setup_hook(self) -> None:
         """Load all cogs and sync the slash command tree with Discord if it changed."""
+        self.tree.on_error = self.on_tree_error
         await self.add_cog(AdminCog(self))
         await self.add_cog(HelpCog(self))
         await self.add_cog(BirthdaysCog(self))

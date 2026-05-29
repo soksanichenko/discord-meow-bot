@@ -1,7 +1,6 @@
-"""Twitch relay cog — forward Twitch stream.online events to Discord via EventSub WebSocket."""
+"""Twitch relay cog — forward Twitch stream notifications to Discord via EventSub WebSocket."""
 
 import asyncio
-import json
 import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -10,6 +9,10 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from twitchAPI.eventsub.websocket import EventSubWebsocket
+from twitchAPI.object.eventsub import StreamOfflineEvent, StreamOnlineEvent
+from twitchAPI.twitch import Twitch
+from twitchAPI.type import EventSubSubscriptionConflict
 
 from sources.config import config
 from sources.lib.db.models import TwitchRelay
@@ -31,18 +34,11 @@ from sources.lib.db.operations.twitch_relay import (
 )
 from sources.lib.utils import Logger
 
-_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
-_WS_URL = 'wss://eventsub.wss.twitch.tv/ws'
 _TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
-_EVENTSUB_URL = 'https://api.twitch.tv/helix/eventsub/subscriptions'
-_USERS_URL = 'https://api.twitch.tv/helix/users'
+_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # Discord followup messages expire after 15 minutes; cap device code polling there.
 _MAX_POLL_SECONDS = 800
-# Read timeout for the first message before the welcome (and its keepalive value) arrives.
-_CONNECT_GRACE_SECONDS = 15
-# Extra slack added to the server's keepalive_timeout before treating the link as dead.
-_KEEPALIVE_BUFFER_SECONDS = 10
 
 
 class _StreamEndedView(discord.ui.View):
@@ -99,7 +95,7 @@ class _SetMessageModal(discord.ui.Modal):
 
 
 class TwitchRelayCog(commands.Cog):
-    """Connect to Twitch EventSub WebSocket and forward stream.online events to Discord."""
+    """Forward Twitch stream notifications to Discord via EventSub WebSocket."""
 
     relay = app_commands.Group(
         name='twitch-relay',
@@ -114,307 +110,142 @@ class TwitchRelayCog(commands.Cog):
         """
         self.bot = bot
         self.logger = Logger()
-        self._session: aiohttp.ClientSession | None = None
-        self._token: str | None = None
-        self._token_expires_at: float = 0.0
-        self._refresh_token: str | None = None
-        self._session_id: str | None = None
-        self._ws_task: asyncio.Task | None = None
+        self._twitch: Twitch | None = None
+        self._eventsub: EventSubWebsocket | None = None
+        self._http_session: aiohttp.ClientSession | None = None
+        # twitch_user_id → (stream.online sub_id, stream.offline sub_id)
+        self._subscription_ids: dict[str, tuple[str, str]] = {}
 
     async def cog_load(self) -> None:
-        """Open the HTTP session, load stored OAuth tokens, and start EventSub if ready."""
-        self._session = aiohttp.ClientSession()
+        """Authenticate with Twitch, start EventSub, and subscribe to all saved relays."""
+        self._http_session = aiohttp.ClientSession()
+
         if not (config.twitch_client_id and config.twitch_client_secret):
             self.logger.warning('Twitch credentials not configured; relay disabled')
             return
 
+        self._twitch = await Twitch(
+            config.twitch_client_id, config.twitch_client_secret
+        )
+
         auth = await get_auth()
         if auth is None:
-            self.logger.warning(
-                'No Twitch auth token stored; run /twitch-relay authorize'
-            )
+            self.logger.warning('No Twitch auth stored; run /twitch-relay authorize')
             return
 
-        self._refresh_token = auth.refresh_token
-        remaining = (auth.expires_at - datetime.now(UTC)).total_seconds()
-        if remaining > 60:
-            self._token = auth.access_token
-            self._token_expires_at = time.monotonic() + remaining
+        await self._twitch.set_user_authentication(
+            auth.access_token, [], auth.refresh_token
+        )
+        self._twitch.user_auth_refresh_callback = self._on_token_refresh
 
-        relays = await get_all_relays()
-        if relays:
-            self._ws_task = asyncio.create_task(self._run_eventsub())
-            self.logger.info('Twitch EventSub task started')
-        else:
-            self.logger.info(
-                'No Twitch relays configured; EventSub will start when first relay is added'
-            )
+        self._eventsub = EventSubWebsocket(self._twitch)
+        self._eventsub.start()
 
-    def cog_unload(self) -> None:
-        """Cancel the WebSocket task and close the HTTP session."""
-        if self._ws_task:
-            self._ws_task.cancel()
-        if self._session and not self._session.closed:
-            asyncio.create_task(self._session.close())
-
-    # ------------------------------------------------------------------ token
-
-    async def _ensure_token(self) -> str:
-        """Return a valid user access token, refreshing via refresh token if needed.
-
-        Returns:
-            Valid Twitch user access token.
-
-        Raises:
-            RuntimeError: If no refresh token is available (not yet authorized).
-        """
-        if self._token and time.monotonic() < self._token_expires_at - 60:
-            return self._token
-        if not self._refresh_token:
-            raise RuntimeError('No Twitch auth token. Run /twitch-relay authorize.')
-        await self._refresh_user_token()
-        assert self._token is not None
-        return self._token
-
-    async def _refresh_user_token(self) -> None:
-        """Exchange the refresh token for a new access + refresh token pair and persist it.
-
-        Raises:
-            RuntimeError: If the Twitch token refresh request fails.
-        """
-        async with self._session.post(
-            _TOKEN_URL,
-            params={
-                'client_id': config.twitch_client_id,
-                'client_secret': config.twitch_client_secret,
-                'grant_type': 'refresh_token',
-                'refresh_token': self._refresh_token,
-            },
-            timeout=_REQUEST_TIMEOUT,
-        ) as resp:
-            data = await resp.json()
-
-        if 'access_token' not in data:
-            raise RuntimeError(f'Token refresh failed: {data.get("message", data)}')
-
-        self._token = data['access_token']
-        self._refresh_token = data['refresh_token']
-        self._token_expires_at = time.monotonic() + data['expires_in']
-        expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
-        assert self._token is not None and self._refresh_token is not None
-        await save_auth(self._token, self._refresh_token, expires_at)
-        self.logger.info('Twitch token refreshed (expires in %ds)', data['expires_in'])
-
-    # ------------------------------------------------------------------ EventSub WebSocket
-
-    async def _run_eventsub(self) -> None:
-        """Main EventSub loop: connect, handle events, reconnect on failure."""
-        url = _WS_URL
-        while True:
-            try:
-                reconnect_url = await self._eventsub_session(url)
-                url = reconnect_url or _WS_URL
-            except asyncio.CancelledError:
-                return
-            except Exception as exc:
-                self.logger.warning('EventSub error: %s; reconnecting in 15s', exc)
-                url = _WS_URL
-                await asyncio.sleep(15)
-
-    async def _eventsub_session(self, url: str) -> str | None:
-        """Run one EventSub WebSocket session.
-
-        Subscribes to stream.online/offline for all tracked channels after the
-        welcome handshake. Health is monitored via Twitch's documented keepalive
-        mechanism: if no event or keepalive message arrives within
-        keepalive_timeout_seconds (plus a buffer), the connection is treated as
-        lost and the method returns to trigger a reconnect.
-
-        Args:
-            url: WebSocket URL to connect to.
-
-        Returns:
-            Reconnect URL string if Twitch requested one, else None.
-        """
-        self._session_id = None
-        ws_timeout = aiohttp.ClientTimeout(total=None, sock_connect=15)
-        # Read timeout before the welcome arrives; replaced once we know the
-        # server's keepalive_timeout_seconds.
-        read_timeout = _CONNECT_GRACE_SECONDS
-        async with self._session.ws_connect(url, timeout=ws_timeout) as ws:
-            while True:
-                try:
-                    msg = await ws.receive(timeout=read_timeout)
-                except TimeoutError:
-                    self.logger.warning(
-                        'EventSub: no message within %ds; reconnecting', read_timeout
-                    )
-                    self._session_id = None
-                    return None
-
-                if msg.type in (
-                    aiohttp.WSMsgType.CLOSE,
-                    aiohttp.WSMsgType.CLOSING,
-                    aiohttp.WSMsgType.CLOSED,
-                ):
-                    self.logger.warning('EventSub: connection closed by server')
-                    self._session_id = None
-                    return None
-                if msg.type == aiohttp.WSMsgType.ERROR:
-                    raise RuntimeError(f'WS error: {ws.exception()}')
-                if msg.type != aiohttp.WSMsgType.TEXT:
-                    continue
-
-                data = json.loads(msg.data)
-                msg_type = data['metadata']['message_type']
-
-                if msg_type == 'session_welcome':
-                    session = data['payload']['session']
-                    self._session_id = session['id']
-                    # Reconnect if no message arrives within keepalive window + buffer.
-                    keepalive = session.get('keepalive_timeout_seconds') or 10
-                    read_timeout = keepalive + _KEEPALIVE_BUFFER_SECONDS
-                    self.logger.info(
-                        'EventSub connected; session_id=%s (keepalive=%ds)',
-                        self._session_id,
-                        keepalive,
-                    )
-                    await self._subscribe_all(self._session_id)
-
-                elif msg_type == 'session_keepalive':
-                    # Heartbeat from Twitch — no action; receiving it resets read_timeout.
-                    pass
-
-                elif msg_type == 'notification':
-                    sub_type = data['metadata']['subscription_type']
-                    self.logger.info('EventSub notification received: %s', sub_type)
-                    event_payload = data['payload']['event']
-                    if sub_type == 'stream.online':
-                        asyncio.create_task(self._on_stream_online(event_payload))
-                    elif sub_type == 'stream.offline':
-                        asyncio.create_task(self._on_stream_offline(event_payload))
-
-                elif msg_type == 'session_reconnect':
-                    reconnect_url = data['payload']['session']['reconnect_url']
-                    self.logger.info('EventSub reconnect requested: %s', reconnect_url)
-                    return reconnect_url
-
-                elif msg_type == 'revocation':
-                    sub = data['payload']['subscription']
-                    self.logger.warning(
-                        'Subscription revoked: type=%s status=%s',
-                        sub.get('type'),
-                        sub.get('status'),
-                    )
-
-        self._session_id = None
-        return None
-
-    async def _subscribe_all(self, session_id: str) -> None:
-        """Subscribe to stream.online and stream.offline for every tracked Twitch user ID.
-
-        Args:
-            session_id: Current EventSub WebSocket session ID.
-        """
         relays = await get_all_relays()
         unique_ids = {r.twitch_user_id for r in relays}
         for user_id in unique_ids:
-            await self._subscribe(session_id, user_id)
-        self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
+            await self._subscribe_user(user_id)
+        if unique_ids:
+            self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
+        else:
+            self.logger.info('No Twitch relays configured; EventSub running')
 
-    async def _subscribe_when_ready(self, twitch_user_id: str) -> None:
-        """Wait for an active EventSub session, then subscribe.
+    async def cog_unload(self) -> None:
+        """Stop EventSub and close the Twitch client."""
+        if self._eventsub is not None:
+            await self._eventsub.stop()
+        if self._twitch is not None:
+            await self._twitch.close()
+        if self._http_session is not None:
+            await self._http_session.close()
 
-        Retries every 5 seconds for up to 5 minutes. Used when relay_add is called
-        while the session is not yet established.
+    async def _on_token_refresh(self, token: str, refresh_token: str) -> None:
+        """Persist refreshed Twitch tokens to the database.
 
         Args:
-            twitch_user_id: Twitch numeric user ID to subscribe to.
+            token: New access token.
+            refresh_token: New refresh token.
         """
-        for _ in range(60):
-            await asyncio.sleep(5)
-            if self._session_id:
-                ok = await self._subscribe(self._session_id, twitch_user_id)
-                if ok:
-                    self.logger.info(
-                        'Deferred subscription activated for %s', twitch_user_id
-                    )
-                return
-        self.logger.warning(
-            'Deferred subscription for %s timed out — no session established',
-            twitch_user_id,
-        )
+        expires_at = datetime.now(UTC) + timedelta(days=60)
+        await save_auth(token, refresh_token, expires_at)
+        self.logger.info('Twitch token refreshed and saved')
 
-    async def _subscribe(self, session_id: str, twitch_user_id: str) -> bool:
-        """Create EventSub stream.online and stream.offline subscriptions for one channel.
+    # ------------------------------------------------------------------ subscriptions
+
+    async def _subscribe_user(self, twitch_user_id: str) -> bool:
+        """Subscribe to stream.online and stream.offline for one Twitch channel.
+
+        No-op if already subscribed (tracked in _subscription_ids).
 
         Args:
-            session_id: Current EventSub WebSocket session ID.
             twitch_user_id: Twitch numeric user ID to subscribe to.
 
         Returns:
-            True if all subscriptions succeeded (200/202/409), False if any failed.
+            True if subscribed (or already subscribed), False on error.
         """
-        token = await self._ensure_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Client-Id': config.twitch_client_id,
-        }
-        ok = True
-        for event_type in ('stream.online', 'stream.offline'):
+        if self._eventsub is None:
+            self.logger.warning(
+                'EventSub not ready; cannot subscribe %s', twitch_user_id
+            )
+            return False
+        if twitch_user_id in self._subscription_ids:
+            return True
+        try:
+            online_id = await self._eventsub.listen_stream_online(
+                twitch_user_id, self._on_stream_online
+            )
+            offline_id = await self._eventsub.listen_stream_offline(
+                twitch_user_id, self._on_stream_offline
+            )
+            self._subscription_ids[twitch_user_id] = (online_id, offline_id)
+            self.logger.info('Subscribed to Twitch channel %s', twitch_user_id)
+            return True
+        except EventSubSubscriptionConflict:
+            self.logger.info('Subscription for %s already active', twitch_user_id)
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                'Failed to subscribe to %s (%s): %s',
+                twitch_user_id,
+                type(exc).__name__,
+                exc,
+            )
+            return False
+
+    async def _unsubscribe_user(self, twitch_user_id: str) -> None:
+        """Remove EventSub subscriptions for a channel if no relays remain for it.
+
+        Args:
+            twitch_user_id: Twitch numeric user ID to check and possibly unsubscribe.
+        """
+        relays = await get_all_relays()
+        if any(r.twitch_user_id == twitch_user_id for r in relays):
+            return
+        ids = self._subscription_ids.pop(twitch_user_id, None)
+        if ids is None:
+            return
+        online_id, offline_id = ids
+        for sub_id in (online_id, offline_id):
             try:
-                async with self._session.post(
-                    _EVENTSUB_URL,
-                    headers=headers,
-                    json={
-                        'type': event_type,
-                        'version': '1',
-                        'condition': {'broadcaster_user_id': twitch_user_id},
-                        'transport': {'method': 'websocket', 'session_id': session_id},
-                    },
-                    timeout=_REQUEST_TIMEOUT,
-                ) as resp:
-                    body = await resp.text()
-                    if resp.status in (200, 202):
-                        self.logger.info(
-                            'Subscribe %s for %s: OK (HTTP %d)',
-                            event_type,
-                            twitch_user_id,
-                            resp.status,
-                        )
-                    elif resp.status == 409:
-                        self.logger.info(
-                            'Subscribe %s for %s: already exists (409)',
-                            event_type,
-                            twitch_user_id,
-                        )
-                    else:
-                        self.logger.warning(
-                            'Subscribe %s for %s failed: HTTP %d %s',
-                            event_type,
-                            twitch_user_id,
-                            resp.status,
-                            body,
-                        )
-                        ok = False
+                await self._eventsub.unsubscribe_topic(sub_id)
             except Exception as exc:
                 self.logger.warning(
-                    'Subscribe %s for %s error: %s', event_type, twitch_user_id, exc
+                    'Failed to unsubscribe %s (%s): %s', sub_id, type(exc).__name__, exc
                 )
-                ok = False
-        return ok
+        self.logger.info('Unsubscribed from Twitch channel %s', twitch_user_id)
 
     # ------------------------------------------------------------------ event handlers
 
-    async def _on_stream_online(self, event: dict) -> None:
+    async def _on_stream_online(self, event: StreamOnlineEvent) -> None:
         """Post a notification to all configured Discord channels when a stream goes live.
 
         Args:
-            event: Twitch stream.online event payload dict.
+            event: Twitch stream.online event from the EventSub library.
         """
-        twitch_user_id = event['broadcaster_user_id']
-        twitch_login = event.get('broadcaster_user_login', twitch_user_id)
-        twitch_display_name = event.get('broadcaster_user_name', twitch_login)
+        data = event.event
+        twitch_user_id = data.broadcaster_user_id
+        twitch_login = data.broadcaster_user_login
+        twitch_display_name = data.broadcaster_user_name
 
         self.logger.info('stream.online: %s (user_id=%s)', twitch_login, twitch_user_id)
         relays = await get_all_relays()
@@ -458,19 +289,19 @@ class TwitchRelayCog(commands.Cog):
                     relay.id,
                 )
 
-        # Keep stored login in sync in case the user renamed their channel.
         if twitch_login != targets[0].twitch_login:
             await update_login(twitch_user_id, twitch_login)
 
-    async def _on_stream_offline(self, event: dict) -> None:
+    async def _on_stream_offline(self, event: StreamOfflineEvent) -> None:
         """Edit the stream announcement when a tracked stream ends.
 
         Args:
-            event: Twitch stream.offline event payload dict.
+            event: Twitch stream.offline event from the EventSub library.
         """
-        twitch_user_id = event['broadcaster_user_id']
-        twitch_login = event.get('broadcaster_user_login', twitch_user_id)
-        twitch_display_name = event.get('broadcaster_user_name', twitch_login)
+        data = event.event
+        twitch_user_id = data.broadcaster_user_id
+        twitch_login = data.broadcaster_user_login
+        twitch_display_name = data.broadcaster_user_name
 
         sessions = await get_live_sessions_for_user(twitch_user_id)
         if not sessions:
@@ -519,32 +350,17 @@ class TwitchRelayCog(commands.Cog):
             login = login.split('twitch.tv/')[-1].split('?')[0].strip('/')
         if not login:
             return None
-
         try:
-            token = await self._ensure_token()
-            async with self._session.get(
-                _USERS_URL,
-                headers={
-                    'Authorization': f'Bearer {token}',
-                    'Client-Id': config.twitch_client_id,
-                },
-                params={'login': login},
-                timeout=_REQUEST_TIMEOUT,
-            ) as resp:
-                if resp.status != 200:
-                    self.logger.warning(
-                        'Twitch users API returned HTTP %d for %r', resp.status, raw
-                    )
-                    return None
-                data = await resp.json()
+            user = None
+            async for _user in self._twitch.get_users(logins=[login]):
+                user = _user
+                break
+            if user is None:
+                return None
+            return user.id, user.login
         except Exception as exc:
             self.logger.warning('Failed to resolve Twitch user %r: %s', raw, exc)
             return None
-
-        users = data.get('data', [])
-        if not users:
-            return None
-        return users[0]['id'], users[0]['login']
 
     # ------------------------------------------------------------------ autocomplete
 
@@ -601,9 +417,6 @@ class TwitchRelayCog(commands.Cog):
     async def relay_authorize(self, interaction: discord.Interaction) -> None:
         """Start the Twitch Device Code Grant flow and store the resulting tokens.
 
-        Sends a one-time code and URL; polls in the background until the user
-        authorizes in the browser, then persists the tokens to the database.
-
         Args:
             interaction: The Discord interaction.
         """
@@ -612,7 +425,6 @@ class TwitchRelayCog(commands.Cog):
                 'This command is restricted to the bot owner.', ephemeral=True
             )
             return
-
         if not config.twitch_client_id:
             await interaction.response.send_message(
                 'Twitch credentials are not configured.', ephemeral=True
@@ -622,7 +434,7 @@ class TwitchRelayCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            async with self._session.post(
+            async with self._http_session.post(
                 _DEVICE_URL,
                 params={'client_id': config.twitch_client_id, 'scope': ''},
                 timeout=_REQUEST_TIMEOUT,
@@ -634,17 +446,16 @@ class TwitchRelayCog(commands.Cog):
             )
             return
 
-        device_code = data['device_code']
-        user_code = data['user_code']
-        verify_uri = data['verification_uri']
-        interval = data.get('interval', 5)
-
         await interaction.followup.send(
-            f'Open **{verify_uri}** and enter the code **`{user_code}`**\n'
+            f'Open **{data["verification_uri"]}** and enter **`{data["user_code"]}`**\n'
             'Waiting for authorization…',
             ephemeral=True,
         )
-        asyncio.create_task(self._poll_device_auth(interaction, device_code, interval))
+        asyncio.create_task(
+            self._poll_device_auth(
+                interaction, data['device_code'], data.get('interval', 5)
+            )
+        )
 
     async def _poll_device_auth(
         self,
@@ -652,10 +463,10 @@ class TwitchRelayCog(commands.Cog):
         device_code: str,
         interval: int,
     ) -> None:
-        """Poll Twitch for the device code grant result and save tokens on success.
+        """Poll Twitch until the device code is authorized, then save tokens.
 
         Args:
-            interaction: The original Discord interaction (for followup messages).
+            interaction: The original Discord interaction for followup messages.
             device_code: Device code returned by the device authorization endpoint.
             interval: Polling interval in seconds as specified by Twitch.
         """
@@ -663,7 +474,7 @@ class TwitchRelayCog(commands.Cog):
         while time.monotonic() < deadline:
             await asyncio.sleep(interval)
             try:
-                async with self._session.post(
+                async with self._http_session.post(
                     _TOKEN_URL,
                     params={
                         'client_id': config.twitch_client_id,
@@ -679,17 +490,23 @@ class TwitchRelayCog(commands.Cog):
                 continue
 
             if 'access_token' in data:
-                self._token = data['access_token']
-                self._refresh_token = data['refresh_token']
-                self._token_expires_at = time.monotonic() + data['expires_in']
+                token = data['access_token']
+                refresh = data['refresh_token']
                 expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
-                assert self._token is not None and self._refresh_token is not None
-                await save_auth(self._token, self._refresh_token, expires_at)
+                await save_auth(token, refresh, expires_at)
+
+                if self._twitch is not None:
+                    await self._twitch.set_user_authentication(token, [], refresh)
+                    self._twitch.user_auth_refresh_callback = self._on_token_refresh
+
+                if self._eventsub is None:
+                    self._eventsub = EventSubWebsocket(self._twitch)
+                    self._eventsub.start()
+                    relays = await get_all_relays()
+                    for user_id in {r.twitch_user_id for r in relays}:
+                        await self._subscribe_user(user_id)
+
                 self.logger.info('Twitch authorization successful')
-
-                if self._ws_task is None or self._ws_task.done():
-                    self._ws_task = asyncio.create_task(self._run_eventsub())
-
                 await interaction.followup.send(
                     'Twitch authorization successful! Stream notifications are now active.',
                     ephemeral=True,
@@ -724,43 +541,38 @@ class TwitchRelayCog(commands.Cog):
     ) -> None:
         """Re-subscribe to EventSub for all tracked channels or one specific channel.
 
-        Useful when subscriptions were lost (e.g., channel added while EventSub was
-        not connected, or after a reconnect cycle).
-
         Args:
             interaction: The Discord interaction.
             channel: Twitch user ID from autocomplete, or None to sync all.
         """
-        if not self._session_id:
+        if self._eventsub is None:
             await interaction.response.send_message(
-                'EventSub is not connected — cannot subscribe. '
-                'Wait for the connection to be established and try again.',
-                ephemeral=True,
+                'Twitch is not configured.', ephemeral=True
             )
             return
 
         await interaction.response.defer(ephemeral=True)
 
         relays = await get_all_relays()
-        if channel:
-            user_ids = {channel}
-        else:
-            user_ids = {r.twitch_user_id for r in relays}
+        user_ids = {channel} if channel else {r.twitch_user_id for r in relays}
 
         if not user_ids:
             await interaction.followup.send('No channels to sync.', ephemeral=True)
             return
 
-        login_map = {
-            r.twitch_user_id: r.twitch_login
-            for r in relays
-            if r.twitch_user_id in user_ids
-        }
-
+        login_map = {r.twitch_user_id: r.twitch_login for r in relays}
         lines = []
         for user_id in sorted(user_ids):
             login = login_map.get(user_id, user_id)
-            ok = await self._subscribe(self._session_id, user_id)
+            # Force re-subscribe by clearing cached IDs first.
+            ids = self._subscription_ids.pop(user_id, None)
+            if ids is not None:
+                for sub_id in ids:
+                    try:
+                        await self._eventsub.unsubscribe_topic(sub_id)
+                    except Exception:
+                        pass
+            ok = await self._subscribe_user(user_id)
             lines.append(f'{"✓" if ok else "✗"} **{login}**')
 
         await interaction.followup.send('\n'.join(lines), ephemeral=True)
@@ -787,7 +599,7 @@ class TwitchRelayCog(commands.Cog):
             channel: Twitch login name or channel URL.
             discord_channel: Target Discord text channel.
         """
-        if not config.twitch_client_id:
+        if self._twitch is None:
             await interaction.response.send_message(
                 'Twitch credentials are not configured. Set `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`.',
                 ephemeral=True,
@@ -812,35 +624,30 @@ class TwitchRelayCog(commands.Cog):
             discord_channel_id=discord_channel.id,
         )
         if not inserted:
-            await interaction.followup.send(
-                f'A relay for **{login}** to {discord_channel.mention} already exists.',
-                ephemeral=True,
-            )
+            # Relay already in DB — subscription may have been lost; retry it.
+            subscribed = await self._subscribe_user(user_id)
+            if subscribed:
+                await interaction.followup.send(
+                    f'Relay for **{login}** already exists — EventSub subscription confirmed.',
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f'Relay for **{login}** already exists but the EventSub subscription failed. '
+                    f'Run `/twitch-relay sync` to retry.',
+                    ephemeral=True,
+                )
             return
 
-        subscribed = False
-        if self._session_id:
-            subscribed = await self._subscribe(self._session_id, user_id)
-
+        subscribed = await self._subscribe_user(user_id)
         if subscribed:
             msg = f'Now forwarding **{login}** stream notifications to {discord_channel.mention}.'
-        elif self._session_id:
-            # Session still active but subscription failed — user must retry manually.
+        else:
             msg = (
-                f'Relay for **{login}** saved, but the subscription failed. '
+                f'Relay for **{login}** saved, but the EventSub subscription failed. '
                 f'Run `/twitch-relay sync` to retry.'
             )
-        else:
-            # No session — start EventSub task if not running (e.g. first relay ever added),
-            # then defer subscription until session_welcome is received.
-            if self._ws_task is None or self._ws_task.done():
-                self._ws_task = asyncio.create_task(self._run_eventsub())
-                self.logger.info('Twitch EventSub task started (first relay added)')
-            asyncio.create_task(self._subscribe_when_ready(user_id))
-            msg = (
-                f'Relay for **{login}** saved. '
-                f'EventSub is connecting — subscription will activate automatically.'
-            )
+
         await interaction.followup.send(msg, ephemeral=True)
         self.logger.info(
             'Relay added: %s (%s) → channel %d (guild %d)',
@@ -874,12 +681,17 @@ class TwitchRelayCog(commands.Cog):
             )
             return
 
-        login = await remove_relay(relay_id, interaction.guild_id)
-        if login is None:
-            await interaction.response.send_message('Relay not found.', ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+
+        result = await remove_relay(relay_id, interaction.guild_id)
+        if result is None:
+            await interaction.followup.send('Relay not found.', ephemeral=True)
             return
 
-        await interaction.response.send_message(
+        login, twitch_user_id = result
+        if self._eventsub is not None:
+            await self._unsubscribe_user(twitch_user_id)
+        await interaction.followup.send(
             f'Relay for **{login}** removed.', ephemeral=True
         )
 

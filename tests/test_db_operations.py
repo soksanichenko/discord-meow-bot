@@ -1414,7 +1414,7 @@ class TestRemoveTwitchRelay:
         session.delete.assert_not_awaited()
 
     async def test_returns_login_and_deletes_when_found(self):
-        relay = SimpleNamespace(twitch_login='streamer')
+        relay = SimpleNamespace(twitch_login='streamer', twitch_user_id='42')
         session, ctx = _make_session(scalar=relay)
         with patch(
             'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
@@ -1422,7 +1422,7 @@ class TestRemoveTwitchRelay:
             from sources.lib.db.operations.twitch_relay import remove_relay
 
             result = await remove_relay(relay_id=1, guild_id=1)
-        assert result == 'streamer'
+        assert result == ('streamer', '42')
         session.delete.assert_awaited_once_with(relay)
         session.commit.assert_awaited_once()
 

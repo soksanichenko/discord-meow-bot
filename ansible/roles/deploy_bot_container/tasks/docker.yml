@@ -58,6 +58,9 @@
         owner: false
         group: false
         delete: yes
+        rsync_opts:
+          - "--exclude=*.pyc"
+          - "--exclude=__pycache__/"
       become: yes
       register: sources_result
 

@@ -1,4 +1,5 @@
 aiohttp==3.13.5
+twitchAPI==4.5.0
 APScheduler==3.11.2
 alembic==1.18.4
 psycopg[binary]==3.3.4

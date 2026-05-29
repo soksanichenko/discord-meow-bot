@@ -37,18 +37,41 @@ def _make_cog() -> TwitchRelayCog:
     return TwitchRelayCog(bot)
 
 
-def _mock_http_response(*, status: int = 200, json_data: dict) -> MagicMock:
-    resp = AsyncMock()
-    resp.status = status
-    resp.json = AsyncMock(return_value=json_data)
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=resp)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    return ctx
+def _twitch_user(user_id: str = '42', login: str = 'streamer') -> SimpleNamespace:
+    return SimpleNamespace(id=user_id, login=login)
 
 
-def _users_response(user_id: str = '42', login: str = 'streamer') -> dict:
-    return {'data': [{'id': user_id, 'login': login}]}
+def _make_twitch_mock(
+    user: SimpleNamespace | None = None,
+    raise_exc: Exception | None = None,
+) -> MagicMock:
+    """Return a mock Twitch client whose get_users is an async generator."""
+    mock_twitch = MagicMock()
+    calls: list[list[str]] = []
+
+    async def get_users(logins=None, **_kwargs):
+        calls.append(logins or [])
+        if raise_exc is not None:
+            raise raise_exc
+        if user is not None:
+            yield user
+
+    mock_twitch.get_users = get_users
+    mock_twitch._get_users_calls = calls
+    return mock_twitch
+
+
+def _stream_online_event(
+    broadcaster_user_id: str = '123',
+    broadcaster_user_login: str = 'streamer',
+    broadcaster_user_name: str = 'streamer',
+) -> SimpleNamespace:
+    data = SimpleNamespace(
+        broadcaster_user_id=broadcaster_user_id,
+        broadcaster_user_login=broadcaster_user_login,
+        broadcaster_user_name=broadcaster_user_name,
+    )
+    return SimpleNamespace(event=data)
 
 
 # ---------------------------------------------------------------------------
@@ -80,81 +103,70 @@ class TestNotificationMessage:
 
 class TestResolveUser:
     def _prepare_cog(
-        self, json_data: dict | None = None
+        self,
+        user: SimpleNamespace | None = None,
+        raise_exc: Exception | None = None,
     ) -> tuple[TwitchRelayCog, MagicMock]:
-        """Return (cog, session_mock) with a pre-configured HTTP mock."""
         cog = _make_cog()
-        cog._token = 'test-token'
-        cog._token_expires_at = float('inf')
-        session = MagicMock()
-        if json_data is not None:
-            session.get.return_value = _mock_http_response(json_data=json_data)
-        cog._session = session
-        return cog, session
+        cog._twitch = _make_twitch_mock(user=user, raise_exc=raise_exc)
+        return cog, cog._twitch
 
     async def test_plain_login(self):
-        cog, session = self._prepare_cog(_users_response(login='streamer'))
+        cog, mock_twitch = self._prepare_cog(_twitch_user(login='streamer'))
         result = await cog._resolve_user('streamer')
         assert result == ('42', 'streamer')
-        _, kwargs = session.get.call_args
-        assert kwargs['params']['login'] == 'streamer'
+        assert mock_twitch._get_users_calls[0] == ['streamer']
 
     async def test_at_prefix_stripped(self):
-        cog, session = self._prepare_cog(_users_response(login='streamer'))
+        cog, mock_twitch = self._prepare_cog(_twitch_user(login='streamer'))
         result = await cog._resolve_user('@streamer')
         assert result == ('42', 'streamer')
-        _, kwargs = session.get.call_args
-        assert kwargs['params']['login'] == 'streamer'
+        assert mock_twitch._get_users_calls[0] == ['streamer']
 
     async def test_full_https_url(self):
-        cog, session = self._prepare_cog(_users_response(login='streamer'))
+        cog, mock_twitch = self._prepare_cog(_twitch_user(login='streamer'))
         result = await cog._resolve_user('https://www.twitch.tv/streamer')
         assert result == ('42', 'streamer')
-        _, kwargs = session.get.call_args
-        assert kwargs['params']['login'] == 'streamer'
+        assert mock_twitch._get_users_calls[0] == ['streamer']
 
     async def test_url_without_scheme(self):
-        cog, session = self._prepare_cog(_users_response(login='streamer'))
+        cog, mock_twitch = self._prepare_cog(_twitch_user(login='streamer'))
         result = await cog._resolve_user('twitch.tv/streamer')
         assert result == ('42', 'streamer')
-        _, kwargs = session.get.call_args
-        assert kwargs['params']['login'] == 'streamer'
+        assert mock_twitch._get_users_calls[0] == ['streamer']
 
     async def test_url_with_query_params_stripped(self):
-        cog, session = self._prepare_cog(_users_response(login='streamer'))
+        cog, mock_twitch = self._prepare_cog(_twitch_user(login='streamer'))
         result = await cog._resolve_user(
             'https://www.twitch.tv/streamer?utm_source=test'
         )
         assert result == ('42', 'streamer')
-        _, kwargs = session.get.call_args
-        assert kwargs['params']['login'] == 'streamer'
+        assert mock_twitch._get_users_calls[0] == ['streamer']
 
     async def test_empty_string_returns_none_without_api_call(self):
-        cog, session = self._prepare_cog()
+        cog, mock_twitch = self._prepare_cog()
         result = await cog._resolve_user('')
         assert result is None
-        session.get.assert_not_called()
+        assert mock_twitch._get_users_calls == []
 
     async def test_at_only_returns_none_without_api_call(self):
-        cog, session = self._prepare_cog()
+        cog, mock_twitch = self._prepare_cog()
         result = await cog._resolve_user('@')
         assert result is None
-        session.get.assert_not_called()
+        assert mock_twitch._get_users_calls == []
 
     async def test_user_not_found_returns_none(self):
-        cog, _ = self._prepare_cog({'data': []})
+        cog, _ = self._prepare_cog(user=None)
         result = await cog._resolve_user('unknown')
         assert result is None
 
     async def test_api_error_returns_none(self):
-        cog, session = self._prepare_cog()
-        session.get.return_value = _mock_http_response(status=500, json_data={})
+        cog, _ = self._prepare_cog(raise_exc=Exception('HTTP 500'))
         result = await cog._resolve_user('streamer')
         assert result is None
 
     async def test_network_exception_returns_none(self):
-        cog, session = self._prepare_cog()
-        session.get.side_effect = Exception('connection refused')
+        cog, _ = self._prepare_cog(raise_exc=Exception('connection refused'))
         result = await cog._resolve_user('streamer')
         assert result is None
 
@@ -180,10 +192,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
+                _stream_online_event('123', 'streamer', 'streamer')
             )
 
         channel.send.assert_awaited_once()
@@ -205,12 +214,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
         content = channel.send.call_args[0][0]
         assert 'Come watch me!' in content
@@ -223,12 +227,7 @@ class TestOnStreamOnline:
             'sources.lib.cogs.twitch_relay.get_all_relays',
             AsyncMock(return_value=[relay]),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
         cog.bot.get_channel.assert_not_called()
 
@@ -249,12 +248,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
         channel1.send.assert_awaited_once()
         channel2.send.assert_awaited_once()
@@ -275,10 +269,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'new_name',
-                }
+                _stream_online_event('123', 'new_name', 'new_name')
             )
 
         mock_update.assert_awaited_once_with('123', 'new_name')
@@ -298,12 +289,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
         mock_update.assert_not_awaited()
 
@@ -322,12 +308,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
     async def test_fetches_channel_from_discord_when_not_cached(self):
         relay = _relay()
@@ -344,12 +325,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
         cog.bot.fetch_channel.assert_awaited_once_with(100)
         channel.send.assert_awaited_once()
@@ -370,12 +346,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
-                {
-                    'broadcaster_user_id': '123',
-                    'broadcaster_user_login': 'streamer',
-                }
-            )
+            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
 
 
 # ---------------------------------------------------------------------------
