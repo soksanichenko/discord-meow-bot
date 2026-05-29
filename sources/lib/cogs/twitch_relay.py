@@ -39,6 +39,10 @@ _EVENTSUB_URL = 'https://api.twitch.tv/helix/eventsub/subscriptions'
 _USERS_URL = 'https://api.twitch.tv/helix/users'
 # Discord followup messages expire after 15 minutes; cap device code polling there.
 _MAX_POLL_SECONDS = 800
+# Read timeout for the first message before the welcome (and its keepalive value) arrives.
+_CONNECT_GRACE_SECONDS = 15
+# Extra slack added to the server's keepalive_timeout before treating the link as dead.
+_KEEPALIVE_BUFFER_SECONDS = 10
 
 
 class _StreamEndedView(discord.ui.View):
@@ -220,21 +224,42 @@ class TwitchRelayCog(commands.Cog):
     async def _eventsub_session(self, url: str) -> str | None:
         """Run one EventSub WebSocket session.
 
-        Subscribes to stream.online for all tracked channels after the welcome
-        handshake. Returns the reconnect URL if Twitch requests one, else None.
+        Subscribes to stream.online/offline for all tracked channels after the
+        welcome handshake. Health is monitored via Twitch's documented keepalive
+        mechanism: if no event or keepalive message arrives within
+        keepalive_timeout_seconds (plus a buffer), the connection is treated as
+        lost and the method returns to trigger a reconnect.
 
         Args:
             url: WebSocket URL to connect to.
 
         Returns:
-            Reconnect URL string, or None if the session ended normally.
+            Reconnect URL string if Twitch requested one, else None.
         """
         self._session_id = None
         ws_timeout = aiohttp.ClientTimeout(total=None, sock_connect=15)
-        async with self._session.ws_connect(
-            url, timeout=ws_timeout, heartbeat=30
-        ) as ws:
-            async for msg in ws:
+        # Read timeout before the welcome arrives; replaced once we know the
+        # server's keepalive_timeout_seconds.
+        read_timeout = _CONNECT_GRACE_SECONDS
+        async with self._session.ws_connect(url, timeout=ws_timeout) as ws:
+            while True:
+                try:
+                    msg = await ws.receive(timeout=read_timeout)
+                except TimeoutError:
+                    self.logger.warning(
+                        'EventSub: no message within %ds; reconnecting', read_timeout
+                    )
+                    self._session_id = None
+                    return None
+
+                if msg.type in (
+                    aiohttp.WSMsgType.CLOSE,
+                    aiohttp.WSMsgType.CLOSING,
+                    aiohttp.WSMsgType.CLOSED,
+                ):
+                    self.logger.warning('EventSub: connection closed by server')
+                    self._session_id = None
+                    return None
                 if msg.type == aiohttp.WSMsgType.ERROR:
                     raise RuntimeError(f'WS error: {ws.exception()}')
                 if msg.type != aiohttp.WSMsgType.TEXT:
@@ -244,11 +269,21 @@ class TwitchRelayCog(commands.Cog):
                 msg_type = data['metadata']['message_type']
 
                 if msg_type == 'session_welcome':
-                    self._session_id = data['payload']['session']['id']
+                    session = data['payload']['session']
+                    self._session_id = session['id']
+                    # Reconnect if no message arrives within keepalive window + buffer.
+                    keepalive = session.get('keepalive_timeout_seconds') or 10
+                    read_timeout = keepalive + _KEEPALIVE_BUFFER_SECONDS
                     self.logger.info(
-                        'EventSub connected; session_id=%s', self._session_id
+                        'EventSub connected; session_id=%s (keepalive=%ds)',
+                        self._session_id,
+                        keepalive,
                     )
                     await self._subscribe_all(self._session_id)
+
+                elif msg_type == 'session_keepalive':
+                    # Heartbeat from Twitch — no action; receiving it resets read_timeout.
+                    pass
 
                 elif msg_type == 'notification':
                     sub_type = data['metadata']['subscription_type']
