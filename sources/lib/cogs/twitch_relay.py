@@ -277,18 +277,22 @@ class TwitchRelayCog(commands.Cog):
             await self._subscribe(session_id, user_id)
         self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
 
-    async def _subscribe(self, session_id: str, twitch_user_id: str) -> None:
+    async def _subscribe(self, session_id: str, twitch_user_id: str) -> bool:
         """Create EventSub stream.online and stream.offline subscriptions for one channel.
 
         Args:
             session_id: Current EventSub WebSocket session ID.
             twitch_user_id: Twitch numeric user ID to subscribe to.
+
+        Returns:
+            True if all subscriptions succeeded (200/202/409), False if any failed.
         """
         token = await self._ensure_token()
         headers = {
             'Authorization': f'Bearer {token}',
             'Client-Id': config.twitch_client_id,
         }
+        ok = True
         for event_type in ('stream.online', 'stream.offline'):
             try:
                 async with self._session.post(
@@ -324,10 +328,13 @@ class TwitchRelayCog(commands.Cog):
                             resp.status,
                             body,
                         )
+                        ok = False
             except Exception as exc:
                 self.logger.warning(
                     'Subscribe %s for %s error: %s', event_type, twitch_user_id, exc
                 )
+                ok = False
+        return ok
 
     # ------------------------------------------------------------------ event handlers
 
@@ -669,13 +676,19 @@ class TwitchRelayCog(commands.Cog):
             )
             return
 
+        subscribed = False
         if self._session_id:
-            await self._subscribe(self._session_id, user_id)
+            subscribed = await self._subscribe(self._session_id, user_id)
 
-        await interaction.followup.send(
-            f'Now forwarding **{login}** stream notifications to {discord_channel.mention}.',
-            ephemeral=True,
-        )
+        if subscribed:
+            msg = f'Now forwarding **{login}** stream notifications to {discord_channel.mention}.'
+        else:
+            msg = (
+                f'Relay for **{login}** saved, but the EventSub subscription is not active yet '
+                f'(no connection or subscription failed). '
+                f'Notifications will start on the next reconnect.'
+            )
+        await interaction.followup.send(msg, ephemeral=True)
         self.logger.info(
             'Relay added: %s (%s) → channel %d (guild %d)',
             login,
