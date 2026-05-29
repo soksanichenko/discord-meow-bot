@@ -625,5 +625,8 @@ class TwitchRelayCog(commands.Cog):
             description='\n'.join(lines),
             colour=discord.Colour(0x9146FF),
         )
-        embed.set_author(name='Twitch Relays')
+        embed.set_author(
+            name='Twitch Relays',
+            icon_url='https://static.twitchstatuspage.com/icons/favicon-32x32.png',
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
