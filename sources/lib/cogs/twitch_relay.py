@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from collections import Counter
+from datetime import UTC, datetime, timedelta
 
 import aiohttp
 import discord
@@ -12,6 +13,7 @@ from discord.ext import commands
 
 from sources.config import config
 from sources.lib.db.models import TwitchRelay
+from sources.lib.db.operations.twitch_auth import get_auth, save_auth
 from sources.lib.db.operations.twitch_relay import (
     add_relay,
     get_all_relays,
@@ -27,8 +29,11 @@ from sources.lib.utils import Logger
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 _WS_URL = 'wss://eventsub.wss.twitch.tv/ws'
 _TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
+_DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
 _EVENTSUB_URL = 'https://api.twitch.tv/helix/eventsub/subscriptions'
 _USERS_URL = 'https://api.twitch.tv/helix/users'
+# Discord followup messages expire after 15 minutes; cap device code polling there.
+_MAX_POLL_SECONDS = 800
 
 
 class _SetMessageModal(discord.ui.Modal):
@@ -84,17 +89,30 @@ class TwitchRelayCog(commands.Cog):
         self._session: aiohttp.ClientSession | None = None
         self._token: str | None = None
         self._token_expires_at: float = 0.0
+        self._refresh_token: str | None = None
         self._session_id: str | None = None
         self._ws_task: asyncio.Task | None = None
 
     async def cog_load(self) -> None:
-        """Open the HTTP session and start the EventSub WebSocket task."""
+        """Open the HTTP session, load stored OAuth tokens, and start EventSub if ready."""
         self._session = aiohttp.ClientSession()
-        if config.twitch_client_id and config.twitch_client_secret:
+        if not (config.twitch_client_id and config.twitch_client_secret):
+            self.logger.warning('Twitch credentials not configured; relay disabled')
+            return
+
+        auth = await get_auth()
+        if auth is not None:
+            self._refresh_token = auth.refresh_token
+            remaining = (auth.expires_at - datetime.now(UTC)).total_seconds()
+            if remaining > 60:
+                self._token = auth.access_token
+                self._token_expires_at = time.monotonic() + remaining
             self._ws_task = asyncio.create_task(self._run_eventsub())
             self.logger.info('Twitch EventSub task started')
         else:
-            self.logger.warning('Twitch credentials not configured; relay disabled')
+            self.logger.warning(
+                'No Twitch auth token stored; run /twitch-relay authorize'
+            )
 
     def cog_unload(self) -> None:
         """Cancel the WebSocket task and close the HTTP session."""
@@ -106,29 +124,48 @@ class TwitchRelayCog(commands.Cog):
     # ------------------------------------------------------------------ token
 
     async def _ensure_token(self) -> str:
-        """Return a valid app access token, refreshing if needed.
+        """Return a valid user access token, refreshing via refresh token if needed.
 
         Returns:
-            Valid Twitch app access token.
+            Valid Twitch user access token.
+
+        Raises:
+            RuntimeError: If no refresh token is available (not yet authorized).
         """
         if self._token and time.monotonic() < self._token_expires_at - 60:
             return self._token
+        if not self._refresh_token:
+            raise RuntimeError('No Twitch auth token. Run /twitch-relay authorize.')
+        await self._refresh_user_token()
+        return self._token
+
+    async def _refresh_user_token(self) -> None:
+        """Exchange the refresh token for a new access + refresh token pair and persist it.
+
+        Raises:
+            RuntimeError: If the Twitch token refresh request fails.
+        """
         async with self._session.post(
             _TOKEN_URL,
             params={
                 'client_id': config.twitch_client_id,
                 'client_secret': config.twitch_client_secret,
-                'grant_type': 'client_credentials',
+                'grant_type': 'refresh_token',
+                'refresh_token': self._refresh_token,
             },
             timeout=_REQUEST_TIMEOUT,
         ) as resp:
             data = await resp.json()
+
+        if 'access_token' not in data:
+            raise RuntimeError(f'Token refresh failed: {data.get("message", data)}')
+
         self._token = data['access_token']
+        self._refresh_token = data['refresh_token']
         self._token_expires_at = time.monotonic() + data['expires_in']
-        self.logger.info(
-            'Twitch app token acquired (expires in %ds)', data['expires_in']
-        )
-        return self._token
+        expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
+        await save_auth(self._token, self._refresh_token, expires_at)
+        self.logger.info('Twitch token refreshed (expires in %ds)', data['expires_in'])
 
     # ------------------------------------------------------------------ EventSub WebSocket
 
@@ -371,6 +408,116 @@ class TwitchRelayCog(commands.Cog):
         return choices[:25]
 
     # ------------------------------------------------------------------ commands
+
+    @relay.command(
+        name='authorize',
+        description='Authorize the bot to use Twitch EventSub (one-time setup)',
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_authorize(self, interaction: discord.Interaction) -> None:
+        """Start the Twitch Device Code Grant flow and store the resulting tokens.
+
+        Sends a one-time code and URL; polls in the background until the user
+        authorizes in the browser, then persists the tokens to the database.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        if not config.twitch_client_id:
+            await interaction.response.send_message(
+                'Twitch credentials are not configured.', ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            async with self._session.post(
+                _DEVICE_URL,
+                params={'client_id': config.twitch_client_id, 'scope': ''},
+                timeout=_REQUEST_TIMEOUT,
+            ) as resp:
+                data = await resp.json()
+        except Exception as exc:
+            await interaction.followup.send(
+                f'Failed to start authorization: {exc}', ephemeral=True
+            )
+            return
+
+        device_code = data['device_code']
+        user_code = data['user_code']
+        verify_uri = data['verification_uri']
+        interval = data.get('interval', 5)
+
+        await interaction.followup.send(
+            f'Open **{verify_uri}** and enter the code **`{user_code}`**\n'
+            'Waiting for authorization…',
+            ephemeral=True,
+        )
+        asyncio.create_task(self._poll_device_auth(interaction, device_code, interval))
+
+    async def _poll_device_auth(
+        self,
+        interaction: discord.Interaction,
+        device_code: str,
+        interval: int,
+    ) -> None:
+        """Poll Twitch for the device code grant result and save tokens on success.
+
+        Args:
+            interaction: The original Discord interaction (for followup messages).
+            device_code: Device code returned by the device authorization endpoint.
+            interval: Polling interval in seconds as specified by Twitch.
+        """
+        deadline = time.monotonic() + _MAX_POLL_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                async with self._session.post(
+                    _TOKEN_URL,
+                    params={
+                        'client_id': config.twitch_client_id,
+                        'client_secret': config.twitch_client_secret,
+                        'device_code': device_code,
+                        'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+                    },
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp:
+                    data = await resp.json()
+            except Exception as exc:
+                self.logger.warning('Device auth poll error: %s', exc)
+                continue
+
+            if 'access_token' in data:
+                self._token = data['access_token']
+                self._refresh_token = data['refresh_token']
+                self._token_expires_at = time.monotonic() + data['expires_in']
+                expires_at = datetime.now(UTC) + timedelta(seconds=data['expires_in'])
+                await save_auth(self._token, self._refresh_token, expires_at)
+                self.logger.info('Twitch authorization successful')
+
+                if self._ws_task is None or self._ws_task.done():
+                    self._ws_task = asyncio.create_task(self._run_eventsub())
+
+                await interaction.followup.send(
+                    'Twitch authorization successful! Stream notifications are now active.',
+                    ephemeral=True,
+                )
+                return
+
+            error = data.get('message', data.get('error', ''))
+            if error == 'slow_down':
+                interval += 5
+            elif error != 'authorization_pending':
+                await interaction.followup.send(
+                    f'Authorization failed: {error}', ephemeral=True
+                )
+                return
+
+        await interaction.followup.send(
+            'Authorization timed out. Run `/twitch-relay authorize` again.',
+            ephemeral=True,
+        )
 
     @relay.command(
         name='add',
