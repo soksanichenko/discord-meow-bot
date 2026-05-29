@@ -403,7 +403,7 @@ class _StreamEndedView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(
             discord.ui.Button(
-                label='Visit Channel ↗',
+                label='Visit Channel',
                 url=f'https://www.youtube.com/channel/{yt_channel_id}',
                 style=discord.ButtonStyle.link,
             )
