@@ -627,6 +627,6 @@ class TwitchRelayCog(commands.Cog):
         )
         embed.set_author(
             name='Twitch Relays',
-            icon_url='https://static.twitchstatuspage.com/icons/favicon-32x32.png',
+            icon_url='https://assets.twitch.tv/assets/favicon-32-e29e246c157142c94346.png',
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
