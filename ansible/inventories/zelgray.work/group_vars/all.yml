@@ -5,6 +5,8 @@ discord_token: "{{ infisical_secrets.secrets['discord-bot-token'] }}"
 youtube_api_key: "{{ infisical_secrets.secrets['youtube-api-key'] }}"
 spotify_api_client_id: "{{ infisical_secrets.secrets['spotify-api-client-id'] }}"
 spotify_api_client_secret: "{{ infisical_secrets.secrets['spotify-api-client-secret'] }}"
+twitch_client_id: "{{ infisical_secrets.secrets['twitch-client-id-discord-bot'] }}"
+twitch_client_secret: "{{ infisical_secrets.secrets['twitch-secret-discord-bot'] }}"
 db_password: "{{ infisical_secrets.secrets['discord-bot-db-password'] }}"
 db_login: "meow-bot"
 db_host: postgresql

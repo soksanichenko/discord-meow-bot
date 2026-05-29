@@ -41,6 +41,8 @@ class Config(BaseSettings):
     rsshub_url: str = 'https://rsshub.app'
     telegram_relay_poll_interval_minutes: int = 5
     youtube_relay_poll_interval_minutes: int = 5
+    twitch_client_id: str = ''
+    twitch_client_secret: str = ''
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

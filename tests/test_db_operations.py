@@ -7,6 +7,8 @@ Each operation module creates its own AsyncSession internally, so tests patch
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Session factory helper
 # ---------------------------------------------------------------------------
@@ -1259,3 +1261,246 @@ class TestGetAllTelegramRelays:
 
             result = await get_all_relays()
         assert result == [r1, r2]
+
+
+# ---------------------------------------------------------------------------
+# twitch relay operations
+# ---------------------------------------------------------------------------
+
+
+class TestGetGuildTwitchRelays:
+    async def test_returns_relay_list(self):
+        r1 = SimpleNamespace(id=1, twitch_login='streamer')
+        session, ctx = _make_session(scalars_rows=[r1])
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_guild_relays
+
+            result = await get_guild_relays(guild_id=1)
+        assert result == [r1]
+
+    async def test_returns_empty_list_when_none(self):
+        session, ctx = _make_session(scalars_rows=[])
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_guild_relays
+
+            result = await get_guild_relays(guild_id=1)
+        assert result == []
+
+
+class TestGetAllTwitchRelays:
+    async def test_returns_all_relays(self):
+        r1, r2 = SimpleNamespace(id=1), SimpleNamespace(id=2)
+        session, ctx = _make_session(scalars_rows=[r1, r2])
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_all_relays
+
+            result = await get_all_relays()
+        assert result == [r1, r2]
+
+    async def test_returns_empty_when_none(self):
+        session, ctx = _make_session(scalars_rows=[])
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_all_relays
+
+            result = await get_all_relays()
+        assert result == []
+
+
+class TestAddTwitchRelay:
+    async def test_returns_true_when_inserted(self):
+        session, ctx = _make_session()
+        execute_result = MagicMock()
+        execute_result.rowcount = 1
+        session.execute.return_value = execute_result
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import add_relay
+
+            result = await add_relay(
+                guild_id=1,
+                twitch_user_id='42',
+                twitch_login='streamer',
+                discord_channel_id=100,
+            )
+        assert result is True
+        session.commit.assert_awaited_once()
+
+    async def test_returns_false_on_conflict(self):
+        session, ctx = _make_session()
+        execute_result = MagicMock()
+        execute_result.rowcount = 0
+        session.execute.return_value = execute_result
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import add_relay
+
+            result = await add_relay(
+                guild_id=1,
+                twitch_user_id='42',
+                twitch_login='streamer',
+                discord_channel_id=100,
+            )
+        assert result is False
+
+
+class TestRemoveTwitchRelay:
+    async def test_returns_none_when_not_found(self):
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import remove_relay
+
+            result = await remove_relay(relay_id=99, guild_id=1)
+        assert result is None
+        session.delete.assert_not_awaited()
+
+    async def test_returns_login_and_deletes_when_found(self):
+        relay = SimpleNamespace(twitch_login='streamer')
+        session, ctx = _make_session(scalar=relay)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import remove_relay
+
+            result = await remove_relay(relay_id=1, guild_id=1)
+        assert result == 'streamer'
+        session.delete.assert_awaited_once_with(relay)
+        session.commit.assert_awaited_once()
+
+    async def test_guild_scope_enforced(self):
+        # scalar returns None when guild_id does not match (the WHERE clause filters it out)
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import remove_relay
+
+            result = await remove_relay(relay_id=1, guild_id=999)
+        assert result is None
+
+
+class TestGetTwitchRelayById:
+    async def test_returns_relay_when_found(self):
+        relay = SimpleNamespace(id=1, twitch_login='streamer')
+        session, ctx = _make_session(scalar=relay)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_relay_by_id
+
+            result = await get_relay_by_id(relay_id=1, guild_id=1)
+        assert result is relay
+
+    async def test_returns_none_when_not_found(self):
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import get_relay_by_id
+
+            result = await get_relay_by_id(relay_id=99, guild_id=1)
+        assert result is None
+
+
+class TestSetTwitchRelayMessage:
+    async def test_returns_none_when_relay_not_found(self):
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import set_relay_message
+
+            result = await set_relay_message(relay_id=99, guild_id=1, message='Hi!')
+        assert result is None
+        session.commit.assert_not_awaited()
+
+    async def test_sets_message_and_returns_login(self):
+        relay = SimpleNamespace(twitch_login='streamer', custom_message=None)
+        session, ctx = _make_session(scalar=relay)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import set_relay_message
+
+            result = await set_relay_message(
+                relay_id=1, guild_id=1, message='Live now!'
+            )
+        assert result == 'streamer'
+        assert relay.custom_message == 'Live now!'
+        session.commit.assert_awaited_once()
+
+    async def test_clears_message_with_none(self):
+        relay = SimpleNamespace(twitch_login='streamer', custom_message='Old message')
+        session, ctx = _make_session(scalar=relay)
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import set_relay_message
+
+            result = await set_relay_message(relay_id=1, guild_id=1, message=None)
+        assert result == 'streamer'
+        assert relay.custom_message is None
+        session.commit.assert_awaited_once()
+
+
+class TestUpdateTwitchRelayChannel:
+    async def test_returns_none_when_relay_not_found(self):
+        session, ctx = _make_session()
+        session.scalar.side_effect = [None]
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import update_relay_channel
+
+            result = await update_relay_channel(
+                relay_id=99, guild_id=1, discord_channel_id=200
+            )
+        assert result is None
+        session.commit.assert_not_awaited()
+
+    async def test_raises_value_error_on_conflict(self):
+        relay = SimpleNamespace(
+            twitch_login='streamer', twitch_user_id='42', discord_channel_id=100
+        )
+        conflict = SimpleNamespace(id=2)
+        session, ctx = _make_session()
+        session.scalar.side_effect = [relay, conflict]
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import update_relay_channel
+
+            with pytest.raises(ValueError, match='duplicate'):
+                await update_relay_channel(
+                    relay_id=1, guild_id=1, discord_channel_id=200
+                )
+        session.commit.assert_not_awaited()
+
+    async def test_updates_channel_and_returns_login(self):
+        relay = SimpleNamespace(
+            twitch_login='streamer', twitch_user_id='42', discord_channel_id=100
+        )
+        session, ctx = _make_session()
+        session.scalar.side_effect = [relay, None]  # relay found, no conflict
+        with patch(
+            'sources.lib.db.operations.twitch_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_relay import update_relay_channel
+
+            result = await update_relay_channel(
+                relay_id=1, guild_id=1, discord_channel_id=200
+            )
+        assert result == 'streamer'
+        assert relay.discord_channel_id == 200
+        session.commit.assert_awaited_once()

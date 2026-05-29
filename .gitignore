@@ -1,4 +1,5 @@
 vault-pass
+.claude/settings.local.json
 .idea
 .env
 *.pyc

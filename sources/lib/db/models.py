@@ -236,6 +236,35 @@ class YouTubeLiveSession(Base):
     )
 
 
+class TwitchRelay(Base):
+    """A Twitch channel relayed to a Discord channel."""
+
+    __tablename__ = 'twitch_relays'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    # Twitch numeric user ID — stable across username changes.
+    twitch_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    twitch_login: Mapped[str] = mapped_column(Text, nullable=False)
+    discord_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Custom notification text; NULL = built-in default.
+    custom_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            'uq_twitch_relays',
+            'guild_id',
+            'twitch_user_id',
+            'discord_channel_id',
+            unique=True,
+        ),
+    )
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 
