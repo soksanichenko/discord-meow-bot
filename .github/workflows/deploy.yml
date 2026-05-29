@@ -1,6 +1,6 @@
 ---
 name: Deploy
-run-name: "${{ github.event.workflow_run.head_commit.message }}"
+run-name: "${{ github.event.workflow_run.display_title }}"
 
 on:
   workflow_run:
