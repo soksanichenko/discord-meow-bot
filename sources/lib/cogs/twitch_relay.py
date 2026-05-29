@@ -125,17 +125,25 @@ class TwitchRelayCog(commands.Cog):
             return
 
         auth = await get_auth()
-        if auth is not None:
-            self._refresh_token = auth.refresh_token
-            remaining = (auth.expires_at - datetime.now(UTC)).total_seconds()
-            if remaining > 60:
-                self._token = auth.access_token
-                self._token_expires_at = time.monotonic() + remaining
+        if auth is None:
+            self.logger.warning(
+                'No Twitch auth token stored; run /twitch-relay authorize'
+            )
+            return
+
+        self._refresh_token = auth.refresh_token
+        remaining = (auth.expires_at - datetime.now(UTC)).total_seconds()
+        if remaining > 60:
+            self._token = auth.access_token
+            self._token_expires_at = time.monotonic() + remaining
+
+        relays = await get_all_relays()
+        if relays:
             self._ws_task = asyncio.create_task(self._run_eventsub())
             self.logger.info('Twitch EventSub task started')
         else:
-            self.logger.warning(
-                'No Twitch auth token stored; run /twitch-relay authorize'
+            self.logger.info(
+                'No Twitch relays configured; EventSub will start when first relay is added'
             )
 
     def cog_unload(self) -> None:
@@ -788,12 +796,15 @@ class TwitchRelayCog(commands.Cog):
                 f'Run `/twitch-relay sync` to retry.'
             )
         else:
-            # No session (not yet connected, or connection dropped during subscribe call).
-            # Defer subscription — _subscribe_all will also pick it up on next reconnect.
+            # No session — start EventSub task if not running (e.g. first relay ever added),
+            # then defer subscription until session_welcome is received.
+            if self._ws_task is None or self._ws_task.done():
+                self._ws_task = asyncio.create_task(self._run_eventsub())
+                self.logger.info('Twitch EventSub task started (first relay added)')
             asyncio.create_task(self._subscribe_when_ready(user_id))
             msg = (
                 f'Relay for **{login}** saved. '
-                f'EventSub is reconnecting — subscription will activate automatically.'
+                f'EventSub is connecting — subscription will activate automatically.'
             )
         await interaction.followup.send(msg, ephemeral=True)
         self.logger.info(
