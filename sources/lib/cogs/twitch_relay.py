@@ -776,17 +776,19 @@ class TwitchRelayCog(commands.Cog):
         subscribed = False
         if self._session_id:
             subscribed = await self._subscribe(self._session_id, user_id)
-        else:
-            asyncio.create_task(self._subscribe_when_ready(user_id))
 
         if subscribed:
             msg = f'Now forwarding **{login}** stream notifications to {discord_channel.mention}.'
         elif self._session_id:
+            # Session still active but subscription failed — user must retry manually.
             msg = (
                 f'Relay for **{login}** saved, but the subscription failed. '
                 f'Run `/twitch-relay sync` to retry.'
             )
         else:
+            # No session (not yet connected, or connection dropped during subscribe call).
+            # Defer subscription — _subscribe_all will also pick it up on next reconnect.
+            asyncio.create_task(self._subscribe_when_ready(user_id))
             msg = (
                 f'Relay for **{login}** saved. '
                 f'EventSub is reconnecting — subscription will activate automatically.'
