@@ -177,6 +177,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -202,6 +203,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -245,6 +247,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay1, relay2]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -269,6 +272,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -292,6 +296,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -315,6 +320,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -336,6 +342,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {
@@ -361,6 +368,7 @@ class TestOnStreamOnline:
                 AsyncMock(return_value=[relay]),
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
             await cog._on_stream_online(
                 {

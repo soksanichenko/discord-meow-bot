@@ -279,6 +279,23 @@ class TwitchRelay(Base):
     )
 
 
+class TwitchLiveSession(Base):
+    """Tracks an ongoing Twitch live stream so the bot can edit the announcement when it ends."""
+
+    __tablename__ = 'twitch_live_sessions'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    relay_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey('twitch_relays.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    # Snowflake ID of the Discord message that announced the stream.
+    discord_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (Index('uq_twitch_live_sessions', 'relay_id', unique=True),)
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 

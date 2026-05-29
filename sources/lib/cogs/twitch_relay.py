@@ -14,6 +14,11 @@ from discord.ext import commands
 from sources.config import config
 from sources.lib.db.models import TwitchRelay
 from sources.lib.db.operations.twitch_auth import get_auth, save_auth
+from sources.lib.db.operations.twitch_live_session import (
+    add_live_session,
+    get_live_sessions_for_user,
+    remove_live_session,
+)
 from sources.lib.db.operations.twitch_relay import (
     add_relay,
     get_all_relays,
@@ -34,6 +39,25 @@ _EVENTSUB_URL = 'https://api.twitch.tv/helix/eventsub/subscriptions'
 _USERS_URL = 'https://api.twitch.tv/helix/users'
 # Discord followup messages expire after 15 minutes; cap device code polling there.
 _MAX_POLL_SECONDS = 800
+
+
+class _StreamEndedView(discord.ui.View):
+    """Persistent view shown when a Twitch stream ends — contains a channel link button."""
+
+    def __init__(self, twitch_login: str) -> None:
+        """Initialise the view.
+
+        Args:
+            twitch_login: Twitch login name used to build the channel URL.
+        """
+        super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Button(
+                label='Visit Channel ↗',
+                url=f'https://www.twitch.tv/{twitch_login}',
+                style=discord.ButtonStyle.link,
+            )
+        )
 
 
 class _SetMessageModal(discord.ui.Modal):
@@ -218,10 +242,11 @@ class TwitchRelayCog(commands.Cog):
 
                 elif msg_type == 'notification':
                     sub_type = data['metadata']['subscription_type']
+                    event_payload = data['payload']['event']
                     if sub_type == 'stream.online':
-                        asyncio.create_task(
-                            self._on_stream_online(data['payload']['event'])
-                        )
+                        asyncio.create_task(self._on_stream_online(event_payload))
+                    elif sub_type == 'stream.offline':
+                        asyncio.create_task(self._on_stream_offline(event_payload))
 
                 elif msg_type == 'session_reconnect':
                     reconnect_url = data['payload']['session']['reconnect_url']
@@ -240,7 +265,7 @@ class TwitchRelayCog(commands.Cog):
         return None
 
     async def _subscribe_all(self, session_id: str) -> None:
-        """Subscribe to stream.online for every tracked Twitch user ID.
+        """Subscribe to stream.online and stream.offline for every tracked Twitch user ID.
 
         Args:
             session_id: Current EventSub WebSocket session ID.
@@ -252,41 +277,44 @@ class TwitchRelayCog(commands.Cog):
         self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
 
     async def _subscribe(self, session_id: str, twitch_user_id: str) -> None:
-        """Create an EventSub stream.online subscription for one Twitch channel.
+        """Create EventSub stream.online and stream.offline subscriptions for one channel.
 
         Args:
             session_id: Current EventSub WebSocket session ID.
             twitch_user_id: Twitch numeric user ID to subscribe to.
         """
         token = await self._ensure_token()
-        try:
-            async with self._session.post(
-                _EVENTSUB_URL,
-                headers={
-                    'Authorization': f'Bearer {token}',
-                    'Client-Id': config.twitch_client_id,
-                },
-                json={
-                    'type': 'stream.online',
-                    'version': '1',
-                    'condition': {'broadcaster_user_id': twitch_user_id},
-                    'transport': {'method': 'websocket', 'session_id': session_id},
-                },
-                timeout=_REQUEST_TIMEOUT,
-            ) as resp:
-                # 409 = already subscribed on this session (safe to ignore).
-                if resp.status not in (200, 202, 409):
-                    body = await resp.text()
-                    self.logger.warning(
-                        'Subscribe stream.online for %s failed: HTTP %d %s',
-                        twitch_user_id,
-                        resp.status,
-                        body,
-                    )
-        except Exception as exc:
-            self.logger.warning(
-                'Subscribe stream.online for %s error: %s', twitch_user_id, exc
-            )
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Client-Id': config.twitch_client_id,
+        }
+        for event_type in ('stream.online', 'stream.offline'):
+            try:
+                async with self._session.post(
+                    _EVENTSUB_URL,
+                    headers=headers,
+                    json={
+                        'type': event_type,
+                        'version': '1',
+                        'condition': {'broadcaster_user_id': twitch_user_id},
+                        'transport': {'method': 'websocket', 'session_id': session_id},
+                    },
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp:
+                    # 409 = already subscribed on this session (safe to ignore).
+                    if resp.status not in (200, 202, 409):
+                        body = await resp.text()
+                        self.logger.warning(
+                            'Subscribe %s for %s failed: HTTP %d %s',
+                            event_type,
+                            twitch_user_id,
+                            resp.status,
+                            body,
+                        )
+            except Exception as exc:
+                self.logger.warning(
+                    'Subscribe %s for %s error: %s', event_type, twitch_user_id, exc
+                )
 
     # ------------------------------------------------------------------ event handlers
 
@@ -323,7 +351,8 @@ class TwitchRelayCog(commands.Cog):
                 or f'**{relay.twitch_login}** is now live on Twitch!'
             )
             try:
-                await channel.send(f'{message}\n{url}')
+                sent = await channel.send(f'{message}\n{url}')
+                await add_live_session(relay.id, sent.id)
                 self.logger.info(
                     'Posted stream.online for %s to channel %d',
                     twitch_login,
@@ -339,6 +368,46 @@ class TwitchRelayCog(commands.Cog):
         # Keep stored login in sync in case the user renamed their channel.
         if twitch_login != targets[0].twitch_login:
             await update_login(twitch_user_id, twitch_login)
+
+    async def _on_stream_offline(self, event: dict) -> None:
+        """Edit the stream announcement when a tracked stream ends.
+
+        Args:
+            event: Twitch stream.offline event payload dict.
+        """
+        twitch_user_id = event['broadcaster_user_id']
+        twitch_login = event.get('broadcaster_user_login', twitch_user_id)
+
+        sessions = await get_live_sessions_for_user(twitch_user_id)
+        if not sessions:
+            return
+
+        relays = await get_all_relays()
+        relay_map = {r.id: r for r in relays if r.twitch_user_id == twitch_user_id}
+
+        end_content = f'**{twitch_login}** has finished streaming'
+        view = _StreamEndedView(twitch_login)
+
+        for session in sessions:
+            relay = relay_map.get(session.relay_id)
+            if relay is not None and session.discord_message_id:
+                channel = self.bot.get_channel(relay.discord_channel_id)
+                if channel is None:
+                    try:
+                        channel = await self.bot.fetch_channel(relay.discord_channel_id)
+                    except discord.NotFound:
+                        channel = None
+                if channel is not None:
+                    try:
+                        original = await channel.fetch_message(
+                            session.discord_message_id
+                        )
+                        await original.edit(content=end_content, view=view)
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+
+            await remove_live_session(session.id)
+            self.logger.info('Live session removed for %s', twitch_login)
 
     # ------------------------------------------------------------------ helpers
 
