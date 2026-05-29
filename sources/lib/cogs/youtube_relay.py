@@ -392,15 +392,23 @@ class _RelayRemoveView(_RelayView):
 
 
 class _StreamEndedView(discord.ui.View):
-    """Persistent view shown when a YouTube live stream ends — contains a channel link button."""
+    """Persistent view shown when a YouTube live stream ends."""
 
-    def __init__(self, yt_channel_id: str) -> None:
+    def __init__(self, yt_channel_id: str, video_id: str) -> None:
         """Initialise the view.
 
         Args:
             yt_channel_id: YouTube channel ID (UCxxx) used to build the channel URL.
+            video_id: YouTube video ID used to build the direct recording URL.
         """
         super().__init__(timeout=None)
+        self.add_item(
+            discord.ui.Button(
+                label='Watch Recording',
+                url=f'https://www.youtube.com/watch?v={video_id}',
+                style=discord.ButtonStyle.link,
+            )
+        )
         self.add_item(
             discord.ui.Button(
                 label='Visit Channel',
@@ -1129,7 +1137,7 @@ class YouTubeRelayCog(commands.Cog):
                         end_content = (
                             f'**{relay.yt_channel_title}** has finished streaming'
                         )
-                        view = _StreamEndedView(relay.yt_channel_id)
+                        view = _StreamEndedView(relay.yt_channel_id, s.video_id)
                         edited = False
                         if s.discord_message_id:
                             try:

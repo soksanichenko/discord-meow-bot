@@ -12,7 +12,7 @@ from discord.ext import commands
 from twitchAPI.eventsub.websocket import EventSubWebsocket
 from twitchAPI.object.eventsub import StreamOfflineEvent, StreamOnlineEvent
 from twitchAPI.twitch import Twitch
-from twitchAPI.type import EventSubSubscriptionConflict
+from twitchAPI.type import EventSubSubscriptionConflict, VideoType
 
 from sources.config import config
 from sources.lib.db.models import TwitchRelay
@@ -42,15 +42,24 @@ _MAX_POLL_SECONDS = 800
 
 
 class _StreamEndedView(discord.ui.View):
-    """Persistent view shown when a Twitch stream ends — contains a channel link button."""
+    """Persistent view shown when a Twitch stream ends."""
 
-    def __init__(self, twitch_login: str) -> None:
+    def __init__(self, twitch_login: str, vod_url: str | None = None) -> None:
         """Initialise the view.
 
         Args:
             twitch_login: Twitch login name used to build the channel URL.
+            vod_url: Direct URL to the VOD, or None if not available.
         """
         super().__init__(timeout=None)
+        if vod_url is not None:
+            self.add_item(
+                discord.ui.Button(
+                    label='Watch Recording',
+                    url=vod_url,
+                    style=discord.ButtonStyle.link,
+                )
+            )
         self.add_item(
             discord.ui.Button(
                 label='Visit Channel',
@@ -357,8 +366,9 @@ class TwitchRelayCog(commands.Cog):
         relays = await get_all_relays()
         relay_map = {r.id: r for r in relays if r.twitch_user_id == twitch_user_id}
 
+        vod_url = await self._get_latest_vod_url(twitch_user_id)
         end_content = f'**{twitch_display_name}** has finished streaming'
-        view = _StreamEndedView(twitch_login)
+        view = _StreamEndedView(twitch_login, vod_url)
 
         for session in sessions:
             relay = relay_map.get(session.relay_id)
@@ -382,6 +392,26 @@ class TwitchRelayCog(commands.Cog):
             self.logger.info('Live session removed for %s', twitch_login)
 
     # ------------------------------------------------------------------ helpers
+
+    async def _get_latest_vod_url(self, twitch_user_id: str) -> str | None:
+        """Return the URL of the most recent archived VOD for a channel, or None.
+
+        Args:
+            twitch_user_id: Twitch numeric user ID to look up.
+
+        Returns:
+            VOD URL string, or None if no VOD is found or on API error.
+        """
+        if self._twitch is None:
+            return None
+        try:
+            async for video in self._twitch.get_videos(
+                user_id=twitch_user_id, video_type=VideoType.ARCHIVE, first=1
+            ):
+                return video.url
+        except Exception as exc:
+            self.logger.warning('Failed to fetch VOD for %s: %s', twitch_user_id, exc)
+        return None
 
     async def _resolve_user(self, raw: str) -> tuple[str, str] | None:
         """Resolve a Twitch login name or channel URL to (user_id, login).
