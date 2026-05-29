@@ -172,7 +172,7 @@ class TestResolveUser:
 
 
 # ---------------------------------------------------------------------------
-# _on_stream_online — Discord notification dispatch
+# _handle_stream_online — Discord notification dispatch
 # ---------------------------------------------------------------------------
 
 
@@ -191,7 +191,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
+            await cog._handle_stream_online(
                 _stream_online_event('123', 'streamer', 'streamer')
             )
 
@@ -214,7 +214,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
         content = channel.send.call_args[0][0]
         assert 'Come watch me!' in content
@@ -227,7 +227,7 @@ class TestOnStreamOnline:
             'sources.lib.cogs.twitch_relay.get_all_relays',
             AsyncMock(return_value=[relay]),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
         cog.bot.get_channel.assert_not_called()
 
@@ -248,7 +248,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
         channel1.send.assert_awaited_once()
         channel2.send.assert_awaited_once()
@@ -268,7 +268,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(
+            await cog._handle_stream_online(
                 _stream_online_event('123', 'new_name', 'new_name')
             )
 
@@ -289,7 +289,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
         mock_update.assert_not_awaited()
 
@@ -308,7 +308,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
     async def test_fetches_channel_from_discord_when_not_cached(self):
         relay = _relay()
@@ -325,7 +325,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
         cog.bot.fetch_channel.assert_awaited_once_with(100)
         channel.send.assert_awaited_once()
@@ -346,7 +346,7 @@ class TestOnStreamOnline:
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
         ):
-            await cog._on_stream_online(_stream_online_event('123', 'streamer'))
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
 
 # ---------------------------------------------------------------------------
