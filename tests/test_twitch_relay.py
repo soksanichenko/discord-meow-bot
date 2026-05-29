@@ -14,7 +14,7 @@ from sources.lib.cogs.twitch_relay import TwitchRelayCog
 
 def _relay(
     *,
-    id: int = 1,
+    relay_id: int = 1,
     twitch_user_id: str = '123',
     twitch_login: str = 'streamer',
     discord_channel_id: int = 100,
@@ -22,7 +22,7 @@ def _relay(
     guild_id: int = 1,
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        id=id,
+        id=relay_id,
         twitch_user_id=twitch_user_id,
         twitch_login=twitch_login,
         discord_channel_id=discord_channel_id,
@@ -231,8 +231,8 @@ class TestOnStreamOnline:
         cog.bot.get_channel.assert_not_called()
 
     async def test_posts_to_multiple_channels(self):
-        relay1 = _relay(id=1, discord_channel_id=100)
-        relay2 = _relay(id=2, discord_channel_id=200)
+        relay1 = _relay(relay_id=1, discord_channel_id=100)
+        relay2 = _relay(relay_id=2, discord_channel_id=200)
         channel1, channel2 = AsyncMock(), AsyncMock()
         cog = _make_cog()
         cog.bot.get_channel.side_effect = lambda ch_id: {100: channel1, 200: channel2}[
@@ -387,7 +387,7 @@ class TestRelayAutocomplete:
         )
 
     async def test_single_relay_no_channel_suffix(self):
-        relay = _relay(id=5, twitch_login='streamer', discord_channel_id=100)
+        relay = _relay(relay_id=5, twitch_login='streamer', discord_channel_id=100)
         cog = _make_cog()
 
         with patch(
@@ -403,8 +403,8 @@ class TestRelayAutocomplete:
         assert choices[0].value == '5'
 
     async def test_duplicate_login_disambiguated_with_channel_name(self):
-        relay1 = _relay(id=1, twitch_login='streamer', discord_channel_id=100)
-        relay2 = _relay(id=2, twitch_login='streamer', discord_channel_id=200)
+        relay1 = _relay(relay_id=1, twitch_login='streamer', discord_channel_id=100)
+        relay2 = _relay(relay_id=2, twitch_login='streamer', discord_channel_id=200)
         cog = _make_cog()
 
         with patch(
@@ -420,8 +420,8 @@ class TestRelayAutocomplete:
         assert 'streamer (#clips)' in names
 
     async def test_unknown_channel_falls_back_to_id(self):
-        relay1 = _relay(id=1, twitch_login='streamer', discord_channel_id=999)
-        relay2 = _relay(id=2, twitch_login='streamer', discord_channel_id=888)
+        relay1 = _relay(relay_id=1, twitch_login='streamer', discord_channel_id=999)
+        relay2 = _relay(relay_id=2, twitch_login='streamer', discord_channel_id=888)
         cog = _make_cog()
 
         with patch(
@@ -435,8 +435,8 @@ class TestRelayAutocomplete:
         assert 'streamer (#888)' in names
 
     async def test_filters_by_current_text(self):
-        relay1 = _relay(id=1, twitch_login='coolstreamer', discord_channel_id=100)
-        relay2 = _relay(id=2, twitch_login='otheruser', discord_channel_id=100)
+        relay1 = _relay(relay_id=1, twitch_login='coolstreamer', discord_channel_id=100)
+        relay2 = _relay(relay_id=2, twitch_login='otheruser', discord_channel_id=100)
         cog = _make_cog()
 
         with patch(
@@ -451,7 +451,7 @@ class TestRelayAutocomplete:
         assert choices[0].name == 'coolstreamer'
 
     async def test_case_insensitive_filter(self):
-        relay = _relay(id=1, twitch_login='CoolStreamer', discord_channel_id=100)
+        relay = _relay(relay_id=1, twitch_login='CoolStreamer', discord_channel_id=100)
         cog = _make_cog()
 
         with patch(
