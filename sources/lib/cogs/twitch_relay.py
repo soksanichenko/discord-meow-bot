@@ -277,6 +277,29 @@ class TwitchRelayCog(commands.Cog):
             await self._subscribe(session_id, user_id)
         self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
 
+    async def _subscribe_when_ready(self, twitch_user_id: str) -> None:
+        """Wait for an active EventSub session, then subscribe.
+
+        Retries every 5 seconds for up to 5 minutes. Used when relay_add is called
+        while the session is not yet established.
+
+        Args:
+            twitch_user_id: Twitch numeric user ID to subscribe to.
+        """
+        for _ in range(60):
+            await asyncio.sleep(5)
+            if self._session_id:
+                ok = await self._subscribe(self._session_id, twitch_user_id)
+                if ok:
+                    self.logger.info(
+                        'Deferred subscription activated for %s', twitch_user_id
+                    )
+                return
+        self.logger.warning(
+            'Deferred subscription for %s timed out — no session established',
+            twitch_user_id,
+        )
+
     async def _subscribe(self, session_id: str, twitch_user_id: str) -> bool:
         """Create EventSub stream.online and stream.offline subscriptions for one channel.
 
@@ -753,14 +776,20 @@ class TwitchRelayCog(commands.Cog):
         subscribed = False
         if self._session_id:
             subscribed = await self._subscribe(self._session_id, user_id)
+        else:
+            asyncio.create_task(self._subscribe_when_ready(user_id))
 
         if subscribed:
             msg = f'Now forwarding **{login}** stream notifications to {discord_channel.mention}.'
+        elif self._session_id:
+            msg = (
+                f'Relay for **{login}** saved, but the subscription failed. '
+                f'Run `/twitch-relay sync` to retry.'
+            )
         else:
             msg = (
-                f'Relay for **{login}** saved, but the EventSub subscription is not active yet '
-                f'(no connection or subscription failed). '
-                f'Notifications will start on the next reconnect.'
+                f'Relay for **{login}** saved. '
+                f'EventSub is reconnecting — subscription will activate automatically.'
             )
         await interaction.followup.send(msg, ephemeral=True)
         self.logger.info(
