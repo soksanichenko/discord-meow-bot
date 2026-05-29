@@ -504,6 +504,25 @@ class TwitchRelayCog(commands.Cog):
                 choices.append(app_commands.Choice(name=name, value=str(r.id)))
         return choices[:25]
 
+    async def _channel_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return one choice per unique Twitch channel in this guild (value = twitch_user_id)."""
+        relays = await get_guild_relays(interaction.guild_id)
+        seen: set[str] = set()
+        choices = []
+        for r in relays:
+            if r.twitch_user_id in seen:
+                continue
+            seen.add(r.twitch_user_id)
+            if current.lower() in r.twitch_login.lower():
+                choices.append(
+                    app_commands.Choice(name=r.twitch_login, value=r.twitch_user_id)
+                )
+        return choices[:25]
+
     # ------------------------------------------------------------------ commands
 
     @relay.command(
@@ -622,6 +641,61 @@ class TwitchRelayCog(commands.Cog):
             'Authorization timed out. Run `/twitch-relay authorize` again.',
             ephemeral=True,
         )
+
+    @relay.command(
+        name='sync',
+        description='Re-subscribe to Twitch EventSub for all or one channel',
+    )
+    @app_commands.describe(channel='Twitch channel to sync (leave empty for all)')
+    @app_commands.autocomplete(channel=_channel_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_sync(
+        self,
+        interaction: discord.Interaction,
+        channel: str | None = None,
+    ) -> None:
+        """Re-subscribe to EventSub for all tracked channels or one specific channel.
+
+        Useful when subscriptions were lost (e.g., channel added while EventSub was
+        not connected, or after a reconnect cycle).
+
+        Args:
+            interaction: The Discord interaction.
+            channel: Twitch user ID from autocomplete, or None to sync all.
+        """
+        if not self._session_id:
+            await interaction.response.send_message(
+                'EventSub is not connected — cannot subscribe. '
+                'Wait for the connection to be established and try again.',
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        relays = await get_all_relays()
+        if channel:
+            user_ids = {channel}
+        else:
+            user_ids = {r.twitch_user_id for r in relays}
+
+        if not user_ids:
+            await interaction.followup.send('No channels to sync.', ephemeral=True)
+            return
+
+        login_map = {
+            r.twitch_user_id: r.twitch_login
+            for r in relays
+            if r.twitch_user_id in user_ids
+        }
+
+        lines = []
+        for user_id in sorted(user_ids):
+            login = login_map.get(user_id, user_id)
+            ok = await self._subscribe(self._session_id, user_id)
+            lines.append(f'{"✓" if ok else "✗"} **{login}**')
+
+        await interaction.followup.send('\n'.join(lines), ephemeral=True)
 
     @relay.command(
         name='add',
