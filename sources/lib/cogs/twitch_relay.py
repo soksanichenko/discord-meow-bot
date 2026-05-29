@@ -223,7 +223,9 @@ class TwitchRelayCog(commands.Cog):
         """
         self._session_id = None
         ws_timeout = aiohttp.ClientTimeout(total=None, sock_connect=15)
-        async with self._session.ws_connect(url, timeout=ws_timeout) as ws:
+        async with self._session.ws_connect(
+            url, timeout=ws_timeout, heartbeat=30
+        ) as ws:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.ERROR:
                     raise RuntimeError(f'WS error: {ws.exception()}')
