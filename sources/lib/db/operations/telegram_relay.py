@@ -93,6 +93,47 @@ async def remove_relay(guild_id: int, tg_username: str) -> bool:
         return True
 
 
+async def update_relay_channel(
+    relay_id: int, guild_id: int, discord_channel_id: int
+) -> str | None:
+    """Move a relay to a different Discord channel.
+
+    Args:
+        relay_id: Primary key of the TelegramRelay row.
+        guild_id: Discord guild ID (scope guard).
+        discord_channel_id: New Discord channel ID.
+
+    Returns:
+        tg_username of the relay, or None if not found.
+
+    Raises:
+        ValueError: If another relay already forwards the same Telegram channel to
+            the requested Discord channel in this guild.
+    """
+    async with AsyncSession() as session:
+        relay = await session.scalar(
+            select(TelegramRelay).where(
+                TelegramRelay.id == relay_id,
+                TelegramRelay.guild_id == guild_id,
+            )
+        )
+        if relay is None:
+            return None
+        conflict = await session.scalar(
+            select(TelegramRelay).where(
+                TelegramRelay.guild_id == guild_id,
+                TelegramRelay.tg_username == relay.tg_username,
+                TelegramRelay.discord_channel_id == discord_channel_id,
+                TelegramRelay.id != relay_id,
+            )
+        )
+        if conflict is not None:
+            raise ValueError('duplicate')
+        relay.discord_channel_id = discord_channel_id
+        await session.commit()
+        return relay.tg_username
+
+
 async def update_last_entry_id(relay_id: int, last_entry_id: str) -> None:
     """Persist the ID of the last relayed RSS entry.
 

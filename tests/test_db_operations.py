@@ -664,6 +664,54 @@ class TestRemoveTelegramRelay:
         session.commit.assert_awaited_once()
 
 
+class TestUpdateTelegramRelayChannel:
+    async def test_returns_none_when_not_found(self):
+        session, ctx = _make_session()
+        session.scalar.side_effect = [None]
+        with patch(
+            'sources.lib.db.operations.telegram_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.telegram_relay import update_relay_channel
+
+            result = await update_relay_channel(
+                relay_id=99, guild_id=1, discord_channel_id=200
+            )
+        assert result is None
+        session.commit.assert_not_awaited()
+
+    async def test_raises_value_error_on_conflict(self):
+        relay = SimpleNamespace(tg_username='chan', discord_channel_id=100)
+        conflict = SimpleNamespace(id=2)
+        session, ctx = _make_session()
+        session.scalar.side_effect = [relay, conflict]
+        with patch(
+            'sources.lib.db.operations.telegram_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.telegram_relay import update_relay_channel
+
+            with pytest.raises(ValueError, match='duplicate'):
+                await update_relay_channel(
+                    relay_id=1, guild_id=1, discord_channel_id=200
+                )
+        session.commit.assert_not_awaited()
+
+    async def test_updates_channel_and_returns_username(self):
+        relay = SimpleNamespace(tg_username='chan', discord_channel_id=100)
+        session, ctx = _make_session()
+        session.scalar.side_effect = [relay, None]
+        with patch(
+            'sources.lib.db.operations.telegram_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.telegram_relay import update_relay_channel
+
+            result = await update_relay_channel(
+                relay_id=1, guild_id=1, discord_channel_id=200
+            )
+        assert result == 'chan'
+        assert relay.discord_channel_id == 200
+        session.commit.assert_awaited_once()
+
+
 class TestUpdateLastEntryId:
     async def test_sets_field_when_found(self):
         relay = SimpleNamespace(last_entry_id=None)

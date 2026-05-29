@@ -20,6 +20,7 @@ from sources.lib.db.operations.telegram_relay import (
     get_guild_relays,
     remove_relay,
     update_last_entry_id,
+    update_relay_channel,
 )
 from sources.lib.utils import Logger
 
@@ -222,6 +223,84 @@ class TelegramRelayCog(commands.Cog):
         )
         self.logger.info(
             'Relay removed: @%s (guild %d)', username, interaction.guild_id
+        )
+
+    async def _relay_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return relay choices (value = relay ID as string).
+
+        When the same Telegram channel forwards to multiple Discord channels,
+        the channel name is appended in parentheses to disambiguate.
+        """
+        from collections import Counter
+
+        relays = await get_guild_relays(interaction.guild_id)
+        username_counts = Counter(r.tg_username for r in relays)
+
+        choices = []
+        for r in relays:
+            name = f'@{r.tg_username}'
+            if username_counts[r.tg_username] > 1:
+                ch = interaction.guild.get_channel(r.discord_channel_id)
+                ch_name = f'#{ch.name}' if ch else f'#{r.discord_channel_id}'
+                name = f'{name} ({ch_name})'
+            if current.lower() in name.lower():
+                choices.append(app_commands.Choice(name=name, value=str(r.id)))
+        return choices[:25]
+
+    @relay.command(
+        name='modify',
+        description='Change the Discord channel for a Telegram relay',
+    )
+    @app_commands.describe(
+        channel='Telegram relay to update',
+        discord_channel='New Discord channel to post messages to',
+    )
+    @app_commands.autocomplete(channel=_relay_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_modify(
+        self,
+        interaction: discord.Interaction,
+        channel: str,
+        discord_channel: discord.TextChannel,
+    ) -> None:
+        """Move a Telegram relay to a different Discord channel.
+
+        Args:
+            interaction: The Discord interaction.
+            channel: Relay ID as string, supplied by autocomplete.
+            discord_channel: New target Discord text channel.
+        """
+        try:
+            relay_id = int(channel)
+        except ValueError:
+            await interaction.response.send_message(
+                'Please select a channel from the list.',
+                ephemeral=True,
+            )
+            return
+
+        try:
+            username = await update_relay_channel(
+                relay_id, interaction.guild_id, discord_channel.id
+            )
+        except ValueError:
+            await interaction.response.send_message(
+                f'`@{channel}` already forwards to {discord_channel.mention}.',
+                ephemeral=True,
+            )
+            return
+
+        if username is None:
+            await interaction.response.send_message('Relay not found.', ephemeral=True)
+            return
+
+        await interaction.response.send_message(
+            f'`@{username}` will now post to {discord_channel.mention}.',
+            ephemeral=True,
         )
 
     @relay.command(
