@@ -423,6 +423,12 @@ class TwitchRelayCog(commands.Cog):
         Args:
             interaction: The Discord interaction.
         """
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message(
+                'This command is restricted to the bot owner.', ephemeral=True
+            )
+            return
+
         if not config.twitch_client_id:
             await interaction.response.send_message(
                 'Twitch credentials are not configured.', ephemeral=True
