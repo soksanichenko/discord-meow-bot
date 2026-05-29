@@ -242,6 +242,7 @@ class TwitchRelayCog(commands.Cog):
 
                 elif msg_type == 'notification':
                     sub_type = data['metadata']['subscription_type']
+                    self.logger.info('EventSub notification received: %s', sub_type)
                     event_payload = data['payload']['event']
                     if sub_type == 'stream.online':
                         asyncio.create_task(self._on_stream_online(event_payload))
@@ -301,9 +302,21 @@ class TwitchRelayCog(commands.Cog):
                     },
                     timeout=_REQUEST_TIMEOUT,
                 ) as resp:
-                    # 409 = already subscribed on this session (safe to ignore).
-                    if resp.status not in (200, 202, 409):
-                        body = await resp.text()
+                    body = await resp.text()
+                    if resp.status in (200, 202):
+                        self.logger.info(
+                            'Subscribe %s for %s: OK (HTTP %d)',
+                            event_type,
+                            twitch_user_id,
+                            resp.status,
+                        )
+                    elif resp.status == 409:
+                        self.logger.info(
+                            'Subscribe %s for %s: already exists (409)',
+                            event_type,
+                            twitch_user_id,
+                        )
+                    else:
                         self.logger.warning(
                             'Subscribe %s for %s failed: HTTP %d %s',
                             event_type,
@@ -327,9 +340,13 @@ class TwitchRelayCog(commands.Cog):
         twitch_user_id = event['broadcaster_user_id']
         twitch_login = event.get('broadcaster_user_login', twitch_user_id)
 
+        self.logger.info('stream.online: %s (user_id=%s)', twitch_login, twitch_user_id)
         relays = await get_all_relays()
         targets = [r for r in relays if r.twitch_user_id == twitch_user_id]
         if not targets:
+            self.logger.warning(
+                'stream.online: no relay found for user_id=%s', twitch_user_id
+            )
             return
 
         url = f'https://www.twitch.tv/{twitch_login}'
