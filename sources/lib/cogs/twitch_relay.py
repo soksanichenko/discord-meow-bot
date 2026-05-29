@@ -236,7 +236,46 @@ class TwitchRelayCog(commands.Cog):
 
     # ------------------------------------------------------------------ event handlers
 
+    def _task_done_callback(self, task: asyncio.Task) -> None:
+        """Log unhandled exceptions from fire-and-forget tasks.
+
+        Args:
+            task: The completed asyncio Task.
+        """
+        if not task.cancelled() and (exc := task.exception()) is not None:
+            self.logger.exception(
+                'Unhandled error in %s', task.get_name(), exc_info=exc
+            )
+
+    def _dispatch(self, coro: object, name: str) -> None:
+        """Schedule a coroutine as a Task on the bot's main event loop.
+
+        twitchAPI runs EventSub WebSocket in a background thread with its own
+        event loop. Dispatching directly from that loop would bind discord.py's
+        aiohttp session to the wrong loop, causing RuntimeError from aiohttp's
+        timeout context manager.  call_soon_threadsafe ensures the Task runs
+        in the correct loop.
+
+        Args:
+            coro: Coroutine to schedule.
+            name: Task name used in error log messages.
+        """
+
+        def _create() -> None:
+            task = self.bot.loop.create_task(coro, name=name)
+            task.add_done_callback(self._task_done_callback)
+
+        self.bot.loop.call_soon_threadsafe(_create)
+
     async def _on_stream_online(self, event: StreamOnlineEvent) -> None:
+        """Dispatch the stream.online handler to the bot's main event loop.
+
+        Args:
+            event: Twitch stream.online event from the EventSub library.
+        """
+        self._dispatch(self._handle_stream_online(event), 'twitch-stream-online')
+
+    async def _handle_stream_online(self, event: StreamOnlineEvent) -> None:
         """Post a notification to all configured Discord channels when a stream goes live.
 
         Args:
@@ -293,6 +332,14 @@ class TwitchRelayCog(commands.Cog):
             await update_login(twitch_user_id, twitch_login)
 
     async def _on_stream_offline(self, event: StreamOfflineEvent) -> None:
+        """Dispatch the stream.offline handler to the bot's main event loop.
+
+        Args:
+            event: Twitch stream.offline event from the EventSub library.
+        """
+        self._dispatch(self._handle_stream_offline(event), 'twitch-stream-offline')
+
+    async def _handle_stream_offline(self, event: StreamOfflineEvent) -> None:
         """Edit the stream announcement when a tracked stream ends.
 
         Args:
