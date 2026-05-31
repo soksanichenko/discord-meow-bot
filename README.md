@@ -99,6 +99,18 @@ Twitch Device Code Grant flow. Then admins can add relays per server.
 - `/twitch-relay list` — show active relays (admin)
 - `/twitch-relay sync` — re-subscribe to EventSub (admin)
 
+### Scheduled Event Auto-Start
+Automatically transitions Discord scheduled events from *Scheduled* to *Active*
+when their start time arrives. Discord does not do this automatically — without
+the bot, events stay in a "Scheduled" state until a server admin manually starts
+them.
+
+On startup the bot registers a one-shot job for every existing scheduled event.
+New, rescheduled, cancelled, or deleted events are handled in real time via
+gateway event listeners.
+
+No commands — fully automatic.
+
 ### Voice Channel Auto-Status
 Automatically updates a voice channel's status based on what members in it
 are currently playing.

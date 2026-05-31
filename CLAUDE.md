@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, and Twitch stream relay. Deployed via Ansible + Docker on a remote server.
+A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, Twitch stream relay, and scheduled event auto-start. Deployed via Ansible + Docker on a remote server.
 
 ## Project Structure
 
@@ -16,6 +16,7 @@ sources/
 │   │   ├── admin.py      # ?sync-tree command
 │   │   ├── birthdays.py  # /birthday group + hourly announcement scheduler
 │   │   ├── domain_fixer.py  # /domain-fixer group (admin URL rule management)
+│   │   ├── events.py     # Scheduled event auto-start (APScheduler one-shot jobs)
 │   │   ├── guild.py      # /server group: info, list-members, timezone, settings
 │   │   ├── help.py       # /help — dynamic help from live command tree
 │   │   ├── messages.py   # URL domain fixing listener (on_message)
