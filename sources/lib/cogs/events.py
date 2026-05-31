@@ -8,7 +8,7 @@ import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord.ext import commands
 
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _OVERDUE_DELAY_SECONDS = 5
 

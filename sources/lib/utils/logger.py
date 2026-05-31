@@ -1,4 +1,4 @@
-"""Helpful utilities"""
+"""Logger singleton for the bot."""
 
 import logging
 

@@ -6,7 +6,7 @@ from sqlalchemy_utils import (
 )
 
 from sources.config import config
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 
 async def create_db_if_not_exists():

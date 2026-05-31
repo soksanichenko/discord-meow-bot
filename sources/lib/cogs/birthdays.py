@@ -27,7 +27,7 @@ from sources.lib.db.operations.birthdays import (
     upsert_guild_settings,
 )
 from sources.lib.db.operations.users import get_user
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _ANNOUNCEMENT_HOUR = 9
 _MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2 MB

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from sources.lib.on_message.domains_fixer import fix_urls
+from sources.lib.utils.domains_fixer import fix_urls
 
 
 def _message(content: str, guild_id: int = 1) -> SimpleNamespace:
@@ -36,7 +36,7 @@ class TestFixUrls:
     async def test_no_matching_rules_returns_original(self):
         msg = _message('check https://example.com/post')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[]),
         ):
             result = await fix_urls(msg)
@@ -46,7 +46,7 @@ class TestFixUrls:
         msg = _message('check https://reddit.com/r/python')
         fixer = _fixer('reddit.com', 'rxddit')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
@@ -57,7 +57,7 @@ class TestFixUrls:
         msg = _message('check https://reddit.com/r/python')
         fixer = _fixer('reddit.com', 'rxddit')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
@@ -66,7 +66,7 @@ class TestFixUrls:
     async def test_no_url_returns_original(self):
         msg = _message('just a plain text message')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[_fixer('reddit.com', 'rxddit')]),
         ):
             result = await fix_urls(msg)
@@ -76,7 +76,7 @@ class TestFixUrls:
         msg = _message('check https://www.reddit.com/r/python')
         fixer = _fixer('reddit.com', 'rxddit', subdomain='old')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
@@ -86,7 +86,7 @@ class TestFixUrls:
         msg = _message('check https://www.reddit.com/r/python')
         fixer = _fixer('reddit.com', 'rxddit', subdomain=None)
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
@@ -96,7 +96,7 @@ class TestFixUrls:
         msg = _message('https://twitter.com/user/status/123456')
         fixer = _fixer('twitter.com', 'fxtwitter')
         with patch(
-            'sources.lib.on_message.domains_fixer.get_all_domain_fixers',
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)

@@ -33,7 +33,7 @@ from sources.lib.db.operations.youtube_relay import (
     update_last_video_id,
     update_relay_content_flags,
 )
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'

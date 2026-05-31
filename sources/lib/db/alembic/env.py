@@ -3,14 +3,24 @@ Alembic env file
 """
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy.engine import Connection
 
 from sources.config import config as general_config
-from sources.lib.db import async_engine
 from sources.lib.db.models import Base
+
+# TEST_ALEMBIC_URL allows integration tests to inject their own engine without
+# overriding the module-level engine used by the running bot.
+_test_url = os.environ.get('TEST_ALEMBIC_URL')
+if _test_url:
+    from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine
+
+    async_engine = _create_async_engine(url=_test_url)
+else:
+    from sources.lib.db import async_engine
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

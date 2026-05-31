@@ -14,7 +14,7 @@ from sources.lib.db.operations.reminders import (
     get_reminder,
     mark_reminder_sent,
 )
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 from sources.lib.views.reminders import RescheduleView
 
 _OVERDUE_DELAY_SECONDS = 5

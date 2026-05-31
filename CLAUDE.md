@@ -29,9 +29,11 @@ sources/
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
-│   ├── commands/         # Reusable command helpers
-│   │   ├── get_timestamp.py
-│   │   └── utils.py
+│   ├── utils/            # Shared helpers used across cogs
+│   │   ├── logger.py     # Logger singleton
+│   │   ├── get_timestamp.py  # Timestamp parsing, autocomplete, TimestampFormatView
+│   │   ├── discord_utils.py  # require_timezone, get_command, guild helpers
+│   │   └── domains_fixer.py  # URLFixer class + fix_urls()
 │   ├── db/
 │   │   ├── __init__.py   # Async engine + session factory
 │   │   ├── models.py     # SQLAlchemy ORM models
@@ -42,9 +44,6 @@ sources/
 │   │   │                 #   telegram_relay.py, twitch_auth.py, twitch_live_session.py,
 │   │   │                 #   twitch_relay.py, youtube_relay.py, youtube_live_session.py
 │   │   └── alembic/      # Migrations
-│   ├── on_message/
-│   │   └── domains_fixer.py  # URL rewriting logic (URLFixer class)
-│   └── utils.py          # Logger singleton
 ├── config.py             # Pydantic settings — DBConfig + Config
 └── alembic.ini
 ansible/                  # Deployment — see Deployment section
@@ -85,10 +84,10 @@ Both sync and async DB URLs use `postgresql+psycopg://` (psycopg3) and are const
 
 ## Logging
 
-Logger singleton: `sources/lib/utils.py` → `Logger` (singleton class wrapping `logging.getLogger('discord')`)
+Logger singleton: `sources/lib/utils/logger.py` → `Logger` (singleton class wrapping `logging.getLogger('discord')`)
 
 ```python
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 self.logger = Logger()
 self.logger.info('Processing guild: %s', guild.name)

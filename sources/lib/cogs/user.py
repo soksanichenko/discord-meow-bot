@@ -4,13 +4,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from sources.lib.commands.get_timestamp import (
+from sources.lib.db.operations.users import get_user, upsert_user
+from sources.lib.utils.discord_utils import require_timezone
+from sources.lib.utils.get_timestamp import (
     TimestampFormatView,
     autocomplete_timezone,
     parse_and_validate,
 )
-from sources.lib.commands.utils import require_timezone
-from sources.lib.db.operations.users import get_user, upsert_user
 
 
 class UserCog(commands.Cog):

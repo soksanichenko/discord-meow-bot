@@ -15,7 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_table('guild_music_player_settings')
+    op.execute(sa.text('DROP TABLE IF EXISTS guild_music_player_settings'))
 
 
 def downgrade() -> None:

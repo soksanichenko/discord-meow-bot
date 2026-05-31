@@ -22,7 +22,7 @@ from sources.lib.db.operations.telegram_relay import (
     update_last_entry_id,
     update_relay_channel,
 )
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)

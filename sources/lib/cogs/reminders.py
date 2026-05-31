@@ -6,14 +6,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from sources.lib.commands.utils import require_timezone
 from sources.lib.db.operations.reminders import (
     create_reminder,
     delete_reminder,
     get_user_reminders,
 )
 from sources.lib.scheduler import ReminderScheduler
-from sources.lib.utils import Logger
+from sources.lib.utils.discord_utils import require_timezone
+from sources.lib.utils.logger import Logger
 from sources.lib.views.reminders import MAX_FUTURE_DAYS, RemindModal, parse_when
 
 

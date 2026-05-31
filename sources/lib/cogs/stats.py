@@ -15,7 +15,7 @@ from sources.lib.db.operations.stats import (
     increment_message_counts,
     save_channel_progress,
 )
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _CHECKPOINT_EVERY = 500
 

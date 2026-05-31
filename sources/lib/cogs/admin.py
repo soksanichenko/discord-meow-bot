@@ -2,7 +2,7 @@
 
 from discord.ext import commands
 
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 
 class AdminCog(commands.Cog):

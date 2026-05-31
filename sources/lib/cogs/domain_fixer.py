@@ -12,7 +12,7 @@ from sources.lib.db.operations.domain_fixers import (
     upsert_domain_fixer,
 )
 from sources.lib.db.operations.guilds import upsert_guild
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 
 class DomainFixerCog(commands.Cog):

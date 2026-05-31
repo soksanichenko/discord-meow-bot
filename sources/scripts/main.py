@@ -26,7 +26,7 @@ from sources.lib.cogs.twitch_relay import TwitchRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 
 async def _health_handler(request: web.Request) -> web.Response:

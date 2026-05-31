@@ -37,7 +37,7 @@ from sources.lib.db.operations.twitch_relay import (
     update_login,
     update_relay_channel,
 )
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'

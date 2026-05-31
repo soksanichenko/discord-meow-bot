@@ -7,7 +7,7 @@ from tldextract import extract
 from tldextract.tldextract import ExtractResult
 
 from sources.lib.db.operations.domain_fixers import get_all_domain_fixers
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 
 class URLFixer:

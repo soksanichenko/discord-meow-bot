@@ -5,12 +5,12 @@ import pytz
 from discord import Color, app_commands
 from discord.ext import commands
 
-from sources.lib.commands.get_timestamp import autocomplete_timezone, role_autocomplete
 from sources.lib.db.operations.birthdays import (
     get_guild_settings,
     upsert_guild_settings,
 )
 from sources.lib.db.operations.guilds import delete_guild, upsert_guild
+from sources.lib.utils.get_timestamp import autocomplete_timezone, role_autocomplete
 
 
 class GuildCog(commands.Cog):

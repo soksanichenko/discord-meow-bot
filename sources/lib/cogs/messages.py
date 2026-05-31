@@ -4,8 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from sources.lib.on_message.domains_fixer import fix_urls
-from sources.lib.utils import Logger
+from sources.lib.utils.domains_fixer import fix_urls
+from sources.lib.utils.logger import Logger
 
 
 class MessagesCog(commands.Cog):

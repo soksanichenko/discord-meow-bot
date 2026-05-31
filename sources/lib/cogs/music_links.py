@@ -16,7 +16,7 @@ from sources.lib.db.operations.music_links import (
     remove_allowed_channel,
 )
 from sources.lib.spotify import SpotifyClient, clean_yt_title
-from sources.lib.utils import Logger
+from sources.lib.utils.logger import Logger
 
 _YT_PATTERN = re.compile(
     r'https?://(?:www\.)?(?:youtube\.com/watch\?(?:[^&\s]*&)*v=|youtu\.be/)'
