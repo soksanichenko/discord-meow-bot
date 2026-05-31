@@ -2,7 +2,6 @@
 
 import asyncio
 import urllib.parse
-from collections import Counter
 
 import aiohttp
 import discord
@@ -12,6 +11,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from sources.config import config
+from sources.lib.cogs.relay_utils import (
+    build_relay_choices,
+    parse_relay_id,
+    resolve_channel,
+)
 from sources.lib.db.models import YouTubeRelay
 from sources.lib.db.operations.youtube_live_session import (
     add_live_session,
@@ -391,33 +395,6 @@ class _RelayRemoveView(_RelayView):
         )
 
 
-class _StreamEndedView(discord.ui.View):
-    """Persistent view shown when a YouTube live stream ends."""
-
-    def __init__(self, yt_channel_id: str, video_id: str) -> None:
-        """Initialise the view.
-
-        Args:
-            yt_channel_id: YouTube channel ID (UCxxx) used to build the channel URL.
-            video_id: YouTube video ID used to build the direct recording URL.
-        """
-        super().__init__(timeout=None)
-        self.add_item(
-            discord.ui.Button(
-                label='Watch Recording',
-                url=f'https://www.youtube.com/watch?v={video_id}',
-                style=discord.ButtonStyle.link,
-            )
-        )
-        self.add_item(
-            discord.ui.Button(
-                label='Visit Channel',
-                url=f'https://www.youtube.com/channel/{yt_channel_id}',
-                style=discord.ButtonStyle.link,
-            )
-        )
-
-
 class _SetMessageModal(discord.ui.Modal):
     """Modal for editing a relay's custom notification message."""
 
@@ -537,18 +514,13 @@ class YouTubeRelayCog(commands.Cog):
         the Discord channel name in parentheses to disambiguate.
         """
         relays = await get_guild_relays(interaction.guild_id)
-        yt_counts = Counter(r.yt_channel_id for r in relays)
-
-        choices = []
-        for r in relays:
-            name = r.yt_channel_title
-            if yt_counts[r.yt_channel_id] > 1:
-                ch = interaction.guild.get_channel(r.discord_channel_id)
-                ch_name = f'#{ch.name}' if ch else f'#{r.discord_channel_id}'
-                name = f'{name} ({ch_name})'
-            if current.lower() in name.lower():
-                choices.append(app_commands.Choice(name=name, value=str(r.id)))
-        return choices[:25]
+        return build_relay_choices(
+            relays,
+            current,
+            interaction.guild,
+            get_name=lambda r: r.yt_channel_title,
+            get_key=lambda r: r.yt_channel_id,
+        )
 
     # ------------------------------------------------------------------ commands
 
@@ -767,13 +739,8 @@ class YouTubeRelayCog(commands.Cog):
             channel: Relay ID from autocomplete.
             kind: Content type (video, short, or live).
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         relay = await get_relay_by_id(relay_id)
@@ -818,13 +785,8 @@ class YouTubeRelayCog(commands.Cog):
             channel: Relay ID from autocomplete.
             kind: Content type whose message to reset (video, short, or live).
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         title = await set_relay_message_by_id(relay_id, kind.value, None)
@@ -1041,6 +1003,104 @@ class YouTubeRelayCog(commands.Cog):
             lines.append(f'{label} → {ch_str}')
         return '\n'.join(lines)
 
+    async def _fetch_live_embed_data(
+        self, video_id: str, yt_channel_id: str
+    ) -> tuple[int | None, str | None]:
+        """Fetch concurrent viewer count and channel icon for a live stream embed.
+
+        Both API calls run concurrently. Either value may be None on error.
+
+        Args:
+            video_id: YouTube video ID.
+            yt_channel_id: YouTube channel ID (UCxxx).
+
+        Returns:
+            (viewer_count, channel_icon_url).
+        """
+
+        async def get_viewers() -> int | None:
+            try:
+                async with self._session.get(
+                    _YT_API_VIDEOS,
+                    params={
+                        'part': 'liveStreamingDetails',
+                        'id': video_id,
+                        'key': config.youtube_api_key,
+                    },
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp:
+                    data = await resp.json()
+                items = data.get('items', [])
+                if not items:
+                    return None
+                raw = items[0].get('liveStreamingDetails', {}).get('concurrentViewers')
+                return int(raw) if raw else None
+            except Exception as exc:
+                self.logger.warning(
+                    'Failed to fetch viewer count for %s: %s', video_id, exc
+                )
+                return None
+
+        async def get_channel_icon() -> str | None:
+            try:
+                async with self._session.get(
+                    _YT_API_CHANNELS,
+                    params={
+                        'part': 'snippet',
+                        'id': yt_channel_id,
+                        'key': config.youtube_api_key,
+                    },
+                    timeout=_REQUEST_TIMEOUT,
+                ) as resp:
+                    data = await resp.json()
+                items = data.get('items', [])
+                if not items:
+                    return None
+                thumbnails = items[0]['snippet']['thumbnails']
+                return thumbnails.get('default', {}).get('url') or thumbnails.get(
+                    'medium', {}
+                ).get('url')
+            except Exception as exc:
+                self.logger.warning(
+                    'Failed to fetch channel icon for %s: %s', yt_channel_id, exc
+                )
+                return None
+
+        viewers, icon_url = await asyncio.gather(get_viewers(), get_channel_icon())
+        return viewers, icon_url
+
+    @staticmethod
+    def _build_yt_live_embed(
+        author_text: str,
+        title: str,
+        url: str,
+        viewers: int | None,
+        video_id: str,
+        channel_icon_url: str | None,
+    ) -> discord.Embed:
+        """Build a Streamcord-style embed for a live YouTube stream.
+
+        Args:
+            author_text: Notification message shown next to the channel icon.
+            title: Stream title, used as the clickable embed title.
+            url: Stream URL.
+            viewers: Live viewer count, or None if unavailable.
+            video_id: YouTube video ID used to derive the preview thumbnail.
+            channel_icon_url: Channel profile picture URL, or None.
+
+        Returns:
+            A discord.Embed ready to post.
+        """
+        embed = discord.Embed(title=title, url=url, colour=discord.Colour(0xFF0000))
+        if channel_icon_url:
+            embed.set_author(name=author_text, icon_url=channel_icon_url)
+        else:
+            embed.set_author(name=author_text)
+        if viewers is not None:
+            embed.add_field(name='Viewers', value=f'{viewers:,}', inline=True)
+        embed.set_image(url=f'https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg')
+        return embed
+
     # ------------------------------------------------------------------ polling
 
     async def _poll_all(self) -> None:
@@ -1125,32 +1185,33 @@ class YouTubeRelayCog(commands.Cog):
             if vid_status == 'ended':
                 relay = await get_relay_by_id(s.relay_id)
                 if relay is not None:
-                    channel = self.bot.get_channel(relay.discord_channel_id)
-                    if channel is None:
-                        try:
-                            channel = await self.bot.fetch_channel(
-                                relay.discord_channel_id
-                            )
-                        except discord.NotFound:
-                            channel = None
+                    channel = await resolve_channel(self.bot, relay.discord_channel_id)
                     if channel is not None:
-                        end_content = (
-                            f'**{relay.yt_channel_title}** has finished streaming'
+                        end_embed = discord.Embed(
+                            description=(
+                                f'**{relay.yt_channel_title}** has finished streaming\n'
+                                f'[Watch Recording](https://www.youtube.com/watch?v={s.video_id})\n'
+                                f'[Visit Channel](https://www.youtube.com/channel/{relay.yt_channel_id})'
+                            ),
+                            colour=discord.Colour.greyple(),
                         )
-                        view = _StreamEndedView(relay.yt_channel_id, s.video_id)
+                        end_embed.set_author(
+                            name='Stream ended',
+                            icon_url='https://www.gstatic.com/youtube/img/branding/favicon/favicon_96x96.png',
+                        )
                         edited = False
                         if s.discord_message_id:
                             try:
                                 original = await channel.fetch_message(
                                     s.discord_message_id
                                 )
-                                await original.edit(content=end_content, view=view)
+                                await original.edit(content=None, embed=end_embed)
                                 edited = True
                             except (discord.NotFound, discord.Forbidden):
                                 pass
                         if not edited:
                             try:
-                                await channel.send(end_content, view=view)
+                                await channel.send(embed=end_embed)
                             except discord.Forbidden:
                                 self.logger.warning(
                                     'No permission to post stream end in channel %d',
@@ -1244,17 +1305,14 @@ class YouTubeRelayCog(commands.Cog):
         if not new_entries:
             return
 
-        channel = self.bot.get_channel(relay.discord_channel_id)
+        channel = await resolve_channel(self.bot, relay.discord_channel_id)
         if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(relay.discord_channel_id)
-            except discord.NotFound:
-                self.logger.warning(
-                    'Channel %d not found for relay %d',
-                    relay.discord_channel_id,
-                    relay.id,
-                )
-                return
+            self.logger.warning(
+                'Channel %d not found for relay %d',
+                relay.discord_channel_id,
+                relay.id,
+            )
+            return
 
         posted = 0
         for entry in reversed(new_entries):
@@ -1286,12 +1344,29 @@ class YouTubeRelayCog(commands.Cog):
             ):
                 continue
 
-            message = self._notification_message(relay, is_short, is_live)
             try:
-                sent = await channel.send(f'{message}\n{link}')
-                posted += 1
                 if is_live and video_id:
+                    viewers, channel_icon_url = await self._fetch_live_embed_data(
+                        video_id, relay.yt_channel_id
+                    )
+                    author_text = (
+                        relay.message_live
+                        or f'{relay.yt_channel_title} is live on YouTube!'
+                    )
+                    embed = self._build_yt_live_embed(
+                        author_text=author_text,
+                        title=entry.get('title') or relay.yt_channel_title,
+                        url=link,
+                        viewers=viewers,
+                        video_id=video_id,
+                        channel_icon_url=channel_icon_url,
+                    )
+                    sent = await channel.send(embed=embed)
                     await add_live_session(relay.id, video_id, sent.id)
+                else:
+                    message = self._notification_message(relay, is_short, is_live)
+                    await channel.send(f'{message}\n{link}')
+                posted += 1
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay %d',

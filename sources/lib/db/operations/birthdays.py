@@ -3,7 +3,7 @@
 from sqlalchemy import select
 
 from sources.lib.db import AsyncSession
-from sources.lib.db.crud.base import get_db_entity, update_db_entity_or_create
+from sources.lib.db.crud.base import CRUDBase
 from sources.lib.db.models import GuildMemberBirthday, GuildSettings
 
 
@@ -12,11 +12,8 @@ async def get_guild_member_birthday(
 ) -> GuildMemberBirthday | None:
     """Return the birthday record for a specific guild member, or None."""
     async with AsyncSession() as session:
-        return await get_db_entity(
-            session,
-            GuildMemberBirthday,
-            guild_id=guild_id,
-            user_id=user_id,
+        return await CRUDBase(session).get(
+            GuildMemberBirthday, guild_id=guild_id, user_id=user_id
         )
 
 
@@ -40,9 +37,8 @@ async def set_guild_member_birthday(
         year: Birth year, or None if the user chose not to share it.
     """
     async with AsyncSession() as session:
-        await update_db_entity_or_create(
-            db_session=session,
-            table_class=GuildMemberBirthday,
+        await CRUDBase(session).upsert(
+            GuildMemberBirthday,
             filters={'guild_id': guild_id, 'user_id': user_id},
             updates={
                 'birthday_day': day,
@@ -61,16 +57,11 @@ async def remove_guild_member_birthday(guild_id: int, user_id: int) -> bool:
         user_id: Discord user ID.
     """
     async with AsyncSession() as session:
-        record = await get_db_entity(
-            session,
-            GuildMemberBirthday,
-            guild_id=guild_id,
-            user_id=user_id,
-        )
+        crud = CRUDBase(session)
+        record = await crud.get(GuildMemberBirthday, guild_id=guild_id, user_id=user_id)
         if record is None:
             return False
-        await session.delete(record)
-        await session.commit()
+        await crud.delete(record)
         return True
 
 
@@ -123,15 +114,10 @@ async def mark_birthday_announced(guild_id: int, user_id: int, year: int) -> Non
         year: The calendar year being marked.
     """
     async with AsyncSession() as session:
-        record = await get_db_entity(
-            session,
-            GuildMemberBirthday,
-            guild_id=guild_id,
-            user_id=user_id,
-        )
+        crud = CRUDBase(session)
+        record = await crud.get(GuildMemberBirthday, guild_id=guild_id, user_id=user_id)
         if record is not None:
-            record.last_announced_year = year
-            await session.commit()
+            await crud.update(record, last_announced_year=year)
 
 
 async def get_guild_settings(guild_id: int) -> GuildSettings | None:
@@ -141,7 +127,7 @@ async def get_guild_settings(guild_id: int) -> GuildSettings | None:
         guild_id: Discord guild ID.
     """
     async with AsyncSession() as session:
-        return await get_db_entity(session, GuildSettings, guild_id=guild_id)
+        return await CRUDBase(session).get(GuildSettings, guild_id=guild_id)
 
 
 async def upsert_guild_settings(guild_id: int, **updates: object) -> None:
@@ -152,9 +138,8 @@ async def upsert_guild_settings(guild_id: int, **updates: object) -> None:
         **updates: Field names and values to set on GuildSettings.
     """
     async with AsyncSession() as session:
-        await update_db_entity_or_create(
-            db_session=session,
-            table_class=GuildSettings,
+        await CRUDBase(session).upsert(
+            GuildSettings,
             filters={'guild_id': guild_id},
-            updates=updates,
+            updates=dict(updates),
         )

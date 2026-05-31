@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 import aiohttp
@@ -15,6 +14,11 @@ from twitchAPI.twitch import Twitch
 from twitchAPI.type import EventSubSubscriptionConflict, VideoType
 
 from sources.config import config
+from sources.lib.cogs.relay_utils import (
+    build_relay_choices,
+    parse_relay_id,
+    resolve_channel,
+)
 from sources.lib.db.models import TwitchRelay
 from sources.lib.db.operations.twitch_auth import get_auth, save_auth
 from sources.lib.db.operations.twitch_live_session import (
@@ -39,34 +43,6 @@ _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # Discord followup messages expire after 15 minutes; cap device code polling there.
 _MAX_POLL_SECONDS = 800
-
-
-class _StreamEndedView(discord.ui.View):
-    """Persistent view shown when a Twitch stream ends."""
-
-    def __init__(self, twitch_login: str, vod_url: str | None = None) -> None:
-        """Initialise the view.
-
-        Args:
-            twitch_login: Twitch login name used to build the channel URL.
-            vod_url: Direct URL to the VOD, or None if not available.
-        """
-        super().__init__(timeout=None)
-        if vod_url is not None:
-            self.add_item(
-                discord.ui.Button(
-                    label='Watch Recording',
-                    url=vod_url,
-                    style=discord.ButtonStyle.link,
-                )
-            )
-        self.add_item(
-            discord.ui.Button(
-                label='Visit Channel',
-                url=f'https://www.twitch.tv/{twitch_login}',
-                style=discord.ButtonStyle.link,
-            )
-        )
 
 
 class _SetMessageModal(discord.ui.Modal):
@@ -305,25 +281,39 @@ class TwitchRelayCog(commands.Cog):
             return
 
         url = f'https://www.twitch.tv/{twitch_login}'
+        stream_info = await self._fetch_stream_info(twitch_user_id)
         for relay in targets:
-            channel = self.bot.get_channel(relay.discord_channel_id)
+            channel = await resolve_channel(self.bot, relay.discord_channel_id)
             if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(relay.discord_channel_id)
-                except discord.NotFound:
-                    self.logger.warning(
-                        'Discord channel %d not found for relay %d',
-                        relay.discord_channel_id,
-                        relay.id,
-                    )
-                    continue
+                self.logger.warning(
+                    'Discord channel %d not found for relay %d',
+                    relay.discord_channel_id,
+                    relay.id,
+                )
+                continue
 
-            message = (
-                relay.custom_message
-                or f'**{twitch_display_name}** is now live on Twitch!'
-            )
             try:
-                sent = await channel.send(f'{message}\n{url}')
+                if stream_info:
+                    author_text = (
+                        relay.custom_message
+                        or f'{twitch_display_name} is now live on Twitch!'
+                    )
+                    embed = self._build_live_embed(
+                        author_text=author_text,
+                        title=stream_info['title'],
+                        url=url,
+                        game=stream_info['game'],
+                        viewers=stream_info['viewers'],
+                        thumbnail_url=stream_info['thumbnail_url'],
+                        profile_image_url=stream_info['profile_image_url'],
+                    )
+                    sent = await channel.send(embed=embed)
+                else:
+                    message = (
+                        relay.custom_message
+                        or f'**{twitch_display_name}** is now live on Twitch!'
+                    )
+                    sent = await channel.send(f'{message}\n{url}')
                 await add_live_session(relay.id, sent.id)
                 self.logger.info(
                     'Posted stream.online for %s to channel %d',
@@ -367,24 +357,30 @@ class TwitchRelayCog(commands.Cog):
         relay_map = {r.id: r for r in relays if r.twitch_user_id == twitch_user_id}
 
         vod_url = await self._get_latest_vod_url(twitch_user_id)
-        end_content = f'**{twitch_display_name}** has finished streaming'
-        view = _StreamEndedView(twitch_login, vod_url)
+        channel_url = f'https://www.twitch.tv/{twitch_login}'
+        lines = [f'**{twitch_display_name}** has finished streaming']
+        if vod_url:
+            lines.append(f'[Watch Recording]({vod_url})')
+        lines.append(f'[Visit Channel]({channel_url})')
+        end_embed = discord.Embed(
+            description='\n'.join(lines),
+            colour=discord.Colour.greyple(),
+        )
+        end_embed.set_author(
+            name='Stream ended',
+            icon_url='https://assets.twitch.tv/assets/favicon-32-e29e246c157142c94346.png',
+        )
 
         for session in sessions:
             relay = relay_map.get(session.relay_id)
             if relay is not None and session.discord_message_id:
-                channel = self.bot.get_channel(relay.discord_channel_id)
-                if channel is None:
-                    try:
-                        channel = await self.bot.fetch_channel(relay.discord_channel_id)
-                    except discord.NotFound:
-                        channel = None
+                channel = await resolve_channel(self.bot, relay.discord_channel_id)
                 if channel is not None:
                     try:
                         original = await channel.fetch_message(
                             session.discord_message_id
                         )
-                        await original.edit(content=end_content, view=view)
+                        await original.edit(content=None, embed=end_embed)
                     except (discord.NotFound, discord.Forbidden):
                         pass
 
@@ -412,6 +408,80 @@ class TwitchRelayCog(commands.Cog):
         except Exception as exc:
             self.logger.warning('Failed to fetch VOD for %s: %s', twitch_user_id, exc)
         return None
+
+    async def _fetch_stream_info(self, twitch_user_id: str) -> dict | None:
+        """Fetch stream title, category, viewers, and channel icon for a live embed.
+
+        Args:
+            twitch_user_id: Twitch numeric user ID.
+
+        Returns:
+            Dict with title, game, viewers, thumbnail_url, profile_image_url keys,
+            or None on API error or if no active stream is found.
+        """
+        if self._twitch is None:
+            return None
+        try:
+            stream = None
+            async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
+                stream = s
+                break
+            if stream is None:
+                return None
+            profile_image_url = None
+            async for u in self._twitch.get_users(ids=[twitch_user_id]):
+                profile_image_url = u.profile_image_url
+                break
+            thumbnail_url = stream.thumbnail_url.replace('{width}', '1280').replace(
+                '{height}', '720'
+            )
+            return {
+                'title': stream.title,
+                'game': stream.game_name or 'Unknown',
+                'viewers': stream.viewer_count,
+                'thumbnail_url': thumbnail_url,
+                'profile_image_url': profile_image_url,
+            }
+        except Exception as exc:
+            self.logger.warning(
+                'Failed to fetch stream info for %s: %s', twitch_user_id, exc
+            )
+            return None
+
+    @staticmethod
+    def _build_live_embed(
+        author_text: str,
+        title: str,
+        url: str,
+        game: str,
+        viewers: int,
+        thumbnail_url: str | None,
+        profile_image_url: str | None,
+    ) -> discord.Embed:
+        """Build a Streamcord-style embed for a live Twitch stream.
+
+        Args:
+            author_text: Notification message shown next to the channel icon.
+            title: Stream title, used as the clickable embed title.
+            url: Stream URL.
+            game: Current game or category.
+            viewers: Live viewer count.
+            thumbnail_url: Stream preview image URL, or None.
+            profile_image_url: Channel profile picture URL, or None.
+
+        Returns:
+            A discord.Embed ready to post.
+        """
+        embed = discord.Embed(title=title, url=url, colour=discord.Colour(0x9146FF))
+        if profile_image_url:
+            embed.set_author(name=author_text, icon_url=profile_image_url)
+        else:
+            embed.set_author(name=author_text)
+        embed.add_field(name='Game', value=game, inline=True)
+        embed.add_field(name='Viewers', value=f'{viewers:,}', inline=True)
+        if thumbnail_url:
+            embed.set_image(url=thumbnail_url)
+        return embed
 
     async def _resolve_user(self, raw: str) -> tuple[str, str] | None:
         """Resolve a Twitch login name or channel URL to (user_id, login).
@@ -452,18 +522,13 @@ class TwitchRelayCog(commands.Cog):
         the Discord channel name is appended in parentheses to disambiguate.
         """
         relays = await get_guild_relays(interaction.guild_id)
-        login_counts = Counter(r.twitch_login for r in relays)
-
-        choices = []
-        for r in relays:
-            name = r.twitch_login
-            if login_counts[r.twitch_login] > 1:
-                ch = interaction.guild.get_channel(r.discord_channel_id)
-                ch_name = f'#{ch.name}' if ch else f'#{r.discord_channel_id}'
-                name = f'{name} ({ch_name})'
-            if current.lower() in name.lower():
-                choices.append(app_commands.Choice(name=name, value=str(r.id)))
-        return choices[:25]
+        return build_relay_choices(
+            relays,
+            current,
+            interaction.guild,
+            get_name=lambda r: r.twitch_login,
+            get_key=lambda r: r.twitch_login,
+        )
 
     async def _channel_autocomplete(
         self,
@@ -749,13 +814,8 @@ class TwitchRelayCog(commands.Cog):
             interaction: The Discord interaction.
             channel: Relay ID as string, supplied by autocomplete.
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -795,13 +855,8 @@ class TwitchRelayCog(commands.Cog):
             channel: Relay ID as string, supplied by autocomplete.
             discord_channel: New target Discord text channel.
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         try:
@@ -842,13 +897,8 @@ class TwitchRelayCog(commands.Cog):
             interaction: The Discord interaction.
             channel: Relay ID as string, supplied by autocomplete.
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         relay = await get_relay_by_id(relay_id, interaction.guild_id)
@@ -876,13 +926,8 @@ class TwitchRelayCog(commands.Cog):
             interaction: The Discord interaction.
             channel: Relay ID as string, supplied by autocomplete.
         """
-        try:
-            relay_id = int(channel)
-        except ValueError:
-            await interaction.response.send_message(
-                'Please select a channel from the list.',
-                ephemeral=True,
-            )
+        relay_id = await parse_relay_id(channel, interaction)
+        if relay_id is None:
             return
 
         login = await set_relay_message(relay_id, interaction.guild_id, None)
