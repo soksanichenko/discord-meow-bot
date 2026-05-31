@@ -174,8 +174,12 @@ async def main():
     """Main run function."""
     utils.setup_logging()
     await _start_health_server(bot)
-    await bot.start(token=config.discord_token, reconnect=True)
+    async with bot:
+        await bot.start(token=config.discord_token, reconnect=True)
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
