@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, and message statistics/leaderboard. Deployed via Ansible + Docker on a remote server.
+A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, and Twitch stream relay. Deployed via Ansible + Docker on a remote server.
 
 ## Project Structure
 
@@ -23,9 +23,11 @@ sources/
 │   │   ├── reminders.py  # /reminders group (add, list, cancel)
 │   │   ├── stats.py      # /stats group + on_message counter + background import
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
+│   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket
 │   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
+│   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── commands/         # Reusable command helpers
 │   │   ├── get_timestamp.py
 │   │   └── utils.py
@@ -33,17 +35,17 @@ sources/
 │   │   ├── __init__.py   # Async engine + session factory
 │   │   ├── models.py     # SQLAlchemy ORM models
 │   │   ├── utils.py      # DB helper utilities
-│   │   ├── crud/base.py  # Generic CRUD (get, create, update, delete, upsert)
+│   │   ├── crud/base.py  # Generic CRUD class (CRUDBase — get, create, update, delete, upsert)
 │   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
 │   │   │                 #   music_links.py, reminders.py, stats.py,
-│   │   │                 #   telegram_relay.py, youtube_relay.py, youtube_live_session.py
+│   │   │                 #   telegram_relay.py, twitch_auth.py, twitch_live_session.py,
+│   │   │                 #   twitch_relay.py, youtube_relay.py, youtube_live_session.py
 │   │   └── alembic/      # Migrations
 │   ├── on_message/
-│   │   └── domains_fixer.py  # URL rewriting logic
-│   └── utils.py          # Logger singleton (get_logger)
+│   │   └── domains_fixer.py  # URL rewriting logic (URLFixer class)
+│   └── utils.py          # Logger singleton
 ├── config.py             # Pydantic settings — DBConfig + Config
 └── alembic.ini
-sources/prod.txt
 ansible/                  # Deployment — see Deployment section
 deploy.sh                 # Runs ansible-playbook for zelgray.work inventory
 ```
@@ -74,23 +76,25 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `RSSHUB_URL` | RSSHub base URL for Telegram relay (default: `https://rsshub.app`) |
 | `TELEGRAM_RELAY_POLL_INTERVAL_MINUTES` | Telegram relay polling interval in minutes (default: 5) |
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
+| `TWITCH_CLIENT_ID` | Twitch application client ID (EventSub relay) |
+| `TWITCH_CLIENT_SECRET` | Twitch application client secret |
 | `HEALTH_PORT` | Port for the internal HTTP health endpoint (default: `8080`) |
 
-Both sync (`postgresql+psycopg2://`) and async (`postgresql+asyncpg://`) URLs are constructed from the DB_* variables.
+Both sync and async DB URLs use `postgresql+psycopg://` (psycopg3) and are constructed from the DB_* variables.
 
 ## Logging
 
-Logger helper: `sources/lib/utils.py` → `get_logger(name: str) -> Logger`
+Logger singleton: `sources/lib/utils.py` → `Logger` (singleton class wrapping `logging.getLogger('discord')`)
 
 ```python
-from sources.lib.utils import get_logger
+from sources.lib.utils import Logger
 
-logger = get_logger(__name__)
-logger.info('Processing guild: %s', guild.name)
+self.logger = Logger()
+self.logger.info('Processing guild: %s', guild.name)
 ```
 
 Rules:
-- Always use `get_logger` — do not instantiate `logging.Logger` directly.
+- Always use `Logger()` — do not instantiate `logging.Logger` directly.
 - Always use %-formatting in log calls — no f-strings in logger arguments.
 
 ## Database
@@ -111,6 +115,9 @@ Rules:
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 - `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `message_*` are custom notification texts (NULL = use built-in default)
 - `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
+- `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1)
+- `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
+- `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
 
 ### Migrations
 
@@ -126,15 +133,16 @@ Run `create_db.py` once before first alembic run (creates DB if not exists).
 
 ### CRUD Usage Pattern
 
+`CRUDBase` is instantiated with a session and exposes `get`, `create`, `update`, `delete`, `delete_if_exists`, `upsert`:
+
 ```python
-from sources.lib.db.crud.base import get_db_entity, update_db_entity_or_create
+from sources.lib.db.crud.base import CRUDBase
 from sources.lib.db.models import User
 
-# Get
-user = await get_db_entity(session, User, User.id == discord_id)
-
-# Upsert
-await update_db_entity_or_create(session, User, {'id': discord_id}, {'name': name})
+async with AsyncSession() as session:
+    crud = CRUDBase(session)
+    user = await crud.get(User, id=discord_id)
+    await crud.upsert(User, {'id': discord_id}, {'name': name})
 ```
 
 Domain-specific wrappers live in `sources/lib/db/operations/`.
@@ -173,6 +181,14 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/youtube-relay remove-message` | youtube_relay.py | Reset a notification message to default (admin) |
 | `/youtube-relay remove` | youtube_relay.py | Stop forwarding a YouTube channel (admin) |
 | `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
+| `/twitch-relay authorize` | twitch_relay.py | Twitch Device Code Grant auth (bot owner only) |
+| `/twitch-relay sync` | twitch_relay.py | Re-subscribe to EventSub for all or one channel (admin) |
+| `/twitch-relay add` | twitch_relay.py | Forward a Twitch channel's streams to Discord (admin) |
+| `/twitch-relay remove` | twitch_relay.py | Stop forwarding a Twitch channel (admin) |
+| `/twitch-relay modify` | twitch_relay.py | Change the Discord channel for a relay (admin) |
+| `/twitch-relay set-message` | twitch_relay.py | Set a custom stream notification message (admin) |
+| `/twitch-relay remove-message` | twitch_relay.py | Reset notification message to default (admin) |
+| `/twitch-relay list` | twitch_relay.py | Show active Twitch relays (admin) |
 | `/help [command]` | help.py | List all commands or show details for one; auto-reflects new commands |
 
 ## Adding a New Feature
@@ -246,5 +262,6 @@ Deployment does:
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.0 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery) |
-| `aiohttp` | 3.13.5 | HTTP client (YouTube API, Spotify API) |
-| `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay) |
+| `aiohttp` | 3.13.5 | HTTP client (YouTube API, Spotify API, Twitch API) |
+| `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
+| `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |

@@ -80,6 +80,25 @@ Data API.
 - `/youtube-relay remove <channel>` — stop forwarding (admin)
 - `/youtube-relay list` — show active relays (admin)
 
+### Twitch Stream Relay
+Forwards Twitch stream start and end notifications to Discord channels via
+EventSub WebSocket. Posts a rich embed on stream start (channel icon, stream
+title, game, viewer count, preview thumbnail) and updates it to a "stream
+ended" embed when the stream finishes. Stale sessions from before a bot
+restart are cleaned up automatically on startup.
+
+One-time setup: run `/twitch-relay authorize` (bot owner) to complete the
+Twitch Device Code Grant flow. Then admins can add relays per server.
+
+- `/twitch-relay authorize` — complete Twitch OAuth (bot owner)
+- `/twitch-relay add <channel> <#channel>` — start forwarding (admin)
+- `/twitch-relay modify <channel>` — change the Discord channel (admin)
+- `/twitch-relay set-message <channel>` — set a custom notification message (admin)
+- `/twitch-relay remove-message <channel>` — reset message to default (admin)
+- `/twitch-relay remove <channel>` — stop forwarding (admin)
+- `/twitch-relay list` — show active relays (admin)
+- `/twitch-relay sync` — re-subscribe to EventSub (admin)
+
 ### Voice Channel Auto-Status
 Automatically updates a voice channel's status based on what members in it
 are currently playing.
@@ -124,6 +143,8 @@ All configuration is done via environment variables:
 | `RSSHUB_URL` | RSSHub base URL for Telegram relay | `https://rsshub.app` |
 | `TELEGRAM_RELAY_POLL_INTERVAL_MINUTES` | Telegram relay polling interval | `5` |
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval | `5` |
+| `TWITCH_CLIENT_ID` | Twitch application client ID (stream relay) | — |
+| `TWITCH_CLIENT_SECRET` | Twitch application client secret | — |
 | `HEALTH_PORT` | Port for the internal HTTP health endpoint | `8080` |
 
 ## Running
