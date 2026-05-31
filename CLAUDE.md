@@ -262,7 +262,7 @@ Deployment does:
 | `pydantic-settings` | 2.14.1 | Config from env vars |
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.0 | Natural language date parsing |
-| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery) |
+| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start) |
 | `aiohttp` | 3.13.5 | HTTP client (YouTube API, Spotify API, Twitch API) |
 | `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
 | `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |
