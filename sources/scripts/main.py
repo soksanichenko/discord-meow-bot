@@ -62,6 +62,7 @@ intents.message_content = True
 intents.guilds = True
 intents.members = True
 intents.presences = True
+intents.guild_scheduled_events = True
 
 
 _SYNC_HASH_PATH = pathlib.Path('/tmp/.discord_sync_hash')

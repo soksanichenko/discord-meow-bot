@@ -75,7 +75,10 @@ class EventsCog(commands.Cog):
     async def cog_load(self) -> None:
         """Start the scheduler and register jobs for all existing scheduled events."""
         self._scheduler.start()
-        self._logger.info('Events auto-start scheduler started')
+        self._logger.info(
+            'Events auto-start scheduler started (guild_scheduled_events intent: %s)',
+            self._bot.intents.guild_scheduled_events,
+        )
 
         for guild in self._bot.guilds:
             try:
@@ -120,7 +123,7 @@ class EventsCog(commands.Cog):
             id=f'event_{event.guild_id}_{event.id}',
             replace_existing=True,
         )
-        self._logger.debug(
+        self._logger.info(
             'Scheduled auto-start for event %d (%s) at %s',
             event.id,
             event.name,
@@ -137,22 +140,33 @@ class EventsCog(commands.Cog):
         job = self._scheduler.get_job(f'event_{guild_id}_{event_id}')
         if job is not None:
             job.remove()
-            self._logger.debug('Cancelled auto-start job for event %d', event_id)
+            self._logger.info('Cancelled auto-start job for event %d', event_id)
 
     @commands.Cog.listener()
-    async def on_guild_scheduled_event_create(
-        self, event: discord.ScheduledEvent
-    ) -> None:
+    async def on_scheduled_event_create(self, event: discord.ScheduledEvent) -> None:
         """Schedule auto-start when a new event is created.
 
         Args:
             event: The newly created scheduled event.
         """
         if event.status == discord.EventStatus.scheduled:
+            self._logger.info(
+                'New scheduled event %d (%s) in guild %s',
+                event.id,
+                event.name,
+                event.guild_id,
+            )
             self._schedule(event)
+        else:
+            self._logger.debug(
+                'Ignoring new event %d (%s) with status %s',
+                event.id,
+                event.name,
+                event.status,
+            )
 
     @commands.Cog.listener()
-    async def on_guild_scheduled_event_update(
+    async def on_scheduled_event_update(
         self, before: discord.ScheduledEvent, after: discord.ScheduledEvent
     ) -> None:
         """Reschedule or cancel auto-start when an event is modified.
@@ -163,18 +177,26 @@ class EventsCog(commands.Cog):
             before: The event state before the update.
             after: The event state after the update.
         """
+        self._logger.info(
+            'Event %d (%s) updated: %s -> %s',
+            after.id,
+            after.name,
+            before.status,
+            after.status,
+        )
         if after.status == discord.EventStatus.scheduled:
             self._schedule(after)
         else:
             self._cancel(after.guild_id, after.id)
 
     @commands.Cog.listener()
-    async def on_guild_scheduled_event_delete(
-        self, event: discord.ScheduledEvent
-    ) -> None:
+    async def on_scheduled_event_delete(self, event: discord.ScheduledEvent) -> None:
         """Remove the auto-start job when an event is deleted.
 
         Args:
             event: The deleted scheduled event.
         """
+        self._logger.info(
+            'Event %d (%s) deleted in guild %s', event.id, event.name, event.guild_id
+        )
         self._cancel(event.guild_id, event.id)
