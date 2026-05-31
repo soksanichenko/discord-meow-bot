@@ -427,9 +427,13 @@ class TwitchRelayCog(commands.Cog):
                 stream = s
                 break
             if stream is None:
+                self.logger.warning(
+                    'stream.online for %s: get_streams returned no data, falling back to plain text',
+                    twitch_user_id,
+                )
                 return None
             profile_image_url = None
-            async for u in self._twitch.get_users(ids=[twitch_user_id]):
+            async for u in self._twitch.get_users(user_ids=[twitch_user_id]):
                 profile_image_url = u.profile_image_url
                 break
             thumbnail_url = stream.thumbnail_url.replace('{width}', '1280').replace(

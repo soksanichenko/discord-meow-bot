@@ -1005,25 +1005,25 @@ class YouTubeRelayCog(commands.Cog):
 
     async def _fetch_live_embed_data(
         self, video_id: str, yt_channel_id: str
-    ) -> tuple[int | None, str | None]:
-        """Fetch concurrent viewer count and channel icon for a live stream embed.
+    ) -> tuple[int | None, str | None, str | None]:
+        """Fetch viewer count, channel icon, and thumbnail for a live stream embed.
 
-        Both API calls run concurrently. Either value may be None on error.
+        Both API calls run concurrently. Any value may be None on error.
 
         Args:
             video_id: YouTube video ID.
             yt_channel_id: YouTube channel ID (UCxxx).
 
         Returns:
-            (viewer_count, channel_icon_url).
+            (viewer_count, channel_icon_url, thumbnail_url).
         """
 
-        async def get_viewers() -> int | None:
+        async def get_video_data() -> tuple[int | None, str | None]:
             try:
                 async with self._session.get(
                     _YT_API_VIDEOS,
                     params={
-                        'part': 'liveStreamingDetails',
+                        'part': 'snippet,liveStreamingDetails',
                         'id': video_id,
                         'key': config.youtube_api_key,
                     },
@@ -1032,14 +1032,22 @@ class YouTubeRelayCog(commands.Cog):
                     data = await resp.json()
                 items = data.get('items', [])
                 if not items:
-                    return None
-                raw = items[0].get('liveStreamingDetails', {}).get('concurrentViewers')
-                return int(raw) if raw else None
+                    return None, None
+                item = items[0]
+                raw = item.get('liveStreamingDetails', {}).get('concurrentViewers')
+                viewers = int(raw) if raw else None
+                thumbs = item.get('snippet', {}).get('thumbnails', {})
+                thumbnail_url = (
+                    thumbs.get('maxres', {}).get('url')
+                    or thumbs.get('standard', {}).get('url')
+                    or thumbs.get('high', {}).get('url')
+                )
+                return viewers, thumbnail_url
             except Exception as exc:
                 self.logger.warning(
-                    'Failed to fetch viewer count for %s: %s', video_id, exc
+                    'Failed to fetch video data for %s: %s', video_id, exc
                 )
-                return None
+                return None, None
 
         async def get_channel_icon() -> str | None:
             try:
@@ -1066,8 +1074,10 @@ class YouTubeRelayCog(commands.Cog):
                 )
                 return None
 
-        viewers, icon_url = await asyncio.gather(get_viewers(), get_channel_icon())
-        return viewers, icon_url
+        (viewers, thumbnail_url), icon_url = await asyncio.gather(
+            get_video_data(), get_channel_icon()
+        )
+        return viewers, icon_url, thumbnail_url
 
     @staticmethod
     def _build_yt_live_embed(
@@ -1075,7 +1085,7 @@ class YouTubeRelayCog(commands.Cog):
         title: str,
         url: str,
         viewers: int | None,
-        video_id: str,
+        thumbnail_url: str | None,
         channel_icon_url: str | None,
     ) -> discord.Embed:
         """Build a Streamcord-style embed for a live YouTube stream.
@@ -1085,7 +1095,7 @@ class YouTubeRelayCog(commands.Cog):
             title: Stream title, used as the clickable embed title.
             url: Stream URL.
             viewers: Live viewer count, or None if unavailable.
-            video_id: YouTube video ID used to derive the preview thumbnail.
+            thumbnail_url: Stream preview image URL from the API, or None.
             channel_icon_url: Channel profile picture URL, or None.
 
         Returns:
@@ -1098,7 +1108,8 @@ class YouTubeRelayCog(commands.Cog):
             embed.set_author(name=author_text)
         if viewers is not None:
             embed.add_field(name='Viewers', value=f'{viewers:,}', inline=True)
-        embed.set_image(url=f'https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg')
+        if thumbnail_url:
+            embed.set_image(url=thumbnail_url)
         return embed
 
     # ------------------------------------------------------------------ polling
@@ -1346,9 +1357,11 @@ class YouTubeRelayCog(commands.Cog):
 
             try:
                 if is_live and video_id:
-                    viewers, channel_icon_url = await self._fetch_live_embed_data(
-                        video_id, relay.yt_channel_id
-                    )
+                    (
+                        viewers,
+                        channel_icon_url,
+                        thumbnail_url,
+                    ) = await self._fetch_live_embed_data(video_id, relay.yt_channel_id)
                     author_text = (
                         relay.message_live
                         or f'{relay.yt_channel_title} is live on YouTube!'
@@ -1358,7 +1371,7 @@ class YouTubeRelayCog(commands.Cog):
                         title=entry.get('title') or relay.yt_channel_title,
                         url=link,
                         viewers=viewers,
-                        video_id=video_id,
+                        thumbnail_url=thumbnail_url,
                         channel_icon_url=channel_icon_url,
                     )
                     sent = await channel.send(embed=embed)
