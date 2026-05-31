@@ -44,6 +44,17 @@ async def get_live_sessions_for_user(twitch_user_id: str) -> list[TwitchLiveSess
         return list(result.all())
 
 
+async def get_all_live_sessions() -> list[TwitchLiveSession]:
+    """Return all currently tracked live sessions across all relays.
+
+    Returns:
+        List of all TwitchLiveSession rows.
+    """
+    async with AsyncSession() as session:
+        result = await session.scalars(select(TwitchLiveSession))
+        return list(result.all())
+
+
 async def remove_live_session(session_id: int) -> None:
     """Delete a live session record after the stream ends.
 

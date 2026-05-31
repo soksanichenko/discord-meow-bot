@@ -23,6 +23,7 @@ from sources.lib.db.models import TwitchRelay
 from sources.lib.db.operations.twitch_auth import get_auth, save_auth
 from sources.lib.db.operations.twitch_live_session import (
     add_live_session,
+    get_all_live_sessions,
     get_live_sessions_for_user,
     remove_live_session,
 )
@@ -134,6 +135,8 @@ class TwitchRelayCog(commands.Cog):
             self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
         else:
             self.logger.info('No Twitch relays configured; EventSub running')
+
+        await self._cleanup_stale_sessions()
 
     async def cog_unload(self) -> None:
         """Stop EventSub and close the Twitch client."""
@@ -357,19 +360,7 @@ class TwitchRelayCog(commands.Cog):
         relay_map = {r.id: r for r in relays if r.twitch_user_id == twitch_user_id}
 
         vod_url = await self._get_latest_vod_url(twitch_user_id)
-        channel_url = f'https://www.twitch.tv/{twitch_login}'
-        lines = [f'**{twitch_display_name}** has finished streaming']
-        if vod_url:
-            lines.append(f'[Watch Recording]({vod_url})')
-        lines.append(f'[Visit Channel]({channel_url})')
-        end_embed = discord.Embed(
-            description='\n'.join(lines),
-            colour=discord.Colour.greyple(),
-        )
-        end_embed.set_author(
-            name='Stream ended',
-            icon_url='https://assets.twitch.tv/assets/favicon-32-e29e246c157142c94346.png',
-        )
+        end_embed = self._build_ended_embed(twitch_display_name, twitch_login, vod_url)
 
         for session in sessions:
             relay = relay_map.get(session.relay_id)
@@ -486,6 +477,101 @@ class TwitchRelayCog(commands.Cog):
         if thumbnail_url:
             embed.set_image(url=thumbnail_url)
         return embed
+
+    @staticmethod
+    def _build_ended_embed(
+        display_name: str, twitch_login: str, vod_url: str | None
+    ) -> discord.Embed:
+        """Build the grey 'stream ended' embed with optional VOD link.
+
+        Args:
+            display_name: Broadcaster display name shown in the description.
+            twitch_login: Login name used to construct the channel URL.
+            vod_url: VOD URL, or None if unavailable.
+
+        Returns:
+            A discord.Embed ready to edit the live announcement with.
+        """
+        channel_url = f'https://www.twitch.tv/{twitch_login}'
+        lines = [f'**{display_name}** has finished streaming']
+        if vod_url:
+            lines.append(f'[Watch Recording]({vod_url})')
+        lines.append(f'[Visit Channel]({channel_url})')
+        embed = discord.Embed(
+            description='\n'.join(lines), colour=discord.Colour.greyple()
+        )
+        embed.set_author(
+            name='Stream ended',
+            icon_url='https://assets.twitch.tv/assets/favicon-32-e29e246c157142c94346.png',
+        )
+        return embed
+
+    async def _cleanup_stale_sessions(self) -> None:
+        """Edit announcements for streams that ended while the bot was offline.
+
+        Fetches all open live sessions from the DB, checks which streams are
+        still active via the Twitch API, and closes any that are no longer live.
+        """
+        sessions = await get_all_live_sessions()
+        if not sessions:
+            return
+
+        relays = await get_all_relays()
+        relay_map = {r.id: r for r in relays}
+
+        user_ids = list(
+            {
+                relay_map[s.relay_id].twitch_user_id
+                for s in sessions
+                if s.relay_id in relay_map
+            }
+        )
+        if not user_ids:
+            return
+
+        live_user_ids: set[str] = set()
+        try:
+            async for stream in self._twitch.get_streams(user_id=user_ids):
+                live_user_ids.add(stream.user_id)
+        except Exception as exc:
+            self.logger.warning('Failed to check live streams on startup: %s', exc)
+            return
+
+        stale = [
+            s
+            for s in sessions
+            if s.relay_id in relay_map
+            and relay_map[s.relay_id].twitch_user_id not in live_user_ids
+        ]
+        if not stale:
+            return
+
+        self.logger.info(
+            'Closing %d stale Twitch live session(s) from before restart', len(stale)
+        )
+        for session in stale:
+            relay = relay_map.get(session.relay_id)
+            if relay is None:
+                await remove_live_session(session.id)
+                continue
+
+            vod_url = await self._get_latest_vod_url(relay.twitch_user_id)
+            end_embed = self._build_ended_embed(
+                relay.twitch_login, relay.twitch_login, vod_url
+            )
+
+            if session.discord_message_id:
+                channel = await resolve_channel(self.bot, relay.discord_channel_id)
+                if channel is not None:
+                    try:
+                        original = await channel.fetch_message(
+                            session.discord_message_id
+                        )
+                        await original.edit(content=None, embed=end_embed)
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+
+            await remove_live_session(session.id)
 
     async def _resolve_user(self, raw: str) -> tuple[str, str] | None:
         """Resolve a Twitch login name or channel URL to (user_id, login).
