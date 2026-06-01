@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -197,6 +198,11 @@ class YouTubeRelay(Base):
     discord_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Video ID of the last posted video — NULL means post all new videos since relay was added.
     last_video_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sliding window of the last _SEEN_WINDOW video IDs the bot has posted — used to
+    # deduplicate videos whose RSS updated-timestamp is bumped by a metadata edit.
+    seen_video_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list, server_default='[]'
+    )
     post_videos: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     post_shorts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     post_lives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

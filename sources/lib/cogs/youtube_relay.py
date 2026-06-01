@@ -40,6 +40,8 @@ _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'
 _YT_API_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos'
 _YT_RSS_BASE = 'https://www.youtube.com/feeds/videos.xml'
 
+_SEEN_WINDOW = 15  # matches the max number of entries in a YouTube RSS feed
+
 # Ordered list of (flag_key, display_label) for all content types.
 _CONTENT_TYPES: list[tuple[str, str]] = [
     ('post_videos', 'Videos'),
@@ -1282,11 +1284,14 @@ class YouTubeRelayCog(commands.Cog):
             classification_cache: Shared cache of (is_short, is_live) per video ID.
             active_live_ids: Per-relay set of live video IDs already being tracked.
         """
+        seen_ids = set(relay.seen_video_ids or [])
+
         if relay.last_video_id is None:
             # Channel was empty when relay was added; sync silently without posting.
             latest_id = self._video_id_from_entry(entries[0])
             if latest_id:
-                await update_last_video_id(relay.id, latest_id)
+                new_seen = [v for e in entries if (v := self._video_id_from_entry(e))]
+                await update_last_video_id(relay.id, latest_id, new_seen[:_SEEN_WINDOW])
                 self.logger.info(
                     'Initial sync for relay %d (%s): last_video_id=%s',
                     relay.id,
@@ -1303,8 +1308,9 @@ class YouTubeRelayCog(commands.Cog):
         else:
             # Sentinel aged out of the RSS window; resync silently.
             latest_id = self._video_id_from_entry(entries[0])
+            new_seen = [v for e in entries if (v := self._video_id_from_entry(e))]
             if latest_id:
-                await update_last_video_id(relay.id, latest_id)
+                await update_last_video_id(relay.id, latest_id, new_seen[:_SEEN_WINDOW])
             self.logger.warning(
                 'Relay %d: last_video_id %r aged out of feed; resynced to %s',
                 relay.id,
@@ -1312,6 +1318,11 @@ class YouTubeRelayCog(commands.Cog):
                 latest_id,
             )
             return
+
+        # Filter videos whose metadata was bumped and re-appeared before the sentinel.
+        new_entries = [
+            e for e in new_entries if self._video_id_from_entry(e) not in seen_ids
+        ]
 
         if not new_entries:
             return
@@ -1325,6 +1336,7 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
+        newly_posted_ids: list[str] = []
         posted = 0
         for entry in reversed(new_entries):
             link = entry.get('link')
@@ -1380,6 +1392,8 @@ class YouTubeRelayCog(commands.Cog):
                     message = self._notification_message(relay, is_short, is_live)
                     await channel.send(f'{message}\n{link}')
                 posted += 1
+                if video_id:
+                    newly_posted_ids.append(video_id)
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay %d',
@@ -1389,6 +1403,11 @@ class YouTubeRelayCog(commands.Cog):
                 return
 
         latest_id = self._video_id_from_entry(entries[0])
+        existing_seen = relay.seen_video_ids or []
+        posted_set = set(newly_posted_ids)
+        updated_seen = newly_posted_ids + [
+            v for v in existing_seen if v not in posted_set
+        ]
         if latest_id:
-            await update_last_video_id(relay.id, latest_id)
+            await update_last_video_id(relay.id, latest_id, updated_seen[:_SEEN_WINDOW])
         self.logger.info('Relay %d: posted %d new video(s)', relay.id, posted)

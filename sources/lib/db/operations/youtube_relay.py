@@ -269,15 +269,22 @@ async def set_relay_message_by_id(
         return relay.yt_channel_title
 
 
-async def update_last_video_id(relay_id: int, last_video_id: str) -> None:
-    """Persist the ID of the last relayed video.
+async def update_last_video_id(
+    relay_id: int,
+    last_video_id: str,
+    seen_video_ids: list[str] | None = None,
+) -> None:
+    """Persist the ID of the last relayed video and optionally update the seen-IDs window.
 
     Args:
         relay_id: Primary key of the YouTubeRelay row.
         last_video_id: Video ID of the most recently posted video.
+        seen_video_ids: Updated deduplication window; unchanged when None.
     """
     async with AsyncSession() as session:
         relay = await session.get(YouTubeRelay, relay_id)
         if relay is not None:
             relay.last_video_id = last_video_id
+            if seen_video_ids is not None:
+                relay.seen_video_ids = seen_video_ids
             await session.commit()
