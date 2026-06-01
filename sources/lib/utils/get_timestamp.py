@@ -12,7 +12,7 @@ import pytz
 async def autocomplete_timezone(
     interaction: discord.Interaction,  # pylint: disable=W0613
     user_timezone: str,
-) -> list[discord.app_commands.Choice[str]]:
+) -> list[discord.app_commands.Choice[str | int | float]]:
     """Autocomplete timezone for a user"""
     return [
         discord.app_commands.Choice(name=timezone, value=timezone)
@@ -40,7 +40,7 @@ def parse_and_validate(
     timezone: str | None = None,
 ) -> datetime | None:
     """Parse and validate date and time text"""
-    options = {
+    options: dict[str, str | int | list[str] | dict[str, str | bool]] = {
         'locales': [interaction.locale.value],
     }
     if timezone is not None:
