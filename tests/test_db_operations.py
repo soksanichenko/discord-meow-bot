@@ -1009,6 +1009,86 @@ class TestSeedDefaultDomainFixers:
         assert mock_upsert.call_count == len(DEFAULT_DOMAIN_FIXERS)
 
 
+class TestUpsertDomainFixer:
+    async def test_adds_new_rule_when_no_existing_junction(self):
+        """No existing junction → rule is created and junction is added without a delete."""
+        session, ctx = _make_session(scalars_one=None)
+        rule = SimpleNamespace(id=42)
+        with (
+            patch(
+                'sources.lib.db.operations.domain_fixers.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.domain_fixers._find_or_create_rule',
+                new=AsyncMock(return_value=rule),
+            ) as mock_find,
+        ):
+            from sources.lib.db.operations.domain_fixers import upsert_domain_fixer
+
+            await upsert_domain_fixer(
+                guild_id=1,
+                source_domain='reddit.com',
+                replacement_domain='redlib',
+            )
+        mock_find.assert_awaited_once_with(session, 'reddit.com', 'redlib', None)
+        session.delete.assert_not_awaited()
+        from sources.lib.db.models import GuildDomainFixer
+
+        added = session.add.call_args[0][0]
+        assert isinstance(added, GuildDomainFixer)
+        assert added.guild_id == 1
+        assert added.domain_fixer_id == 42
+        session.commit.assert_awaited_once()
+
+    async def test_replaces_existing_junction(self):
+        """Existing junction for same source_domain is deleted before the new one is added."""
+        existing_junction = SimpleNamespace()
+        session, ctx = _make_session(scalars_one=existing_junction)
+        rule = SimpleNamespace(id=99)
+        with (
+            patch(
+                'sources.lib.db.operations.domain_fixers.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.domain_fixers._find_or_create_rule',
+                new=AsyncMock(return_value=rule),
+            ),
+        ):
+            from sources.lib.db.operations.domain_fixers import upsert_domain_fixer
+
+            await upsert_domain_fixer(
+                guild_id=1,
+                source_domain='reddit.com',
+                replacement_domain='new-mirror',
+            )
+        session.delete.assert_awaited_once_with(existing_junction)
+        session.flush.assert_awaited()
+        session.commit.assert_awaited_once()
+
+    async def test_passes_subdomain_override_to_find_or_create(self):
+        """The override_subdomain argument is forwarded to _find_or_create_rule."""
+        session, ctx = _make_session(scalars_one=None)
+        rule = SimpleNamespace(id=7)
+        with (
+            patch(
+                'sources.lib.db.operations.domain_fixers.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.domain_fixers._find_or_create_rule',
+                new=AsyncMock(return_value=rule),
+            ) as mock_find,
+        ):
+            from sources.lib.db.operations.domain_fixers import upsert_domain_fixer
+
+            await upsert_domain_fixer(
+                guild_id=1,
+                source_domain='twitter.com',
+                replacement_domain='fxtwitter',
+                override_subdomain='www',
+            )
+        mock_find.assert_awaited_once_with(session, 'twitter.com', 'fxtwitter', 'www')
+
+
 # ---------------------------------------------------------------------------
 # youtube_relay list/update operations (remaining)
 # ---------------------------------------------------------------------------

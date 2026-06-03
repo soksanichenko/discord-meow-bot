@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sources.lib.db.models import (
     DomainFixer,
     Guild,
+    GuildDomainFixer,
     GuildMemberBirthday,
     GuildSettings,
     MessageStats,
@@ -201,6 +202,77 @@ class TestDomainFixerConstraint:
             )
         )
         await db_session.commit()
+
+
+class TestDomainFixerAddAfterDelete:
+    """Verify that a new fixer becomes active immediately after the old one is removed."""
+
+    # Guild ID 920_020 reserved for this class.
+    _GUILD_ID = 920_020
+
+    async def test_new_rule_returned_after_remove_and_add(
+        self, db_session: AsyncSession
+    ) -> None:
+        """After removing the old junction and linking a new rule, only the new rule
+        is returned by the query used in get_all_domain_fixers.
+
+        Args:
+            db_session: Async session bound to the test container.
+        """
+        db_session.add(Guild(id=self._GUILD_ID, name='Fixer Test Guild'))
+        old_rule = DomainFixer(
+            source_domain='inttest-reddit.example',
+            replacement_domain='old-mirror',
+            override_subdomain=None,
+        )
+        db_session.add(old_rule)
+        await db_session.flush()
+        db_session.add(
+            GuildDomainFixer(guild_id=self._GUILD_ID, domain_fixer_id=old_rule.id)
+        )
+        await db_session.commit()
+
+        # Simulate /domain-fixer remove
+        junction = (
+            await db_session.scalars(
+                select(GuildDomainFixer).where(
+                    GuildDomainFixer.guild_id == self._GUILD_ID,
+                    GuildDomainFixer.domain_fixer_id == old_rule.id,
+                )
+            )
+        ).one()
+        await db_session.delete(junction)
+        await db_session.commit()
+
+        # Simulate /domain-fixer add with a new replacement
+        new_rule = DomainFixer(
+            source_domain='inttest-reddit.example',
+            replacement_domain='new-mirror',
+            override_subdomain=None,
+        )
+        db_session.add(new_rule)
+        await db_session.flush()
+        db_session.add(
+            GuildDomainFixer(guild_id=self._GUILD_ID, domain_fixer_id=new_rule.id)
+        )
+        await db_session.commit()
+
+        # Query as get_all_domain_fixers does
+        results = list(
+            (
+                await db_session.scalars(
+                    select(DomainFixer)
+                    .join(
+                        GuildDomainFixer,
+                        GuildDomainFixer.domain_fixer_id == DomainFixer.id,
+                    )
+                    .where(GuildDomainFixer.guild_id == self._GUILD_ID)
+                )
+            ).all()
+        )
+        assert len(results) == 1
+        assert results[0].replacement_domain == 'new-mirror'
+        assert results[0].source_domain == 'inttest-reddit.example'
 
 
 class TestMessageStatsUpsert:

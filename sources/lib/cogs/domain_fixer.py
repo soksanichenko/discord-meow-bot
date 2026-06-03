@@ -3,6 +3,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from tldextract import extract as tldextract_extract
 
 from sources.lib.db.operations.domain_fixers import (
     DEFAULT_DOMAIN_FIXERS,
@@ -13,6 +14,28 @@ from sources.lib.db.operations.domain_fixers import (
 )
 from sources.lib.db.operations.guilds import upsert_guild
 from sources.lib.utils.logger import Logger
+
+
+def _normalize_source_domain(raw: str) -> str:
+    """Return the registrable domain (e.g. 'reddit.com') from user input.
+
+    Strips any scheme/path the user may have accidentally included.
+    Falls back to the stripped input when tldextract cannot identify a suffix.
+
+    Args:
+        raw: Raw string entered by the user, e.g. 'reddit.com' or 'www.reddit.com'.
+
+    Returns:
+        Normalised domain string that matches top_domain_under_public_suffix.
+    """
+    stripped = raw.strip().rstrip('/')
+    # Strip scheme if user accidentally included it
+    for prefix in ('https://', 'http://'):
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :]
+            break
+    normalized = tldextract_extract(stripped).top_domain_under_public_suffix
+    return normalized or stripped
 
 
 class DomainFixerCog(commands.Cog):
@@ -103,24 +126,30 @@ class DomainFixerCog(commands.Cog):
             replacement: Domain name to replace with.
             subdomain: Optional subdomain override.
         """
+        normalized_source = _normalize_source_domain(source)
         await upsert_guild(
             guild_id=interaction.guild_id, guild_name=interaction.guild.name
         )
         await upsert_domain_fixer(
             guild_id=interaction.guild_id,
-            source_domain=source,
+            source_domain=normalized_source,
             replacement_domain=replacement,
             override_subdomain=subdomain or None,
         )
         self.logger.info(
             'Domain fixer upserted: %s -> %s (guild %s)',
-            source,
+            normalized_source,
             replacement,
             interaction.guild_id,
         )
         subdomain_info = f', subdomain override: `{subdomain}`' if subdomain else ''
+        note = (
+            f'\n-# Input `{source}` was normalized to `{normalized_source}`'
+            if normalized_source != source
+            else ''
+        )
         await interaction.response.send_message(
-            f'Rule saved: `{source}` → `{replacement}`{subdomain_info}',
+            f'Rule saved: `{normalized_source}` → `{replacement}`{subdomain_info}{note}',
             ephemeral=True,
         )
 
