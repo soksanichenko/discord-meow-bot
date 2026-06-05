@@ -170,7 +170,7 @@ All configuration is done via environment variables:
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval | `5` |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (stream relay) | — |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret | — |
-| `HEALTH_PORT` | Port for the internal HTTP health endpoint | `8080` |
+| `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (`/health`, `/metrics`) | `8080` |
 
 ## Running
 

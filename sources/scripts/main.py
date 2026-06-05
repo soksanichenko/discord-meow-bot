@@ -9,6 +9,7 @@ import discord
 from aiohttp import web
 from discord import utils
 from discord.ext.commands import Bot
+from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 
 from sources.config import config
 from sources.lib.cogs.admin import AdminCog
@@ -46,11 +47,26 @@ async def _health_handler(request: web.Request) -> web.Response:
     )
 
 
+async def _metrics_handler(request: web.Request) -> web.Response:
+    """Expose Prometheus metrics."""
+    bot_instance: MeowBot = request.app['bot']
+    ready = bot_instance.is_ready()
+    _metric_up.set(1 if ready else 0)
+    if ready:
+        _metric_latency_ms.set(round(bot_instance.latency * 1000, 1))
+        _metric_guilds.set(len(bot_instance.guilds))
+        _metric_members.set(len(bot_instance.users))
+    return web.Response(
+        body=generate_latest(), headers={'Content-Type': CONTENT_TYPE_LATEST}
+    )
+
+
 async def _start_health_server(bot_instance: 'MeowBot') -> None:
     """Start the health HTTP server in the background."""
     app = web.Application()
     app['bot'] = bot_instance
     app.router.add_get('/health', _health_handler)
+    app.router.add_get('/metrics', _metrics_handler)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', config.health_port).start()
@@ -67,6 +83,17 @@ intents.guild_scheduled_events = True
 
 _SYNC_HASH_PATH = pathlib.Path('/tmp/.discord_sync_hash')
 _logger = Logger()
+
+_metric_up = Gauge('discord_bot_up', '1 if the bot is connected and ready')
+_metric_latency_ms = Gauge(
+    'discord_bot_latency_ms', 'WebSocket latency in milliseconds'
+)
+_metric_guilds = Gauge(
+    'discord_bot_guilds_total', 'Number of guilds the bot is connected to'
+)
+_metric_members = Gauge(
+    'discord_bot_members_total', 'Number of unique members visible to the bot'
+)
 
 
 class MeowBot(Bot):
