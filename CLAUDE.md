@@ -31,7 +31,7 @@ sources/
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── utils/            # Shared helpers used across cogs
 │   │   ├── logger.py     # Logger singleton
-│   │   ├── metrics.py    # Shared Prometheus metrics (counters + gauges)
+│   │   ├── metrics.py    # Shared Prometheus metrics (counters, gauges, histogram)
 │   │   ├── get_timestamp.py  # Timestamp parsing, autocomplete, TimestampFormatView
 │   │   ├── discord_utils.py  # require_timezone, get_command, guild helpers
 │   │   └── domains_fixer.py  # URLFixer class + fix_urls()
