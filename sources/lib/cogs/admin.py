@@ -67,7 +67,7 @@ class AdminCog(commands.Cog):
         await context.reply(message)
 
     @app_commands.command(name='bot-stats', description='Show bot metrics (owner only)')
-    async def bot_stats(self, interaction: discord.Interaction) -> None:
+    async def show_stats(self, interaction: discord.Interaction) -> None:
         """Display live bot metrics as a Discord embed.
 
         Args:
