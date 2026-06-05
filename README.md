@@ -115,6 +115,19 @@ No commands — fully automatic.
 Automatically updates a voice channel's status based on what members in it
 are currently playing.
 
+The bot tracks voice channel statuses via the raw `VOICE_CHANNEL_STATUS_UPDATE`
+Gateway event (discord.py does not handle this natively, and the REST API does
+not expose the status field). The last known status for every voice and stage
+channel is persisted in the `voice_channels` DB table, keyed by channel and
+guild. The bot only overwrites a status when it was set by itself (prefixed with
+`[auto]`), is empty, or has never been observed — manually set statuses are left
+untouched.
+
+The `voice_channels` table is kept in sync with Discord: on startup the bot
+runs a full sync for every guild (inserting new channels, updating renamed ones,
+removing deleted ones). Channel creates, renames, and deletes during runtime are
+handled via `on_guild_channel_create/update/delete` listeners.
+
 ### Timestamps
 Converts a date/time to Discord's native `<t:...>` timestamp format,
 displayed in every user's local timezone.

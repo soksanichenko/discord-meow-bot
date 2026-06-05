@@ -42,7 +42,8 @@ sources/
 │   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
 │   │   │                 #   music_links.py, reminders.py, stats.py,
 │   │   │                 #   telegram_relay.py, twitch_auth.py, twitch_live_session.py,
-│   │   │                 #   twitch_relay.py, youtube_relay.py, youtube_live_session.py
+│   │   │                 #   twitch_relay.py, voice_channels.py,
+│   │                 #   youtube_relay.py, youtube_live_session.py
 │   │   └── alembic/      # Migrations
 ├── config.py             # Pydantic settings — DBConfig + Config
 └── alembic.ini
@@ -118,6 +119,7 @@ Rules:
 - `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1)
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
 - `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
+- `VoiceChannel(channel_id PK, guild_id FK, name, status nullable)` — cached voice/stage channel records; status mirrors the last VOICE_CHANNEL_STATUS_UPDATE Gateway event; rows are kept in sync with Discord (creates, renames, deletes)
 
 ### Migrations
 
@@ -196,7 +198,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 1. Create `sources/lib/cogs/my_feature.py` with a `Cog` class.
 2. Register slash commands with `@app_commands.command()`, event listeners with `@commands.Cog.listener()`.
 3. Load the cog in `sources/scripts/main.py` → `setup_hook()`.
-4. If new DB tables are needed: add model to `models.py`, add operations in `db/operations/`, generate migration.
+4. If new DB tables are needed: add model to `models.py`, add operations in `db/operations/`, generate migration, and **verify the migration applies cleanly against the real database** (credentials are in `.claude/settings.local.json` env vars — `DB_*`). Run: `DISCORD_TOKEN=dummy alembic -c sources/alembic.ini upgrade head`. Also check there is a single head with `alembic -c sources/alembic.ini heads` before running.
 
 ## Running Locally
 

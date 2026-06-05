@@ -301,6 +301,26 @@ class TwitchLiveSession(Base):
     __table_args__ = (Index('uq_twitch_live_sessions', 'relay_id', unique=True),)
 
 
+class VoiceChannel(Base):
+    """Cached voice and stage channel records, one row per channel per guild.
+
+    The status field mirrors the last known channel status received from the
+    VOICE_CHANNEL_STATUS_UPDATE Gateway event. Rows are kept in sync with
+    Discord: renamed, deleted, and newly created channels are reflected here.
+    """
+
+    __tablename__ = 'voice_channels'
+
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 

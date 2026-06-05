@@ -5,7 +5,15 @@ import json
 import discord
 from discord.ext import commands
 
-from sources.lib.gateway.voice_status import VoiceStatusCache
+from sources.lib.db.operations.voice_channels import (
+    delete_voice_channel,
+    get_voice_channel_status,
+    set_voice_channel_status,
+    sync_guild_voice_channels,
+    upsert_voice_channel,
+)
+
+_AUTO_PREFIX = '[auto]'
 
 
 class VoiceCog(commands.Cog):
@@ -13,7 +21,6 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._status_cache = VoiceStatusCache()
 
     @staticmethod
     def _get_member_activity(
@@ -44,7 +51,8 @@ class VoiceCog(commands.Cog):
         self, voice_channel: discord.VoiceChannel | discord.StageChannel
     ) -> None:
         """Update a channel status, skipping channels with a manually set status."""
-        if not self._status_cache.is_auto_managed(voice_channel.id):
+        current_status = await get_voice_channel_status(voice_channel.id)
+        if current_status and not current_status.startswith(_AUTO_PREFIX):
             return
         members = voice_channel.members
         if members:
@@ -52,9 +60,20 @@ class VoiceCog(commands.Cog):
             status = f'[auto] 🎮 {game.name}' if game else None
             try:
                 await voice_channel.edit(status=status)
-                self._status_cache.update(voice_channel.id, status)
+                await set_voice_channel_status(voice_channel.id, status)
             except discord.errors.Forbidden:
                 pass
+
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        """Sync voice channels for all guilds on startup."""
+        for guild in self.bot.guilds:
+            channel_map = {
+                ch.id: ch.name
+                for ch in guild.channels
+                if isinstance(ch, (discord.VoiceChannel, discord.StageChannel))
+            }
+            await sync_guild_voice_channels(guild.id, channel_map)
 
     @commands.Cog.listener()
     async def on_socket_raw_receive(self, msg: str) -> None:
@@ -68,7 +87,7 @@ class VoiceCog(commands.Cog):
         d = data.get('d', {})
         channel_id = d.get('id')
         if channel_id:
-            self._status_cache.update(int(channel_id), d.get('status'))
+            await set_voice_channel_status(int(channel_id), d.get('status') or None)
 
     @commands.Cog.listener()
     async def on_presence_update(
@@ -93,3 +112,35 @@ class VoiceCog(commands.Cog):
         if channel is None:
             return
         await self.update_channel_status(channel)
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        """Sync voice channels when the bot joins a new guild."""
+        channel_map = {
+            ch.id: ch.name
+            for ch in guild.channels
+            if isinstance(ch, (discord.VoiceChannel, discord.StageChannel))
+        }
+        await sync_guild_voice_channels(guild.id, channel_map)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        """Track newly created voice channels."""
+        if isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            await upsert_voice_channel(channel.id, channel.guild.id, channel.name)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_update(
+        self,
+        _before: discord.abc.GuildChannel,
+        after: discord.abc.GuildChannel,
+    ) -> None:
+        """Sync voice channel name when the channel is updated."""
+        if isinstance(after, (discord.VoiceChannel, discord.StageChannel)):
+            await upsert_voice_channel(after.id, after.guild.id, after.name)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        """Remove deleted voice channels from DB."""
+        if isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            await delete_voice_channel(channel.id)
