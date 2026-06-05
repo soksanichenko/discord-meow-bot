@@ -818,9 +818,11 @@ class YouTubeRelayCog(commands.Cog):
             (yt_channel_id, yt_channel_title) or None if not found or API error.
         """
         raw = raw.strip()
+        _url = raw if '://' in raw else f'https://{raw}'
+        parsed = urllib.parse.urlparse(_url)
+        netloc = parsed.netloc
 
-        if 'youtube.com' in raw:
-            parsed = urllib.parse.urlparse(raw)
+        if netloc == 'youtube.com' or netloc.endswith('.youtube.com'):
             path = parsed.path.rstrip('/')
             parts = path.split('/')
             if len(parts) >= 3 and parts[1] == 'channel':

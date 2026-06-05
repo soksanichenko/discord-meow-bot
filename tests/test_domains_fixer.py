@@ -50,7 +50,7 @@ class TestFixUrls:
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
-        assert 'rxddit.com' in result
+        assert 'https://rxddit.com' in result
         assert 'reddit.com' not in result.split('\n')[0]
 
     async def test_appends_original_author_mention(self):
@@ -80,7 +80,7 @@ class TestFixUrls:
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
-        assert 'old.rxddit.com' in result
+        assert 'https://old.rxddit.com' in result
 
     async def test_no_override_subdomain_preserves_original_subdomain(self):
         msg = _message('check https://www.reddit.com/r/python')
@@ -90,7 +90,7 @@ class TestFixUrls:
             new=AsyncMock(return_value=[fixer]),
         ):
             result = await fix_urls(msg)
-        assert 'www.rxddit.com' in result
+        assert 'https://www.rxddit.com' in result
 
     async def test_preserves_url_path(self):
         msg = _message('https://twitter.com/user/status/123456')
