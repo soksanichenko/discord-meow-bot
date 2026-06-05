@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from sources.lib.utils.domains_fixer import fix_urls
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import domain_fixes
 
 
 class MessagesCog(commands.Cog):
@@ -57,6 +58,7 @@ class MessagesCog(commands.Cog):
         if content == message.content:
             Logger().info('The original message is already fine')
             return
+        domain_fixes.inc()
         # Cross-server subscription messages arrive via webhook and may carry
         # @everyone/@here from the originating server; break them so the bot
         # cannot fire a broadcast it has no business sending.

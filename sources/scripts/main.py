@@ -28,6 +28,7 @@ from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import command_errors
 
 
 async def _health_handler(request: web.Request) -> web.Response:
@@ -106,6 +107,7 @@ class MeowBot(Bot):
     ) -> None:
         """Log all unhandled app-command errors through the main discord logger."""
         cmd = interaction.command.name if interaction.command else '<unknown>'
+        command_errors.labels(command=cmd).inc()
         _logger.error(
             'App command error in /%s: %s: %s',
             cmd,

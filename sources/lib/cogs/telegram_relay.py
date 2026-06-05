@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import time
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
@@ -23,6 +24,7 @@ from sources.lib.db.operations.telegram_relay import (
     update_relay_channel,
 )
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import relay_fetch_errors, relay_last_poll, relay_posts
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)
@@ -363,8 +365,10 @@ class TelegramRelayCog(commands.Cog):
             self.logger.warning(
                 'Failed to fetch RSS for @%s: %s', relay.tg_username, exc
             )
+            relay_fetch_errors.labels(service='telegram').inc()
             return
 
+        relay_last_poll.labels(service='telegram').set(time.time())
         feed = feedparser.parse(content)
         self.logger.info(
             'Polling @%s: %d entries in feed, last_entry_id=%r',
@@ -409,6 +413,7 @@ class TelegramRelayCog(commands.Cog):
             embeds = self._build_embeds(entry, relay.tg_username, channel_title)
             try:
                 await channel.send(embeds=embeds)
+                relay_posts.labels(service='telegram', type='post').inc()
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay @%s',

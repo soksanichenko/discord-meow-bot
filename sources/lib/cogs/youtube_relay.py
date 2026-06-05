@@ -1,6 +1,7 @@
 """YouTube relay cog — forward YouTube channel uploads to Discord via RSS."""
 
 import asyncio
+import time
 import urllib.parse
 
 import aiohttp
@@ -34,6 +35,7 @@ from sources.lib.db.operations.youtube_relay import (
     update_relay_content_flags,
 )
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import relay_fetch_errors, relay_last_poll, relay_posts
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'
@@ -1257,8 +1259,10 @@ class YouTubeRelayCog(commands.Cog):
                 content = await resp.text()
         except Exception as exc:
             self.logger.warning('Failed to fetch RSS for %s: %s', yt_channel_id, exc)
+            relay_fetch_errors.labels(service='youtube').inc()
             return
 
+        relay_last_poll.labels(service='youtube').set(time.time())
         feed = feedparser.parse(content)
         self.logger.info('Polling %s: %d entries', yt_channel_id, len(feed.entries))
         if not feed.entries:
@@ -1390,9 +1394,13 @@ class YouTubeRelayCog(commands.Cog):
                     )
                     sent = await channel.send(embed=embed)
                     await add_live_session(relay.id, video_id, sent.id)
+                    relay_posts.labels(service='youtube', type='live').inc()
                 else:
                     message = self._notification_message(relay, is_short, is_live)
                     await channel.send(f'{message}\n{link}')
+                    relay_posts.labels(
+                        service='youtube', type='short' if is_short else 'video'
+                    ).inc()
                 posted += 1
                 if video_id:
                     newly_posted_ids.append(video_id)
