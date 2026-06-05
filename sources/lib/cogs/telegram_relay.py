@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 import aiohttp
 import discord
 import feedparser
+from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord import app_commands
 from discord.ext import commands
@@ -24,7 +25,12 @@ from sources.lib.db.operations.telegram_relay import (
     update_relay_channel,
 )
 from sources.lib.utils.logger import Logger
-from sources.lib.utils.metrics import relay_fetch_errors, relay_last_poll, relay_posts
+from sources.lib.utils.metrics import (
+    relay_fetch_errors,
+    relay_last_poll,
+    relay_posts,
+    scheduler_job_failures,
+)
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TELEGRAM_COLOUR = discord.Colour(0x2CA5E0)
@@ -116,6 +122,10 @@ class TelegramRelayCog(commands.Cog):
             minutes=interval,
             id='telegram_relay_poll',
             replace_existing=True,
+        )
+        self._scheduler.add_listener(
+            lambda e: scheduler_job_failures.labels(job=e.job_id).inc(),
+            EVENT_JOB_ERROR,
         )
         self._scheduler.start()
         self.logger.info('Telegram relay scheduler started (every %d min)', interval)

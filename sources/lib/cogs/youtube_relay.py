@@ -7,6 +7,7 @@ import urllib.parse
 import aiohttp
 import discord
 import feedparser
+from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord import app_commands
 from discord.ext import commands
@@ -35,7 +36,13 @@ from sources.lib.db.operations.youtube_relay import (
     update_relay_content_flags,
 )
 from sources.lib.utils.logger import Logger
-from sources.lib.utils.metrics import relay_fetch_errors, relay_last_poll, relay_posts
+from sources.lib.utils.metrics import (
+    api_call_latency,
+    relay_fetch_errors,
+    relay_last_poll,
+    relay_posts,
+    scheduler_job_failures,
+)
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'
@@ -473,6 +480,10 @@ class YouTubeRelayCog(commands.Cog):
             id='youtube_relay_poll',
             replace_existing=True,
         )
+        self._scheduler.add_listener(
+            lambda e: scheduler_job_failures.labels(job=e.job_id).inc(),
+            EVENT_JOB_ERROR,
+        )
         self._scheduler.start()
         self.logger.info('YouTube relay scheduler started (every %d min)', interval)
 
@@ -853,15 +864,16 @@ class YouTubeRelayCog(commands.Cog):
             }
 
         try:
-            async with self._session.get(
-                _YT_API_CHANNELS, params=params, timeout=_REQUEST_TIMEOUT
-            ) as resp:
-                if resp.status != 200:
-                    self.logger.warning(
-                        'YouTube API returned HTTP %d for %r', resp.status, raw
-                    )
-                    return None
-                data = await resp.json()
+            with api_call_latency.labels(service='youtube').time():
+                async with self._session.get(
+                    _YT_API_CHANNELS, params=params, timeout=_REQUEST_TIMEOUT
+                ) as resp:
+                    if resp.status != 200:
+                        self.logger.warning(
+                            'YouTube API returned HTTP %d for %r', resp.status, raw
+                        )
+                        return None
+                    data = await resp.json()
         except Exception as exc:
             self.logger.warning('YouTube API request failed for %r: %s', raw, exc)
             return None
@@ -945,16 +957,17 @@ class YouTubeRelayCog(commands.Cog):
 
         async def check_live() -> bool:
             try:
-                async with self._session.get(
-                    _YT_API_VIDEOS,
-                    params={
-                        'part': 'liveStreamingDetails',
-                        'id': video_id,
-                        'key': config.youtube_api_key,
-                    },
-                    timeout=_REQUEST_TIMEOUT,
-                ) as resp:
-                    data = await resp.json()
+                with api_call_latency.labels(service='youtube').time():
+                    async with self._session.get(
+                        _YT_API_VIDEOS,
+                        params={
+                            'part': 'liveStreamingDetails',
+                            'id': video_id,
+                            'key': config.youtube_api_key,
+                        },
+                        timeout=_REQUEST_TIMEOUT,
+                    ) as resp:
+                        data = await resp.json()
                 items = data.get('items', [])
                 return bool(items and items[0].get('liveStreamingDetails'))
             except Exception:
@@ -1026,16 +1039,17 @@ class YouTubeRelayCog(commands.Cog):
 
         async def get_video_data() -> tuple[int | None, str | None]:
             try:
-                async with self._session.get(
-                    _YT_API_VIDEOS,
-                    params={
-                        'part': 'snippet,liveStreamingDetails',
-                        'id': video_id,
-                        'key': config.youtube_api_key,
-                    },
-                    timeout=_REQUEST_TIMEOUT,
-                ) as resp:
-                    data = await resp.json()
+                with api_call_latency.labels(service='youtube').time():
+                    async with self._session.get(
+                        _YT_API_VIDEOS,
+                        params={
+                            'part': 'snippet,liveStreamingDetails',
+                            'id': video_id,
+                            'key': config.youtube_api_key,
+                        },
+                        timeout=_REQUEST_TIMEOUT,
+                    ) as resp:
+                        data = await resp.json()
                 items = data.get('items', [])
                 if not items:
                     return None, None
@@ -1057,16 +1071,17 @@ class YouTubeRelayCog(commands.Cog):
 
         async def get_channel_icon() -> str | None:
             try:
-                async with self._session.get(
-                    _YT_API_CHANNELS,
-                    params={
-                        'part': 'snippet',
-                        'id': yt_channel_id,
-                        'key': config.youtube_api_key,
-                    },
-                    timeout=_REQUEST_TIMEOUT,
-                ) as resp:
-                    data = await resp.json()
+                with api_call_latency.labels(service='youtube').time():
+                    async with self._session.get(
+                        _YT_API_CHANNELS,
+                        params={
+                            'part': 'snippet',
+                            'id': yt_channel_id,
+                            'key': config.youtube_api_key,
+                        },
+                        timeout=_REQUEST_TIMEOUT,
+                    ) as resp:
+                        data = await resp.json()
                 items = data.get('items', [])
                 if not items:
                     return None
@@ -1173,16 +1188,17 @@ class YouTubeRelayCog(commands.Cog):
         for i in range(0, len(unique_ids), 50):
             batch = unique_ids[i : i + 50]
             try:
-                async with self._session.get(
-                    _YT_API_VIDEOS,
-                    params={
-                        'part': 'liveStreamingDetails',
-                        'id': ','.join(batch),
-                        'key': config.youtube_api_key,
-                    },
-                    timeout=_REQUEST_TIMEOUT,
-                ) as resp:
-                    data = await resp.json()
+                with api_call_latency.labels(service='youtube').time():
+                    async with self._session.get(
+                        _YT_API_VIDEOS,
+                        params={
+                            'part': 'liveStreamingDetails',
+                            'id': ','.join(batch),
+                            'key': config.youtube_api_key,
+                        },
+                        timeout=_REQUEST_TIMEOUT,
+                    ) as resp:
+                        data = await resp.json()
             except Exception as exc:
                 self.logger.warning('Failed to check live sessions batch: %s', exc)
                 for vid in batch:

@@ -36,6 +36,29 @@ def _gauge(samples: dict, name: str, **labels: str) -> float | None:
     return None
 
 
+def _histogram_avg(samples: dict, name: str, **labels: str) -> float | None:
+    """Return the mean of a histogram (sum/count) for the given labels, or None."""
+    total = next(
+        (
+            s.value
+            for s in samples.get(f'{name}_sum', [])
+            if all(s.labels.get(k) == v for k, v in labels.items())
+        ),
+        None,
+    )
+    count = next(
+        (
+            s.value
+            for s in samples.get(f'{name}_count', [])
+            if all(s.labels.get(k) == v for k, v in labels.items())
+        ),
+        None,
+    )
+    if total is None or not count:
+        return None
+    return total / count
+
+
 def _fmt_ago(ts: float | None) -> str:
     """Format a Unix timestamp as a human-readable 'X ago' string."""
     if ts is None:
@@ -44,6 +67,11 @@ def _fmt_ago(ts: float | None) -> str:
     if delta < 60:
         return f'{delta}s ago'
     return f'{delta // 60}m ago'
+
+
+def _fmt_ms(seconds: float | None) -> str:
+    """Format a duration in seconds as milliseconds, or 'n/a'."""
+    return f'{seconds * 1000:.0f}ms' if seconds is not None else 'n/a'
 
 
 class AdminCog(commands.Cog):
@@ -126,6 +154,23 @@ class AdminCog(commands.Cog):
             inline=False,
         )
 
+        yt_avg = _histogram_avg(samples, 'api_call_latency_seconds', service='youtube')
+        sp_avg = _histogram_avg(samples, 'api_call_latency_seconds', service='spotify')
+        embed.add_field(
+            name='API latency avg (since restart)',
+            value=f'YouTube: **{_fmt_ms(yt_avg)}** · Spotify: **{_fmt_ms(sp_avg)}**',
+            inline=False,
+        )
+
+        sched_fail_samples = [
+            s for s in samples.get('scheduler_job_failures_total', []) if s.value > 0
+        ]
+        sched_fail_str = (
+            ' · '.join(
+                f'{s.labels.get("job", "?")}={int(s.value)}' for s in sched_fail_samples
+            )
+            or 'none'
+        )
         fixes = _counter(samples, 'domain_fixes_total')
         cmd_err_samples = [
             s for s in samples.get('command_errors_total', []) if s.value > 0
@@ -139,7 +184,11 @@ class AdminCog(commands.Cog):
         )
         embed.add_field(
             name='Other (since restart)',
-            value=f'Domain fixes: **{fixes}**\nCommand errors: {cmd_err_str}',
+            value=(
+                f'Domain fixes: **{fixes}**\n'
+                f'Scheduler errors: {sched_fail_str}\n'
+                f'Command errors: {cmd_err_str}'
+            ),
             inline=False,
         )
 

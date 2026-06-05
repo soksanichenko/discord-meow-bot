@@ -17,6 +17,7 @@ from sources.lib.db.operations.music_links import (
 )
 from sources.lib.spotify import SpotifyClient, clean_yt_title
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import api_call_latency
 
 _YT_PATTERN = re.compile(
     r'https?://(?:www\.)?(?:youtube\.com/watch\?(?:[^&\s]*&)*v=|youtu\.be/)'
@@ -83,18 +84,21 @@ class MusicLinksCog(commands.Cog):
             Spotify track URL, or None if no match was found.
         """
         try:
-            async with self._session.get(
-                'https://www.googleapis.com/youtube/v3/videos',
-                params={
-                    'id': video_id,
-                    'part': 'snippet',
-                    'key': config.youtube_api_key,
-                },
-            ) as resp:
-                if resp.status != 200:
-                    self._logger.warning('YouTube videos API returned %d', resp.status)
-                    return None
-                data = await resp.json()
+            with api_call_latency.labels(service='youtube').time():
+                async with self._session.get(
+                    'https://www.googleapis.com/youtube/v3/videos',
+                    params={
+                        'id': video_id,
+                        'part': 'snippet',
+                        'key': config.youtube_api_key,
+                    },
+                ) as resp:
+                    if resp.status != 200:
+                        self._logger.warning(
+                            'YouTube videos API returned %d', resp.status
+                        )
+                        return None
+                    data = await resp.json()
         except aiohttp.ClientError as exc:
             self._logger.warning('YouTube API request error: %s', exc)
             return None
@@ -121,15 +125,16 @@ class MusicLinksCog(commands.Cog):
             return None
 
         try:
-            async with self._session.get(
-                'https://api.spotify.com/v1/search',
-                headers={'Authorization': f'Bearer {token}'},
-                params={'q': title, 'type': 'track', 'limit': 1},
-            ) as resp:
-                if resp.status != 200:
-                    self._logger.warning('Spotify search returned %d', resp.status)
-                    return None
-                data = await resp.json()
+            with api_call_latency.labels(service='spotify').time():
+                async with self._session.get(
+                    'https://api.spotify.com/v1/search',
+                    headers={'Authorization': f'Bearer {token}'},
+                    params={'q': title, 'type': 'track', 'limit': 1},
+                ) as resp:
+                    if resp.status != 200:
+                        self._logger.warning('Spotify search returned %d', resp.status)
+                        return None
+                    data = await resp.json()
         except aiohttp.ClientError as exc:
             self._logger.warning('Spotify search request error: %s', exc)
             return None
@@ -154,14 +159,17 @@ class MusicLinksCog(commands.Cog):
             return None
 
         try:
-            async with self._session.get(
-                f'https://api.spotify.com/v1/tracks/{track_id}',
-                headers={'Authorization': f'Bearer {token}'},
-            ) as resp:
-                if resp.status != 200:
-                    self._logger.warning('Spotify tracks API returned %d', resp.status)
-                    return None
-                data = await resp.json()
+            with api_call_latency.labels(service='spotify').time():
+                async with self._session.get(
+                    f'https://api.spotify.com/v1/tracks/{track_id}',
+                    headers={'Authorization': f'Bearer {token}'},
+                ) as resp:
+                    if resp.status != 200:
+                        self._logger.warning(
+                            'Spotify tracks API returned %d', resp.status
+                        )
+                        return None
+                    data = await resp.json()
         except aiohttp.ClientError as exc:
             self._logger.warning('Spotify tracks request error: %s', exc)
             return None
@@ -171,21 +179,24 @@ class MusicLinksCog(commands.Cog):
         query = f'{artist} {name}'
 
         try:
-            async with self._session.get(
-                'https://www.googleapis.com/youtube/v3/search',
-                params={
-                    'q': query,
-                    'type': 'video',
-                    'videoCategoryId': '10',  # Music
-                    'part': 'snippet',
-                    'maxResults': 1,
-                    'key': config.youtube_api_key,
-                },
-            ) as resp:
-                if resp.status != 200:
-                    self._logger.warning('YouTube search API returned %d', resp.status)
-                    return None
-                data = await resp.json()
+            with api_call_latency.labels(service='youtube').time():
+                async with self._session.get(
+                    'https://www.googleapis.com/youtube/v3/search',
+                    params={
+                        'q': query,
+                        'type': 'video',
+                        'videoCategoryId': '10',  # Music
+                        'part': 'snippet',
+                        'maxResults': 1,
+                        'key': config.youtube_api_key,
+                    },
+                ) as resp:
+                    if resp.status != 200:
+                        self._logger.warning(
+                            'YouTube search API returned %d', resp.status
+                        )
+                        return None
+                    data = await resp.json()
         except aiohttp.ClientError as exc:
             self._logger.warning('YouTube search request error: %s', exc)
             return None
