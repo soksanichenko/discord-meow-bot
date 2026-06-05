@@ -128,6 +128,9 @@ runs a full sync for every guild (inserting new channels, updating renamed ones,
 removing deleted ones). Channel creates, renames, and deletes during runtime are
 handled via `on_guild_channel_create/update/delete` listeners.
 
+### Bot Owner Commands
+- `/bot-stats` — live metrics embed: WebSocket latency, guild/member count, relay post counts and errors per service (Telegram/YouTube), domain fix count, and per-command error breakdown. Resets on bot restart. Visible only to the bot owner.
+
 ### Timestamps
 Converts a date/time to Discord's native `<t:...>` timestamp format,
 displayed in every user's local timezone.

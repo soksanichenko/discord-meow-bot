@@ -13,7 +13,7 @@ sources/
 │   └── create_db.py      # DB initialization (run before alembic)
 ├── lib/
 │   ├── cogs/             # Discord Cogs — one file per feature group
-│   │   ├── admin.py      # ?sync-tree command
+│   │   ├── admin.py      # ?sync-tree command + /bot-stats (owner only)
 │   │   ├── birthdays.py  # /birthday group + hourly announcement scheduler
 │   │   ├── domain_fixer.py  # /domain-fixer group (admin URL rule management)
 │   │   ├── events.py     # Scheduled event auto-start (APScheduler one-shot jobs)
@@ -31,6 +31,7 @@ sources/
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── utils/            # Shared helpers used across cogs
 │   │   ├── logger.py     # Logger singleton
+│   │   ├── metrics.py    # Shared Prometheus metrics (counters + gauges)
 │   │   ├── get_timestamp.py  # Timestamp parsing, autocomplete, TimestampFormatView
 │   │   ├── discord_utils.py  # require_timezone, get_command, guild helpers
 │   │   └── domains_fixer.py  # URLFixer class + fix_urls()
@@ -79,7 +80,7 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (EventSub relay) |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret |
-| `HEALTH_PORT` | Port for the internal HTTP health endpoint (default: `8080`) |
+| `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (default: `8080`) |
 
 Both sync and async DB URLs use `postgresql+psycopg://` (psycopg3) and are constructed from the DB_* variables.
 
@@ -191,6 +192,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/twitch-relay set-message` | twitch_relay.py | Set a custom stream notification message (admin) |
 | `/twitch-relay remove-message` | twitch_relay.py | Reset notification message to default (admin) |
 | `/twitch-relay list` | twitch_relay.py | Show active Twitch relays (admin) |
+| `/bot-stats` | admin.py | Live metrics embed: latency, relay counts, errors (bot owner only) |
 | `/help [command]` | help.py | List all commands or show details for one; auto-reflects new commands |
 
 ## Adding a New Feature
