@@ -112,8 +112,8 @@ class TestCogLoading:
     def test_messages_cog_has_no_slash_commands(self) -> None:
         assert _cmd_names(MessagesCog(_bot())) == set()
 
-    def test_admin_cog_has_no_slash_commands(self) -> None:
-        assert _cmd_names(AdminCog(_bot())) == set()
+    def test_admin_cog_slash_commands(self) -> None:
+        assert _cmd_names(AdminCog(_bot())) == {'bot-stats'}
 
     def test_voice_cog_has_no_slash_commands(self) -> None:
         assert _cmd_names(VoiceCog(_bot())) == set()
