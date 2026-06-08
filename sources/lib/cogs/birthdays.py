@@ -481,11 +481,17 @@ class BirthdaysCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
 
     @birthday.command(name='list', description='View all birthdays set on this server')
-    @app_commands.describe(month='Filter by month (1–12); omit to show all')
+    @app_commands.describe(month='Filter by month; omit to show all')
+    @app_commands.choices(
+        month=[
+            app_commands.Choice(name=calendar.month_name[m], value=m)
+            for m in range(1, 13)
+        ]
+    )
     async def birthday_list(
         self,
         interaction: discord.Interaction,
-        month: app_commands.Range[int, 1, 12] | None = None,
+        month: app_commands.Choice[int] | None = None,
     ) -> None:
         """List birthday records for this server, optionally filtered by month.
 
@@ -494,22 +500,19 @@ class BirthdaysCog(commands.Cog):
             month: Optional month number to filter results.
         """
         await interaction.response.defer(ephemeral=True)
-        birthdays = await get_guild_birthdays(interaction.guild_id, month=month)
+        month_value = month.value if month else None
+        birthdays = await get_guild_birthdays(interaction.guild_id, month=month_value)
 
         if not birthdays:
             msg = (
-                f'No birthdays set for {calendar.month_name[month]}.'
+                f'No birthdays set for {month.name}.'
                 if month
                 else 'No birthdays have been set on this server.'
             )
             await interaction.followup.send(msg)
             return
 
-        title = (
-            f'Birthdays in {calendar.month_name[month]}'
-            if month
-            else 'Birthdays on this server'
-        )
+        title = f'Birthdays in {month.name}' if month else 'Birthdays on this server'
         embed = discord.Embed(title=title, colour=discord.Colour.blurple())
 
         lines: list[str] = []
