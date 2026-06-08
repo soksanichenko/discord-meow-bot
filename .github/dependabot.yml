@@ -2,12 +2,6 @@
 version: 2
 updates:
   - package-ecosystem: "pip"
-    directory: "/sources"
-    schedule:
-      interval: "weekly"
-    target-branch: "master"
-
-  - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
