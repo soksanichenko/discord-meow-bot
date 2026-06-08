@@ -65,21 +65,25 @@ async def remove_guild_member_birthday(guild_id: int, user_id: int) -> bool:
         return True
 
 
-async def get_guild_birthdays(guild_id: int) -> list[GuildMemberBirthday]:
-    """Return all birthday records for a guild, ordered by month then day.
+async def get_guild_birthdays(
+    guild_id: int, month: int | None = None
+) -> list[GuildMemberBirthday]:
+    """Return birthday records for a guild, ordered by month then day.
 
     Args:
         guild_id: Discord guild ID.
+        month: If given, return only records for this month (1–12).
     """
     async with AsyncSession() as session:
-        rows = await session.scalars(
-            select(GuildMemberBirthday)
-            .where(GuildMemberBirthday.guild_id == guild_id)
-            .order_by(
-                GuildMemberBirthday.birthday_month, GuildMemberBirthday.birthday_day
-            )
+        stmt = select(GuildMemberBirthday).where(
+            GuildMemberBirthday.guild_id == guild_id
         )
-        return list(rows)
+        if month is not None:
+            stmt = stmt.where(GuildMemberBirthday.birthday_month == month)
+        stmt = stmt.order_by(
+            GuildMemberBirthday.birthday_month, GuildMemberBirthday.birthday_day
+        )
+        return list(await session.scalars(stmt))
 
 
 async def get_all_unannounced_birthdays_for_guild(
