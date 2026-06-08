@@ -905,6 +905,18 @@ class TestGetGuildBirthdays:
             result = await get_guild_birthdays(guild_id=1)
         assert result == [b1, b2]
 
+    async def test_filters_by_month(self):
+        b1 = SimpleNamespace(user_id=1, birthday_month=3)
+        session, ctx = _make_session(scalars_rows=[b1])
+        with patch(
+            'sources.lib.db.operations.birthdays.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.birthdays import get_guild_birthdays
+
+            result = await get_guild_birthdays(guild_id=1, month=3)
+        assert result == [b1]
+        session.scalars.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # domain_fixers operations
@@ -1354,6 +1366,32 @@ class TestUpsertUser:
             await upsert_user(user_id=1, name='New', timezone='America/New_York')
         assert existing.name == 'New'
         assert existing.timezone == 'America/New_York'
+
+
+class TestGetUsersByIds:
+    async def test_returns_empty_list_when_no_ids(self):
+        from sources.lib.db.operations.users import get_users_by_ids
+
+        result = await get_users_by_ids([])
+        assert result == []
+
+    async def test_returns_users_when_found(self):
+        u1 = SimpleNamespace(id=1, timezone='UTC')
+        u2 = SimpleNamespace(id=2, timezone='Europe/Kyiv')
+        session, ctx = _make_session(scalars_rows=[u1, u2])
+        with patch('sources.lib.db.operations.users.AsyncSession', return_value=ctx):
+            from sources.lib.db.operations.users import get_users_by_ids
+
+            result = await get_users_by_ids([1, 2])
+        assert result == [u1, u2]
+
+    async def test_returns_empty_when_none_found(self):
+        session, ctx = _make_session(scalars_rows=[])
+        with patch('sources.lib.db.operations.users.AsyncSession', return_value=ctx):
+            from sources.lib.db.operations.users import get_users_by_ids
+
+            result = await get_users_by_ids([99, 100])
+        assert result == []
 
 
 # ---------------------------------------------------------------------------

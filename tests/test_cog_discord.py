@@ -74,6 +74,7 @@ class TestCogLoading:
             'force-timezone',
             'my-settings',
             'get-timestamp',
+            'timezones',
         }
 
     def test_guild_cog(self) -> None:
