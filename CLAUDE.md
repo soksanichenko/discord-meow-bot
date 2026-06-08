@@ -1,5 +1,11 @@
 # Discord Meow Bot — Project Guide
 
+## Documentation Language
+
+All `*.md` files in this repository must be written in English. This applies to
+`CLAUDE.md`, `README.md`, `IDEAS.md`, and any other Markdown files. Do not write
+or leave content in any other language.
+
 ## Overview
 
 A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, Twitch stream relay, and scheduled event auto-start. Deployed via Ansible + Docker on a remote server.
