@@ -64,7 +64,7 @@ jobs:
       - name: Run deploy
         working-directory: ansible
         env:
-          INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+          INFISICAL_API_URL: ${{ secrets.INFISICAL_API_URL }}
           INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
           INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
         run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml
