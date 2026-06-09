@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: socket-security/socket-security-action@v2
+      - uses: SocketDev/action@v1
         with:
           api-key: ${{ secrets.ACTIONS_SOCKET_SCAN }}
           working-directory: frontend
