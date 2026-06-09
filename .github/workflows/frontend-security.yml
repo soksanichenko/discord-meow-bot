@@ -50,4 +50,6 @@ jobs:
 
       - run: sfw npm ci
         working-directory: frontend
+        env:
+          SOCKET_API_KEY: ${{ secrets.ACTIONS_SOCKET_SCAN }}
 ...
