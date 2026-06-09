@@ -24,6 +24,7 @@ from sources.lib.cogs.domain_fixer import DomainFixerCog
 from sources.lib.cogs.events import EventsCog
 from sources.lib.cogs.guild import GuildCog
 from sources.lib.cogs.help import HelpCog
+from sources.lib.cogs.kvizgame import KvizGameCog
 from sources.lib.cogs.messages import MessagesCog
 from sources.lib.cogs.music_links import MusicLinksCog
 from sources.lib.cogs.reminders import RemindersCog
@@ -118,6 +119,12 @@ class TestCogLoading:
 
     def test_voice_cog_has_no_slash_commands(self) -> None:
         assert _cmd_names(VoiceCog(_bot())) == set()
+
+    def test_kvizgame_cog(self) -> None:
+        cog = KvizGameCog(_bot(), {})
+        group = next(c for c in cog.__cog_app_commands__ if c.name == 'kvizgame')
+        sub_names = {cmd.name for cmd in group.commands}
+        assert sub_names == {'upload', 'list', 'start', 'stop'}
 
 
 # ---------------------------------------------------------------------------

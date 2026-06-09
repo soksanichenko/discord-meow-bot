@@ -99,7 +99,7 @@ def _game(package: Package | None = None) -> GameMachine:
 
 
 def _session(channel_id: str = 'ch1', package: Package | None = None) -> GameSession:
-    return GameSession(channel_id, _game(package))
+    return GameSession(channel_id, _game(package), '')
 
 
 async def _recv_json(ws) -> dict:
@@ -312,7 +312,7 @@ class TestGameFlow:
             NAMES,
             Settings(buzz_window_ms=50),  # 50 ms window
         )
-        app['sessions']['ch1'] = GameSession('ch1', game)
+        app['sessions']['ch1'] = GameSession('ch1', game, '')
         client: TestClient = await aiohttp_client(app)
         async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
             await _recv_json(ws)
