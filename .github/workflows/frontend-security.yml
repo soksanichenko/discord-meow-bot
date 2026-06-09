@@ -31,7 +31,7 @@ jobs:
     name: Socket supply-chain scan
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: production
+    environment: ci
     permissions:
       contents: read
       pull-requests: write
