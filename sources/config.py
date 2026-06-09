@@ -43,6 +43,11 @@ class Config(BaseSettings):
     youtube_relay_poll_interval_minutes: int = 5
     twitch_client_id: str = ''
     twitch_client_secret: str = ''
+    kvizgame_port: int = 8082
+    kvizgame_packs_dir: str = '/tmp/kvizgame-packs'
+    kvizgame_sessions_dir: str = '/tmp/kvizgame-sessions'
+    discord_client_id: str = ''
+    discord_client_secret: str = ''
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

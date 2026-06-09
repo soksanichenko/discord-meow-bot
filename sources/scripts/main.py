@@ -18,6 +18,7 @@ from sources.lib.cogs.domain_fixer import DomainFixerCog
 from sources.lib.cogs.events import EventsCog
 from sources.lib.cogs.guild import GuildCog
 from sources.lib.cogs.help import HelpCog
+from sources.lib.cogs.kvizgame import KvizGameCog
 from sources.lib.cogs.messages import MessagesCog
 from sources.lib.cogs.music_links import MusicLinksCog
 from sources.lib.cogs.reminders import RemindersCog
@@ -27,6 +28,8 @@ from sources.lib.cogs.twitch_relay import TwitchRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
+from sources.lib.kvizgame.server import create_app as _create_kvizgame_app
+from sources.lib.kvizgame.session import GameSession
 from sources.lib.utils.logger import Logger
 from sources.lib.utils.metrics import command_errors
 
@@ -71,6 +74,32 @@ async def _start_health_server(bot_instance: 'MeowBot') -> None:
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     await web.TCPSite(runner, '0.0.0.0', config.health_port).start()
+
+
+def _load_kvizgame_sessions(sessions: dict[str, GameSession]) -> None:
+    """Restore persisted game sessions from disk on startup."""
+    sessions_dir = pathlib.Path(config.kvizgame_sessions_dir)
+    if not sessions_dir.exists():
+        return
+    for path in sessions_dir.glob('*.json'):
+        try:
+            session = GameSession.load(path)
+            if session.phase.name == 'GAME_OVER':
+                path.unlink(missing_ok=True)
+                continue
+            sessions[session.channel_id] = session
+            _logger.info('Restored KvizGame session for channel %r', session.channel_id)
+        except Exception as exc:
+            _logger.warning('Failed to restore session from %s: %s', path, exc)
+            path.unlink(missing_ok=True)
+
+
+async def _start_kvizgame_server(sessions: dict[str, GameSession]) -> None:
+    """Start the KvizGame WebSocket server in the background."""
+    app = _create_kvizgame_app(sessions)
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', config.kvizgame_port).start()
 
 
 intents = discord.Intents.default()
@@ -138,6 +167,7 @@ class MeowBot(Bot):
         await self.add_cog(UserCog(self))
         await self.add_cog(YouTubeRelayCog(self))
         await self.add_cog(VoiceCog(self))
+        await self.add_cog(KvizGameCog(self, _kvizgame_sessions))
         asyncio.create_task(self._sync_command_tree())
 
     async def _sync_command_tree(self) -> None:
@@ -222,6 +252,8 @@ class MeowBot(Bot):
         return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
+_kvizgame_sessions: dict[str, GameSession] = {}
+
 bot = MeowBot(
     command_prefix='?',
     intents=intents,
@@ -233,7 +265,9 @@ bot = MeowBot(
 async def main():
     """Main run function."""
     utils.setup_logging()
+    _load_kvizgame_sessions(_kvizgame_sessions)
     await _start_health_server(bot)
+    await _start_kvizgame_server(_kvizgame_sessions)
     async with bot:
         await bot.start(token=config.discord_token, reconnect=True)
 

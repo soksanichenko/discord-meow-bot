@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 
+import aiohttp
 from aiohttp import WSMsgType, web
 
+from sources.config import config
 from sources.lib.kvizgame.game import GameMachine, Settings
 from sources.lib.kvizgame.parser import load
 from sources.lib.kvizgame.session import GameSession
@@ -42,6 +44,36 @@ async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def _token_handler(request: web.Request) -> web.Response:
+    """POST /token — exchange Discord OAuth2 code for access token.
+
+    Expected JSON body:
+      code  str  Authorization code from the Discord SDK authorize() call.
+    """
+    body = await request.json()
+    code = body.get('code', '').strip()
+    if not code:
+        raise web.HTTPBadRequest(reason='Missing code')
+
+    async with aiohttp.ClientSession() as session:
+        resp = await session.post(
+            'https://discord.com/api/oauth2/token',
+            data={
+                'client_id': config.discord_client_id,
+                'client_secret': config.discord_client_secret,
+                'grant_type': 'authorization_code',
+                'code': code,
+            },
+        )
+        if resp.status != 200:
+            text = await resp.text()
+            logger.warning('Discord token exchange failed (%d): %s', resp.status, text)
+            raise web.HTTPBadGateway(reason='Discord token exchange failed')
+        data = await resp.json()
+
+    return web.json_response({'access_token': data['access_token']})
+
+
 async def _create_session(request: web.Request) -> web.Response:
     """POST /sessions — create a game session.
 
@@ -75,7 +107,9 @@ async def _create_session(request: web.Request) -> web.Response:
     except (ValueError, KeyError) as exc:
         raise web.HTTPUnprocessableEntity(reason=str(exc)) from exc
 
-    sessions[channel_id] = GameSession(channel_id, game)
+    session = GameSession(channel_id, game, body['siq_path'])
+    session.save()
+    sessions[channel_id] = session
     logger.info('Session created for channel %r', channel_id)
     return web.json_response({'channel_id': channel_id}, status=201)
 
@@ -84,20 +118,27 @@ async def _delete_session(request: web.Request) -> web.Response:
     """DELETE /sessions/{channel_id} — remove a session."""
     channel_id = request.match_info['channel_id']
     sessions: dict[str, GameSession] = request.app['sessions']
-    if sessions.pop(channel_id, None) is None:
+    session = sessions.pop(channel_id, None)
+    if session is None:
         raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
+    session.delete_saved()
     logger.info('Session removed for channel %r', channel_id)
     return web.Response(status=204)
 
 
-def create_app() -> web.Application:
+def create_app(sessions: dict | None = None) -> web.Application:
     """Create and return the aiohttp application.
 
     The session registry lives in app['sessions'] as a plain dict so
     tests can inspect or pre-populate it directly.
+
+    Args:
+        sessions: Optional external sessions dict to share with the Discord cog.
+                  If None, a new empty dict is created.
     """
     app = web.Application()
-    app['sessions'] = {}
+    app['sessions'] = sessions if sessions is not None else {}
+    app.router.add_post('/token', _token_handler)
     app.router.add_post('/sessions', _create_session)
     app.router.add_delete('/sessions/{channel_id}', _delete_session)
     app.router.add_get('/ws/{channel_id}', _ws_handler)

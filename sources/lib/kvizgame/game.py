@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import Any
 
 from sources.lib.kvizgame.parser import Package, Question, Round
 
@@ -140,6 +141,11 @@ class GameMachine:
     def scores(self) -> dict[str, int]:
         """Current scores as {player_id: score}."""
         return {pid: p.score for pid, p in self._players.items()}
+
+    @property
+    def player_names(self) -> dict[str, str]:
+        """Display names as {player_id: name}."""
+        return {pid: p.name for pid, p in self._players.items()}
 
     @property
     def current_question(self) -> QuestionRef | None:
@@ -442,6 +448,79 @@ class GameMachine:
             raise GameError(
                 f'Action requires phase {expected.name}, current is {self._phase.name}'
             )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize game state to a JSON-compatible dict."""
+        return {
+            'settings': {'buzz_window_ms': self._settings.buzz_window_ms},
+            'players': [
+                {
+                    'id': p.id,
+                    'name': p.name,
+                    'score': p.score,
+                    'wrong_this_question': p._wrong_this_question,
+                }
+                for p in self._players.values()
+            ],
+            'player_order': self._player_order,
+            'active_player_idx': self._active_player_idx,
+            'round_idx': self._round_idx,
+            'board': [list(pair) for pair in self._board],
+            'phase': self._phase.name,
+            'current_question': (
+                {
+                    'theme_idx': self._current_question.theme_idx,
+                    'question_idx': self._current_question.question_idx,
+                    'theme_name': self._current_question.theme_name,
+                }
+                if self._current_question is not None
+                else None
+            ),
+            'current_answerer_id': self._current_answerer_id,
+            'auction_bid': self._auction_bid,
+            'buzzes': list(self._buzzes),
+        }
+
+    @classmethod
+    def from_dict(cls, package: Package, data: dict[str, Any]) -> GameMachine:
+        """Reconstruct a GameMachine from a dict produced by to_dict().
+
+        Args:
+            package: Re-parsed .siq package (questions are referenced by index).
+            data: Serialized state dict.
+        """
+        obj: GameMachine = cls.__new__(cls)
+        obj._settings = Settings(buzz_window_ms=data['settings']['buzz_window_ms'])
+        obj._players = {}
+        for p_data in data['players']:
+            p = Player(id=p_data['id'], name=p_data['name'], score=p_data['score'])
+            p._wrong_this_question = p_data['wrong_this_question']
+            obj._players[p.id] = p
+        obj._player_order = data['player_order']
+        obj._active_player_idx = data['active_player_idx']
+        obj._rounds = [r for r in package.rounds if not r.is_final]
+        obj._round_idx = data['round_idx']
+        obj._board = {(pair[0], pair[1]) for pair in data['board']}
+        obj._phase = Phase[data['phase']]
+
+        cq_data = data.get('current_question')
+        if cq_data is not None:
+            t_idx = cq_data['theme_idx']
+            q_idx = cq_data['question_idx']
+            theme = obj._rounds[obj._round_idx].themes[t_idx]
+            obj._current_question = QuestionRef(
+                theme_idx=t_idx,
+                question_idx=q_idx,
+                theme_name=cq_data['theme_name'],
+                question=theme.questions[q_idx],
+            )
+        else:
+            obj._current_question = None
+
+        obj._current_answerer_id = data.get('current_answerer_id')
+        obj._auction_bid = data.get('auction_bid', 0)
+        obj._buzzes = data.get('buzzes', [])
+        return obj
 
     def _reset_for_new_question(self) -> None:
         self._buzzes.clear()

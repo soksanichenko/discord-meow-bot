@@ -16,9 +16,11 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 # Maps atom type to the archive folder holding its media files.
+# 'voice' is the v4 name; 'audio' is used in v5 packs.
 _MEDIA_FOLDERS: dict[str, str] = {
     'image': 'Images',
     'voice': 'Audio',
+    'audio': 'Audio',
     'video': 'Video',
 }
 
@@ -203,6 +205,7 @@ def load(path: str | Path) -> SiqPackage:
     with zipfile.ZipFile(path) as zf:
         with zf.open('content.xml') as fp:
             root = ET.parse(fp).getroot()
+    _strip_namespace(root)
     package = _parse_package(root)
     return SiqPackage(package, path)
 
@@ -210,6 +213,18 @@ def load(path: str | Path) -> SiqPackage:
 # ---------------------------------------------------------------------------
 # Internal XML parsing helpers
 # ---------------------------------------------------------------------------
+
+
+def _strip_namespace(el: ET.Element) -> None:
+    """Remove XML namespace prefixes from all tags in-place.
+
+    ElementTree preserves Clark-notation namespaces ({uri}tag) which
+    breaks plain-text XPath queries. This strips them so findall works
+    regardless of whether the file declares xmlns=.
+    """
+    for node in el.iter():
+        if '}' in node.tag:
+            node.tag = node.tag.split('}', 1)[1]
 
 
 def _parse_package(el: ET.Element) -> Package:
@@ -257,6 +272,7 @@ def _parse_question(el: ET.Element) -> Question:
         price=int(price_str) if price_str.lstrip('-').isdigit() else 0,
     )
 
+    # v4: <type name="auction"> / v5: no separate type element (type in <params>)
     el_type = el.find('type')
     if el_type is not None:
         question.q_type = el_type.get('name', 'simple')
@@ -264,16 +280,36 @@ def _parse_question(el: ET.Element) -> Question:
             p.get('name', ''): (p.text or '') for p in el_type.findall('param')
         }
 
-    question.scenario = [_parse_atom(a) for a in el.findall('./scenario/atom')]
+    # v4: <scenario><atom>  /  v5: <params><param name="question"><item>
+    if el.find('scenario') is not None:
+        question.scenario = [_parse_atom(a) for a in el.findall('./scenario/atom')]
+    else:
+        question.scenario = [
+            _parse_item(i) for i in el.findall('./params/param[@name="question"]/item')
+        ]
+
     question.right = [a.text or '' for a in el.findall('./right/answer')]
     question.wrong = [a.text or '' for a in el.findall('./wrong/answer')]
     return question
 
 
 def _parse_atom(el: ET.Element) -> Atom:
+    """Parse a v4 <atom> element."""
     time_str = el.get('time', '0')
     return Atom(
         type=el.get('type', 'text'),
+        content=el.text or '',
+        time=int(time_str) if time_str.isdigit() else 0,
+    )
+
+
+def _parse_item(el: ET.Element) -> Atom:
+    """Parse a v5 <item> element inside <param name="question">."""
+    item_type = el.get('type', 'text')
+    # v5 uses 'text' for plain items (no type attr), same media types as v4
+    time_str = el.get('duration', '0')
+    return Atom(
+        type=item_type,
         content=el.text or '',
         time=int(time_str) if time_str.isdigit() else 0,
     )

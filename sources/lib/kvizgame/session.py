@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import pathlib
 from typing import Any
 
 from aiohttp import web
 
+from sources.config import config as _config
 from sources.lib.kvizgame.game import GameError, GameMachine, Phase
+from sources.lib.kvizgame.parser import load as _load_siq
 from sources.lib.kvizgame.protocol import In, Out, decode, encode
 
 logger = logging.getLogger(__name__)
@@ -25,9 +29,10 @@ class GameSession:
         game: Initialised GameMachine ready to play.
     """
 
-    def __init__(self, channel_id: str, game: GameMachine) -> None:
+    def __init__(self, channel_id: str, game: GameMachine, siq_path: str) -> None:
         self._channel_id = channel_id
         self._game = game
+        self._siq_path = siq_path
         self._players: dict[str, web.WebSocketResponse] = {}
         self._buzz_task: asyncio.Task[None] | None = None
 
@@ -36,8 +41,54 @@ class GameSession:
         return self._channel_id
 
     @property
+    def phase(self) -> Phase:
+        return self._game.phase
+
+    @property
     def player_count(self) -> int:
         return len(self._players)
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self) -> None:
+        """Write session state to disk; no-op if phase is GAME_OVER."""
+        if self._game.phase == Phase.GAME_OVER:
+            self.delete_saved()
+            return
+        sessions_dir = pathlib.Path(_config.kvizgame_sessions_dir)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        data = {
+            'channel_id': self._channel_id,
+            'siq_path': self._siq_path,
+            'game': self._game.to_dict(),
+        }
+        (sessions_dir / f'{self._channel_id}.json').write_text(json.dumps(data))
+
+    def delete_saved(self) -> None:
+        """Remove the saved session file, if it exists."""
+        path = pathlib.Path(_config.kvizgame_sessions_dir) / f'{self._channel_id}.json'
+        path.unlink(missing_ok=True)
+
+    @classmethod
+    def load(cls, path: pathlib.Path) -> GameSession:
+        """Restore a session from a file written by save().
+
+        Args:
+            path: Path to the JSON session file.
+
+        Returns:
+            Restored GameSession (no WebSocket connections — players reconnect).
+
+        Raises:
+            Exception: If the file is missing, corrupt, or the .siq pack is gone.
+        """
+        data = json.loads(path.read_text())
+        siq_path = data['siq_path']
+        package = _load_siq(siq_path).package
+        game = GameMachine.from_dict(package, data['game'])
+        return cls(data['channel_id'], game, siq_path)
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -216,6 +267,7 @@ class GameSession:
 
         return {
             'phase': phase.name,
+            'player_names': game.player_names,
             'active_player_id': game.active_player_id
             if phase != Phase.GAME_OVER
             else None,
@@ -247,6 +299,7 @@ class GameSession:
 
     async def _broadcast_state(self) -> None:
         await self._broadcast(Out.STATE, self._state_data())
+        self.save()
 
     async def _send_error(self, player_id: str, message: str) -> None:
         ws = self._players.get(player_id)
