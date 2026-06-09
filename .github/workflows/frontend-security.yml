@@ -39,6 +39,6 @@ jobs:
 
       - uses: SocketDev/action@v1
         with:
-          api-key: ${{ secrets.ACTIONS_SOCKET_SCAN }}
-          working-directory: frontend
+          socket-token: ${{ secrets.ACTIONS_SOCKET_SCAN }}
+          patch-cwd: frontend
 ...
