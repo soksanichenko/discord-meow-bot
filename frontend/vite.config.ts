@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['al10.mshome.net'],
     // In local dev the Discord proxy doesn't exist, so Vite replicates it:
     // requests to /api/* are forwarded to the Python backend on port 8082
     // with the /api prefix stripped — matching what Discord's proxy does in prod.

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import pathlib
+import urllib.parse
 
 import aiohttp
 from aiohttp import WSMsgType, web
@@ -13,6 +15,8 @@ from sources.lib.kvizgame.parser import load
 from sources.lib.kvizgame.session import GameSession
 
 logger = logging.getLogger(__name__)
+
+_VALID_MEDIA_FOLDERS = frozenset({'Images', 'Audio', 'Video'})
 
 
 async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
@@ -86,7 +90,7 @@ async def _create_session(request: web.Request) -> web.Response:
     """
     body = await request.json()
 
-    required = {'channel_id', 'siq_path', 'player_ids', 'player_names'}
+    required = {'channel_id', 'siq_path', 'player_ids', 'player_names', 'host_id'}
     missing = required - body.keys()
     if missing:
         raise web.HTTPBadRequest(reason=f'Missing fields: {", ".join(sorted(missing))}')
@@ -107,11 +111,37 @@ async def _create_session(request: web.Request) -> web.Response:
     except (ValueError, KeyError) as exc:
         raise web.HTTPUnprocessableEntity(reason=str(exc)) from exc
 
-    session = GameSession(channel_id, game, body['siq_path'])
+    session = GameSession(channel_id, game, body['siq_path'], body['host_id'])
     session.save()
     sessions[channel_id] = session
     logger.info('Session created for channel %r', channel_id)
     return web.json_response({'channel_id': channel_id}, status=201)
+
+
+async def _media_handler(request: web.Request) -> web.Response:
+    """GET /media/{channel_id}/{media_path} — serve a pre-extracted media file.
+
+    media_path must start with Images/, Audio/, or Video/.
+    Files are extracted from the .siq archive at session creation time and
+    served directly from the filesystem, supporting Range requests for video.
+    """
+    channel_id = request.match_info['channel_id']
+    media_path = request.match_info['media_path']
+
+    folder = media_path.split('/')[0] if '/' in media_path else ''
+    if folder not in _VALID_MEDIA_FOLDERS:
+        raise web.HTTPForbidden(reason='Invalid media path')
+
+    sessions: dict[str, GameSession] = request.app['sessions']
+    session = sessions.get(channel_id)
+    if session is None:
+        raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
+
+    file_path = pathlib.Path(session.media_dir) / urllib.parse.unquote(media_path)
+    if not file_path.is_file():
+        raise web.HTTPNotFound(reason=f'Media file {media_path!r} not found')
+
+    return web.FileResponse(file_path)
 
 
 async def _delete_session(request: web.Request) -> web.Response:
@@ -141,5 +171,6 @@ def create_app(sessions: dict | None = None) -> web.Application:
     app.router.add_post('/token', _token_handler)
     app.router.add_post('/sessions', _create_session)
     app.router.add_delete('/sessions/{channel_id}', _delete_session)
+    app.router.add_get('/media/{channel_id}/{media_path:.*}', _media_handler)
     app.router.add_get('/ws/{channel_id}', _ws_handler)
     return app

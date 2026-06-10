@@ -6,6 +6,10 @@ import asyncio
 import json
 import logging
 import pathlib
+import shutil
+import tempfile
+import urllib.parse
+import zipfile
 from typing import Any
 
 from aiohttp import web
@@ -17,6 +21,8 @@ from sources.lib.kvizgame.protocol import In, Out, decode, encode
 
 logger = logging.getLogger(__name__)
 
+_MEDIA_FOLDERS = frozenset({'Images', 'Audio', 'Video'})
+
 # How long to wait for any buzz before auto-closing (both window modes).
 _BUZZ_AUTO_CLOSE_S = 30.0
 
@@ -27,12 +33,20 @@ class GameSession:
     Args:
         channel_id: Stable identifier for this session (e.g. Discord channel ID).
         game: Initialised GameMachine ready to play.
+        siq_path: Path to the .siq archive.
+        host_id: Discord user ID of the host (not a player).
     """
 
-    def __init__(self, channel_id: str, game: GameMachine, siq_path: str) -> None:
+    def __init__(
+        self, channel_id: str, game: GameMachine, siq_path: str, host_id: str
+    ) -> None:
         self._channel_id = channel_id
         self._game = game
         self._siq_path = siq_path
+        self._host_id = host_id
+        self._paused: bool = False
+        self._appeal_by: str | None = None
+        self._media_dir = self._extract_media() if siq_path else ''
         self._players: dict[str, web.WebSocketResponse] = {}
         self._buzz_task: asyncio.Task[None] | None = None
 
@@ -41,12 +55,58 @@ class GameSession:
         return self._channel_id
 
     @property
+    def host_id(self) -> str:
+        return self._host_id
+
+    @property
+    def siq_path(self) -> str:
+        return self._siq_path
+
+    @property
+    def media_dir(self) -> str:
+        return self._media_dir
+
+    @property
     def phase(self) -> Phase:
         return self._game.phase
 
     @property
     def player_count(self) -> int:
         return len(self._players)
+
+    # ------------------------------------------------------------------
+    # Media extraction
+    # ------------------------------------------------------------------
+
+    def _extract_media(self) -> str:
+        """Extract media folders from the .siq archive into a fresh temp directory.
+
+        Uses metadata_encoding='cp866' so Cyrillic filenames stored without the
+        UTF-8 flag (common in Russian SIGame packs) are decoded correctly.
+        Entries that carry the UTF-8 flag are unaffected by metadata_encoding.
+        """
+        dest = tempfile.mkdtemp(prefix='kvizgame_media_')
+        with zipfile.ZipFile(self._siq_path, metadata_encoding='cp866') as zf:
+            members = [
+                m
+                for m in zf.namelist()
+                if m.split('/')[0] in _MEDIA_FOLDERS and not m.endswith('/')
+            ]
+            for member in members:
+                # Some packs URL-encode filenames inside the ZIP.
+                # Decode to get the real Cyrillic name; avoids the 255-byte FS limit.
+                decoded = urllib.parse.unquote(member)
+                target = pathlib.Path(dest) / decoded
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member) as src, target.open('wb') as dst:
+                    shutil.copyfileobj(src, dst)
+        logger.debug(
+            'Extracted %d media files for session %r to %s',
+            len(members),
+            self._channel_id,
+            dest,
+        )
+        return dest
 
     # ------------------------------------------------------------------
     # Persistence
@@ -62,14 +122,20 @@ class GameSession:
         data = {
             'channel_id': self._channel_id,
             'siq_path': self._siq_path,
+            'host_id': self._host_id,
+            'paused': self._paused,
+            'appeal_by': self._appeal_by,
             'game': self._game.to_dict(),
         }
         (sessions_dir / f'{self._channel_id}.json').write_text(json.dumps(data))
 
     def delete_saved(self) -> None:
-        """Remove the saved session file, if it exists."""
+        """Remove the saved session file and extracted media directory."""
         path = pathlib.Path(_config.kvizgame_sessions_dir) / f'{self._channel_id}.json'
         path.unlink(missing_ok=True)
+        if self._media_dir:
+            shutil.rmtree(self._media_dir, ignore_errors=True)
+            self._media_dir = ''
 
     @classmethod
     def load(cls, path: pathlib.Path) -> GameSession:
@@ -88,7 +154,10 @@ class GameSession:
         siq_path = data['siq_path']
         package = _load_siq(siq_path).package
         game = GameMachine.from_dict(package, data['game'])
-        return cls(data['channel_id'], game, siq_path)
+        session = cls(data['channel_id'], game, siq_path, data['host_id'])
+        session._paused = data.get('paused', False)
+        session._appeal_by = data.get('appeal_by')
+        return session
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -148,6 +217,12 @@ class GameSession:
             await self._send_error(player_id, str(exc))
 
     async def _dispatch(self, player_id: str, op: str, data: dict[str, Any]) -> None:
+        appeal_ops = (In.RESOLVE_APPEAL,)
+        if self._appeal_by and op not in appeal_ops:
+            raise GameError('An appeal is pending')
+        if self._paused and op not in (In.RESUME, In.CORRECT_SCORES, *appeal_ops):
+            raise GameError('Game is paused')
+
         game = self._game
 
         if op == In.SELECT:
@@ -165,6 +240,8 @@ class GameSession:
             await self._broadcast_state()
 
         elif op == In.OPEN_BUZZER:
+            if player_id != self._host_id:
+                raise GameError('Only the host can open the buzzer')
             phase = game.open_buzzer()
             await self._broadcast_state()
             if phase == Phase.BUZZER_OPEN:
@@ -178,16 +255,98 @@ class GameSession:
                 await self._broadcast_state()
 
         elif op == In.JUDGE:
+            if player_id != self._host_id:
+                raise GameError('Only the host can judge answers')
             game.judge_answer(bool(data['correct']))
             await self._broadcast_state()
 
         elif op == In.ADVANCE:
+            if player_id != self._host_id:
+                raise GameError('Only the host can advance')
+
             game.advance()
             await self._broadcast_state()
 
         elif op == In.NEXT_ROUND:
             game.next_round()
             await self._broadcast_state()
+
+        elif op == In.PLACE_FINAL_BID:
+            game.place_final_bid(player_id, int(data['amount']))
+            await self._broadcast_state()
+
+        elif op == In.SUBMIT_FINAL_ANSWER:
+            game.submit_final_answer(player_id, str(data.get('answer', '')))
+            await self._broadcast_state()
+
+        elif op == In.START_FINAL_JUDGING:
+            if player_id != self._host_id:
+                raise GameError('Only the host can start judging')
+            game.start_final_judging()
+            await self._broadcast_state()
+
+        elif op == In.JUDGE_FINAL:
+            if player_id != self._host_id:
+                raise GameError('Only the host can judge final answers')
+            game.judge_final_answer(bool(data['correct']))
+            await self._broadcast_state()
+
+        elif op == In.CORRECT_SCORES:
+            if player_id != self._host_id:
+                raise GameError('Only the host can correct scores')
+            adjustments: dict[str, int] = {
+                str(k): int(v)
+                for k, v in data.get('adjustments', {}).items()
+                if int(v) != 0
+            }
+            if adjustments:
+                game.correct_scores(adjustments)
+                await self._broadcast_state()
+
+        elif op == In.PAUSE:
+            if player_id != self._host_id:
+                raise GameError('Only the host can pause')
+            if not self._paused:
+                self._paused = True
+                self._cancel_buzz_task()
+                await self._broadcast_state()
+
+        elif op == In.RESUME:
+            if player_id != self._host_id:
+                raise GameError('Only the host can resume')
+            if self._paused:
+                self._paused = False
+                await self._broadcast_state()
+                if self._game.phase == Phase.BUZZER_OPEN:
+                    await self._schedule_buzz_close()
+
+        elif op == In.REQUEST_APPEAL:
+            eligible = game.last_wrong_judged_id
+            if player_id == self._host_id:
+                raise GameError('Host cannot request an appeal')
+            if eligible is None:
+                raise GameError('No wrong judgment to appeal')
+            if player_id != eligible:
+                raise GameError('Only the judged player can appeal')
+            if self._appeal_by:
+                raise GameError('An appeal is already pending')
+            self._appeal_by = player_id
+            self._paused = True
+            self._cancel_buzz_task()
+            await self._broadcast_state()
+
+        elif op == In.RESOLVE_APPEAL:
+            if player_id != self._host_id:
+                raise GameError('Only the host can resolve an appeal')
+            if not self._appeal_by:
+                raise GameError('No appeal is pending')
+            if bool(data.get('accept')):
+                game.accept_appeal()
+            self._appeal_by = None
+            self._paused = False
+            await self._broadcast_state()
+            if game.phase == Phase.BUZZER_OPEN:
+                await self._schedule_buzz_close()
 
         else:
             raise ValueError(f'Unknown op {op!r}')
@@ -265,8 +424,34 @@ class GameSession:
                 'right': cq.question.right,
             }
 
+        final_state: dict[str, Any] = {}
+        if phase in (Phase.FINAL_BID, Phase.FINAL_QUESTION, Phase.FINAL_JUDGING):
+            final_state['final_round_name'] = (
+                game._final_round.name if game._final_round else ''
+            )
+            final_state['final_theme_name'] = game.final_theme_name
+            final_state['final_bids_submitted'] = game.final_bids_submitted
+            final_state['final_answers_submitted'] = game.final_answers_submitted
+            if phase == Phase.FINAL_QUESTION and game.final_question is not None:
+                q = game.final_question
+                final_state['final_question'] = {
+                    'scenario': [
+                        {'type': a.type, 'content': a.content, 'time': a.time}
+                        for a in q.scenario
+                    ],
+                    'right': q.right,
+                }
+            if phase == Phase.FINAL_JUDGING:
+                final_state['final_current_judge_id'] = game.final_current_judge_id
+                final_state['final_current_answer'] = game.final_current_answer()
+                final_state['final_current_bid'] = game.final_current_bid()
+
         return {
             'phase': phase.name,
+            'host_id': self._host_id,
+            'paused': self._paused,
+            'appeal_by': self._appeal_by,
+            'last_judged_id': game.last_wrong_judged_id,
             'player_names': game.player_names,
             'active_player_id': game.active_player_id
             if phase != Phase.GAME_OVER
@@ -277,6 +462,7 @@ class GameSession:
             'current_question': current_question,
             'current_answerer_id': game.current_answerer_id,
             'connected_players': list(self._players.keys()),
+            **final_state,
         }
 
     # ------------------------------------------------------------------

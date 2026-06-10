@@ -664,6 +664,32 @@ class TestRemoveTelegramRelay:
         session.commit.assert_awaited_once()
 
 
+class TestRemoveTelegramRelayById:
+    async def test_returns_none_when_not_found(self):
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.telegram_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.telegram_relay import remove_relay_by_id
+
+            result = await remove_relay_by_id(relay_id=99, guild_id=1)
+        assert result is None
+        session.delete.assert_not_awaited()
+
+    async def test_returns_username_and_deletes_when_found(self):
+        relay = SimpleNamespace(tg_username='mychannel')
+        session, ctx = _make_session(scalar=relay)
+        with patch(
+            'sources.lib.db.operations.telegram_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.telegram_relay import remove_relay_by_id
+
+            result = await remove_relay_by_id(relay_id=1, guild_id=1)
+        assert result == 'mychannel'
+        session.delete.assert_awaited_once_with(relay)
+        session.commit.assert_awaited_once()
+
+
 class TestUpdateTelegramRelayChannel:
     async def test_returns_none_when_not_found(self):
         session, ctx = _make_session()

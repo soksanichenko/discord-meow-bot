@@ -93,6 +93,31 @@ async def remove_relay(guild_id: int, tg_username: str) -> bool:
         return True
 
 
+async def remove_relay_by_id(relay_id: int, guild_id: int) -> str | None:
+    """Remove a Telegram relay by primary key.
+
+    Args:
+        relay_id: Primary key of the TelegramRelay row.
+        guild_id: Discord guild ID (scope guard — prevents removing another guild's relay).
+
+    Returns:
+        tg_username of the deleted relay, or None if not found.
+    """
+    async with AsyncSession() as session:
+        relay = await session.scalar(
+            select(TelegramRelay).where(
+                TelegramRelay.id == relay_id,
+                TelegramRelay.guild_id == guild_id,
+            )
+        )
+        if relay is None:
+            return None
+        username = relay.tg_username
+        await session.delete(relay)
+        await session.commit()
+        return username
+
+
 async def update_relay_channel(
     relay_id: int, guild_id: int, discord_channel_id: int
 ) -> str | None:

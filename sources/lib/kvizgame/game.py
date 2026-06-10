@@ -21,6 +21,9 @@ class Phase(Enum):
     ANSWERING = auto()  # Nominated player is answering
     ANSWER_RESULT = auto()  # Result shown; call advance() to continue
     ROUND_END = auto()  # Round complete; call next_round() to continue
+    FINAL_BID = auto()  # Final round: all players submit bids
+    FINAL_QUESTION = auto()  # Final round: question shown, players type answers
+    FINAL_JUDGING = auto()  # Final round: host judges each player in turn
     GAME_OVER = auto()  # All playable rounds finished
 
 
@@ -107,6 +110,8 @@ class GameMachine:
         self._rounds = [r for r in package.rounds if not r.is_final]
         if not self._rounds:
             raise ValueError('Package has no playable (non-final) rounds')
+        final_rounds = [r for r in package.rounds if r.is_final]
+        self._final_round: Round | None = final_rounds[0] if final_rounds else None
 
         self._round_idx = 0
         self._board: set[tuple[int, int]] = set()
@@ -115,8 +120,19 @@ class GameMachine:
         self._current_answerer_id: str | None = None
         self._auction_bid: int = 0
         self._buzzes: list[str] = []
+        self._last_judged_id: str | None = None
+        self._last_judged_stake: int = 0
+        self._last_judged_correct: bool = True
 
         self._phase = Phase.BOARD
+
+        # Final round state (populated when entering FINAL_BID)
+        self._final_theme_name: str = ''
+        self._final_question: Question | None = None
+        self._final_bids: dict[str, int] = {}
+        self._final_answers: dict[str, str] = {}
+        self._final_judgment_queue: list[str] = []
+        self._final_current_judge_id: str | None = None
 
     # ------------------------------------------------------------------
     # Read-only properties
@@ -172,6 +188,43 @@ class GameMachine:
         """True when every question in the current round has been played."""
         total = sum(len(t.questions) for t in self.current_round.themes)
         return len(self._board) >= total
+
+    @property
+    def has_final_round(self) -> bool:
+        """True if the package contains a final round."""
+        return self._final_round is not None
+
+    @property
+    def final_theme_name(self) -> str:
+        return self._final_theme_name
+
+    @property
+    def final_question(self) -> Question | None:
+        return self._final_question
+
+    @property
+    def final_bids_submitted(self) -> list[str]:
+        return list(self._final_bids.keys())
+
+    @property
+    def final_answers_submitted(self) -> list[str]:
+        return list(self._final_answers.keys())
+
+    @property
+    def final_current_judge_id(self) -> str | None:
+        return self._final_current_judge_id
+
+    def final_current_answer(self) -> str:
+        """Answer of the player currently being judged."""
+        if self._final_current_judge_id is None:
+            return ''
+        return self._final_answers.get(self._final_current_judge_id, '')
+
+    def final_current_bid(self) -> int:
+        """Bid of the player currently being judged."""
+        if self._final_current_judge_id is None:
+            return 0
+        return self._final_bids.get(self._final_current_judge_id, 0)
 
     # ------------------------------------------------------------------
     # Phase: BOARD
@@ -381,6 +434,10 @@ class GameMachine:
         question = self._current_question.question
         stake = self._auction_bid if question.q_type == 'auction' else question.price
 
+        self._last_judged_id = player.id
+        self._last_judged_stake = stake
+        self._last_judged_correct = correct
+
         if correct:
             player.score += stake
             self._active_player_idx = self._player_order.index(player.id)
@@ -417,31 +474,174 @@ class GameMachine:
         self._current_answerer_id = None
         self._auction_bid = 0
         self._buzzes.clear()
+        self._last_judged_id = None
 
         self._phase = Phase.ROUND_END if self.round_complete else Phase.BOARD
         return self._phase
+
+    def accept_appeal(self) -> None:
+        """Reverse the most recent wrong judgment: undo penalty and award the stake.
+
+        The appealing player's score is corrected (+stake*2) and they become
+        the active player for the next question.
+
+        Raises:
+            GameError: Not in ANSWER_RESULT or last judgment was not wrong.
+        """
+        self._require_phase(Phase.ANSWER_RESULT)
+        if self._last_judged_id is None or self._last_judged_correct:
+            raise GameError('No wrong judgment to appeal')
+        player = self._players[self._last_judged_id]
+        player.score += self._last_judged_stake * 2
+        player._wrong_this_question = False
+        self._active_player_idx = self._player_order.index(self._last_judged_id)
+        self._last_judged_id = None
+
+    @property
+    def last_wrong_judged_id(self) -> str | None:
+        """Player eligible to appeal: the last judged player, only if wrong."""
+        if not self._last_judged_correct and self._last_judged_id is not None:
+            return self._last_judged_id
+        return None
 
     # ------------------------------------------------------------------
     # Phase: ROUND_END
     # ------------------------------------------------------------------
 
     def next_round(self) -> Phase:
-        """Advance to the next non-final round, or end the game.
+        """Advance to the next non-final round, or start the final round, or end the game.
 
         Returns:
-            BOARD if another round exists, GAME_OVER otherwise.
+            BOARD, FINAL_BID, or GAME_OVER.
         """
         self._require_phase(Phase.ROUND_END)
         self._round_idx += 1
         self._board.clear()
+        if self._round_idx < len(self._rounds):
+            self._phase = Phase.BOARD
+        elif self._final_round is not None:
+            self._start_final()
+        else:
+            self._phase = Phase.GAME_OVER
+        return self._phase
+
+    # ------------------------------------------------------------------
+    # Phase: FINAL_BID
+    # ------------------------------------------------------------------
+
+    def _start_final(self) -> None:
+        """Initialise final round state and transition to FINAL_BID."""
+        assert self._final_round is not None
+        self._final_bids = {}
+        self._final_answers = {}
+        self._final_judgment_queue = []
+        self._final_current_judge_id = None
+        theme = self._final_round.themes[0] if self._final_round.themes else None
+        self._final_theme_name = theme.name if theme else ''
+        self._final_question = (
+            theme.questions[0] if (theme and theme.questions) else None
+        )
+        self._phase = Phase.FINAL_BID
+
+    def place_final_bid(self, player_id: str, amount: int) -> Phase:
+        """Player submits a bid for the final round.
+
+        Args:
+            player_id: The bidding player.
+            amount: Bid amount; must be at least 1.
+
+        Returns:
+            FINAL_BID while waiting for others; FINAL_QUESTION when all have bid.
+        """
+        self._require_phase(Phase.FINAL_BID)
+        if player_id not in self._players:
+            raise GameError(f'Unknown player {player_id!r}')
+        if player_id in self._final_bids:
+            raise GameError('Already placed a bid')
+        if amount < 1:
+            raise GameError('Bid must be at least 1')
+        self._final_bids[player_id] = amount
+        if set(self._final_bids) == set(self._players):
+            self._phase = Phase.FINAL_QUESTION
+        return self._phase
+
+    # ------------------------------------------------------------------
+    # Phase: FINAL_QUESTION
+    # ------------------------------------------------------------------
+
+    def submit_final_answer(self, player_id: str, answer: str) -> None:
+        """Player submits their written answer.
+
+        Args:
+            player_id: The answering player.
+            answer: The player's answer text.
+        """
+        self._require_phase(Phase.FINAL_QUESTION)
+        if player_id not in self._players:
+            raise GameError(f'Unknown player {player_id!r}')
+        self._final_answers[player_id] = answer.strip()
+
+    def start_final_judging(self) -> Phase:
+        """Host starts the judging phase.
+
+        Returns:
+            FINAL_JUDGING, or GAME_OVER if no players to judge.
+        """
+        self._require_phase(Phase.FINAL_QUESTION)
+        self._final_judgment_queue = list(self._players.keys())
+        self._final_current_judge_id = (
+            self._final_judgment_queue.pop(0) if self._final_judgment_queue else None
+        )
         self._phase = (
-            Phase.GAME_OVER if self._round_idx >= len(self._rounds) else Phase.BOARD
+            Phase.FINAL_JUDGING if self._final_current_judge_id else Phase.GAME_OVER
+        )
+        return self._phase
+
+    # ------------------------------------------------------------------
+    # Phase: FINAL_JUDGING
+    # ------------------------------------------------------------------
+
+    def judge_final_answer(self, correct: bool) -> Phase:
+        """Host judges the current player's final answer.
+
+        Args:
+            correct: True if the answer is accepted.
+
+        Returns:
+            FINAL_JUDGING if more players remain, GAME_OVER otherwise.
+        """
+        self._require_phase(Phase.FINAL_JUDGING)
+        if self._final_current_judge_id is None:
+            raise GameError('No player to judge')
+        player = self._players[self._final_current_judge_id]
+        bid = self._final_bids.get(self._final_current_judge_id, 0)
+        player.score += bid if correct else -bid
+        self._final_current_judge_id = (
+            self._final_judgment_queue.pop(0) if self._final_judgment_queue else None
+        )
+        self._phase = (
+            Phase.FINAL_JUDGING if self._final_current_judge_id else Phase.GAME_OVER
         )
         return self._phase
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def correct_scores(self, adjustments: dict[str, int]) -> None:
+        """Apply manual score deltas.
+
+        Args:
+            adjustments: Mapping of player_id → delta to add (negative to subtract).
+
+        Raises:
+            GameError: If any player_id is unknown.
+        """
+        unknown = set(adjustments) - set(self._players)
+        if unknown:
+            raise GameError(f'Unknown player(s): {", ".join(sorted(unknown))}')
+        for pid, delta in adjustments.items():
+            self._players[pid].score += delta
 
     def _require_phase(self, expected: Phase) -> None:
         if self._phase != expected:
@@ -479,6 +679,13 @@ class GameMachine:
             'current_answerer_id': self._current_answerer_id,
             'auction_bid': self._auction_bid,
             'buzzes': list(self._buzzes),
+            'last_judged_id': self._last_judged_id,
+            'last_judged_stake': self._last_judged_stake,
+            'last_judged_correct': self._last_judged_correct,
+            'final_bids': self._final_bids,
+            'final_answers': self._final_answers,
+            'final_judgment_queue': self._final_judgment_queue,
+            'final_current_judge_id': self._final_current_judge_id,
         }
 
     @classmethod
@@ -499,6 +706,8 @@ class GameMachine:
         obj._player_order = data['player_order']
         obj._active_player_idx = data['active_player_idx']
         obj._rounds = [r for r in package.rounds if not r.is_final]
+        final_rounds = [r for r in package.rounds if r.is_final]
+        obj._final_round = final_rounds[0] if final_rounds else None
         obj._round_idx = data['round_idx']
         obj._board = {(pair[0], pair[1]) for pair in data['board']}
         obj._phase = Phase[data['phase']]
@@ -520,11 +729,31 @@ class GameMachine:
         obj._current_answerer_id = data.get('current_answerer_id')
         obj._auction_bid = data.get('auction_bid', 0)
         obj._buzzes = data.get('buzzes', [])
+        obj._last_judged_id = data.get('last_judged_id')
+        obj._last_judged_stake = data.get('last_judged_stake', 0)
+        obj._last_judged_correct = data.get('last_judged_correct', True)
+        obj._final_bids = data.get('final_bids', {})
+        obj._final_answers = data.get('final_answers', {})
+        obj._final_judgment_queue = data.get('final_judgment_queue', [])
+        obj._final_current_judge_id = data.get('final_current_judge_id')
+        # Restore final question reference if in a final phase
+        final_phases = {Phase.FINAL_BID, Phase.FINAL_QUESTION, Phase.FINAL_JUDGING}
+        if obj._phase in final_phases and obj._final_round is not None:
+            theme = obj._final_round.themes[0] if obj._final_round.themes else None
+            obj._final_theme_name = theme.name if theme else ''
+            obj._final_question = (
+                theme.questions[0] if (theme and theme.questions) else None
+            )
+        else:
+            obj._final_theme_name = ''
+            obj._final_question = None
         return obj
 
     def _reset_for_new_question(self) -> None:
         self._buzzes.clear()
         self._current_answerer_id = None
         self._auction_bid = 0
+        self._last_judged_id = None
+        self._last_judged_correct = True
         for player in self._players.values():
             player._wrong_this_question = False

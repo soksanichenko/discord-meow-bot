@@ -20,7 +20,7 @@ from sources.lib.db.operations.telegram_relay import (
     add_relay,
     get_all_relays,
     get_guild_relays,
-    remove_relay,
+    remove_relay_by_id,
     update_last_entry_id,
     update_relay_channel,
 )
@@ -206,37 +206,6 @@ class TelegramRelayCog(commands.Cog):
             interaction.guild_id,
         )
 
-    @relay.command(name='remove', description='Stop forwarding a Telegram channel')
-    @app_commands.describe(username='Telegram channel username to remove (without @)')
-    @app_commands.default_permissions(manage_guild=True)
-    async def relay_remove(
-        self,
-        interaction: discord.Interaction,
-        username: str,
-    ) -> None:
-        """Remove a Telegram relay for this guild.
-
-        Args:
-            interaction: The Discord interaction.
-            username: Telegram channel username to stop relaying.
-        """
-        username = username.lstrip('@').lower()
-        deleted = await remove_relay(interaction.guild_id, username)
-        if not deleted:
-            await interaction.response.send_message(
-                f'No relay found for `@{username}`.',
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.send_message(
-            f'Relay for `@{username}` removed.',
-            ephemeral=True,
-        )
-        self.logger.info(
-            'Relay removed: @%s (guild %d)', username, interaction.guild_id
-        )
-
     async def _relay_autocomplete(
         self,
         interaction: discord.Interaction,
@@ -262,6 +231,46 @@ class TelegramRelayCog(commands.Cog):
             if current.lower() in name.lower():
                 choices.append(app_commands.Choice(name=name, value=str(r.id)))
         return choices[:25]
+
+    @relay.command(name='remove', description='Stop forwarding a Telegram channel')
+    @app_commands.describe(relay='Telegram relay to remove')
+    @app_commands.autocomplete(relay=_relay_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_remove(
+        self,
+        interaction: discord.Interaction,
+        relay: str,
+    ) -> None:
+        """Remove a Telegram relay for this guild.
+
+        Args:
+            interaction: The Discord interaction.
+            relay: Relay ID as string, supplied by autocomplete.
+        """
+        try:
+            relay_id = int(relay)
+        except ValueError:
+            await interaction.response.send_message(
+                'Please select a relay from the list.',
+                ephemeral=True,
+            )
+            return
+
+        username = await remove_relay_by_id(relay_id, interaction.guild_id)
+        if username is None:
+            await interaction.response.send_message(
+                'Relay not found.',
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f'Relay for `@{username}` removed.',
+            ephemeral=True,
+        )
+        self.logger.info(
+            'Relay removed: @%s (guild %d)', username, interaction.guild_id
+        )
 
     @relay.command(
         name='modify',

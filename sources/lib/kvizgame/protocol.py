@@ -30,6 +30,15 @@ class In:
     JUDGE = 'judge'  # Host judges the answer
     ADVANCE = 'advance'  # Host acknowledges result, moves on
     NEXT_ROUND = 'next_round'  # Host starts the next round
+    PAUSE = 'pause'  # Host pauses the game
+    RESUME = 'resume'  # Host resumes the game
+    CORRECT_SCORES = 'correct_scores'  # Host manually adjusts scores
+    PLACE_FINAL_BID = 'place_final_bid'  # Player bids in final round
+    SUBMIT_FINAL_ANSWER = 'submit_final_answer'  # Player submits final answer
+    START_FINAL_JUDGING = 'start_final_judging'  # Host starts final judging
+    JUDGE_FINAL = 'judge_final'  # Host judges a final answer
+    REQUEST_APPEAL = 'request_appeal'  # Player appeals host judgment
+    RESOLVE_APPEAL = 'resolve_appeal'  # Host accepts or rejects appeal
 
 
 # ---------------------------------------------------------------------------

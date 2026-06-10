@@ -6,6 +6,9 @@ import type { GameState } from './types';
 import { Board } from './screens/Board';
 import { Question } from './screens/Question';
 import { Scores } from './screens/Scores';
+import { FinalBid } from './screens/FinalBid';
+import { FinalQuestion } from './screens/FinalQuestion';
+import { FinalJudging } from './screens/FinalJudging';
 
 export function App() {
   const [auth, setAuth] = useState<AuthResult | null>(null);
@@ -26,7 +29,8 @@ function Game({ auth }: { auth: AuthResult }) {
   if (error) return <Centered style={{ color: '#ef9a9a' }}>{error}</Centered>;
   if (!state) return <Centered>{reconnecting ? 'Reconnecting…' : 'Joining game…'}</Centered>;
 
-  return <Screen state={state} playerId={auth.userId} send={send} />;
+  const isHost = state.host_id === auth.userId;
+  return <Screen state={state} channelId={auth.channelId} playerId={auth.userId} isHost={isHost} send={send} />;
 }
 
 const QUESTION_PHASES: GameState['phase'][] = [
@@ -36,30 +40,45 @@ const QUESTION_PHASES: GameState['phase'][] = [
 
 function Screen({
   state,
+  channelId,
   playerId,
+  isHost,
   send,
 }: {
   state: GameState;
+  channelId: string;
   playerId: string;
+  isHost: boolean;
   send: (op: string, d?: Record<string, unknown>) => void;
 }) {
   const { phase } = state;
 
   if (phase === 'BOARD') {
-    return <Board state={state} playerId={playerId} send={send} />;
+    return <Board state={state} playerId={playerId} isHost={isHost} send={send} />;
   }
 
   if (QUESTION_PHASES.includes(phase)) {
-    return <Question state={state} playerId={playerId} send={send} />;
+    return <Question state={state} channelId={channelId} playerId={playerId} isHost={isHost} send={send} />;
+  }
+
+  if (phase === 'FINAL_BID') {
+    return <FinalBid state={state} playerId={playerId} isHost={isHost} send={send} />;
+  }
+
+  if (phase === 'FINAL_QUESTION') {
+    return <FinalQuestion state={state} channelId={channelId} playerId={playerId} isHost={isHost} send={send} />;
+  }
+
+  if (phase === 'FINAL_JUDGING') {
+    return <FinalJudging state={state} isHost={isHost} send={send} />;
   }
 
   if (phase === 'ROUND_END') {
-    const isActive = state.active_player_id === playerId;
     return (
       <Centered>
         <h2 style={{ marginBottom: '1rem' }}>Round over</h2>
         <Scores scores={state.scores} playerNames={state.player_names} />
-        {isActive && (
+        {isHost && (
           <button onClick={() => send('next_round')} style={{ marginTop: '1.5rem', background: '#1565c0', color: '#fff', padding: '0.6rem 2rem' }}>
             Next Round →
           </button>

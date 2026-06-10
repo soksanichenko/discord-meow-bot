@@ -507,3 +507,96 @@ class TestPhaseGuard:
         _play_question(g)
         with pytest.raises(GameError, match='BUZZER_OPEN'):
             g.select_question('p1', 0, 1)
+
+
+# ---------------------------------------------------------------------------
+# Appeal
+# ---------------------------------------------------------------------------
+
+
+def _reach_answer_result_wrong(game: GameMachine, player: str = 'p1') -> None:
+    """Play to ANSWER_RESULT where *player* is the last wrong answerer.
+
+    With the default 2-player game, both players must answer wrong before the
+    phase moves to ANSWER_RESULT (no eligible buzzers remain).
+    """
+    other = 'p2' if player == 'p1' else 'p1'
+    game.select_question(player, 0, 0)
+    game.open_buzzer()
+    # other player buzzes and answers wrong first, phase → BUZZER_OPEN
+    game.buzz(other)
+    game.close_buzzer()
+    game.judge_answer(False)
+    # player buzzes and answers wrong, no one else can buzz → ANSWER_RESULT
+    game.buzz(player)
+    game.close_buzzer()
+    game.judge_answer(False)
+
+
+class TestAppeal:
+    def test_last_wrong_judged_id_set_after_wrong_answer(self):
+        g = _game()
+        _reach_answer_result_wrong(g, 'p1')
+        assert g.last_wrong_judged_id == 'p1'
+
+    def test_last_wrong_judged_id_none_after_correct_answer(self):
+        g = _game()
+        g.select_question('p1', 0, 0)
+        g.open_buzzer()
+        g.buzz('p1')
+        g.close_buzzer()
+        g.judge_answer(True)
+        assert g.last_wrong_judged_id is None
+
+    def test_accept_appeal_reverses_penalty_and_awards(self):
+        g = _game()
+        _reach_answer_result_wrong(g, 'p1')
+        score_before = g.scores['p1']
+        g.accept_appeal()
+        # penalty removed (+100) and award added (+100) = +200 from penalty state
+        assert g.scores['p1'] == score_before + 200
+
+    def test_accept_appeal_makes_player_active(self):
+        g = _game()
+        _reach_answer_result_wrong(g, 'p1')
+        g.accept_appeal()
+        assert g.active_player_id == 'p1'
+
+    def test_accept_appeal_clears_last_judged_id(self):
+        g = _game()
+        _reach_answer_result_wrong(g, 'p1')
+        g.accept_appeal()
+        assert g.last_wrong_judged_id is None
+
+    def test_accept_appeal_requires_wrong_judgment(self):
+        g = _game()
+        g.select_question('p1', 0, 0)
+        g.open_buzzer()
+        g.buzz('p1')
+        g.close_buzzer()
+        g.judge_answer(True)
+        with pytest.raises(GameError, match='No wrong judgment'):
+            g.accept_appeal()
+
+    def test_accept_appeal_requires_answer_result_phase(self):
+        g = _game()
+        with pytest.raises(GameError, match='BOARD'):
+            g.accept_appeal()
+
+    def test_advance_clears_last_judged_id(self):
+        g = _game()
+        _reach_answer_result_wrong(g, 'p1')
+        # wrong answer from p1, no one else can buzz (both played) — go to ANSWER_RESULT
+        g.advance()
+        assert g.last_wrong_judged_id is None
+
+    def test_serialisation_preserves_last_judged_state(self):
+        from sources.lib.kvizgame.parser import Package
+
+        rounds = [_round(themes=[_theme(questions=[_question(100)])])]
+        g = _game(rounds=rounds)
+        _reach_answer_result_wrong(g, 'p1')
+        data = g.to_dict()
+        pkg = Package(name='Test', rounds=rounds)
+        g2 = GameMachine.from_dict(pkg, data)
+        assert g2.last_wrong_judged_id == 'p1'

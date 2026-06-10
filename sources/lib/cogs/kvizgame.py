@@ -18,8 +18,6 @@ from sources.lib.utils.logger import Logger
 if TYPE_CHECKING:
     pass
 
-_MAX_PACK_SIZE = 100 * 1024 * 1024  # 100 MB
-
 
 class KvizGameCog(commands.Cog):
     """Commands for managing KvizGame packs and sessions.
@@ -61,14 +59,6 @@ class KvizGameCog(commands.Cog):
         if not pack.filename.lower().endswith('.siq'):
             await interaction.followup.send(
                 'Only .siq files are supported.', ephemeral=True
-            )
-            return
-
-        if pack.size > _MAX_PACK_SIZE:
-            await interaction.followup.send(
-                f'File must be 100 MB or smaller'
-                f' (received {pack.size / 1024 / 1024:.1f} MB).',
-                ephemeral=True,
             )
             return
 
@@ -159,10 +149,13 @@ class KvizGameCog(commands.Cog):
             )
             return
 
-        players = [m for m in voice_channel.members if not m.bot]
+        host_id = str(interaction.user.id)
+        players = [
+            m for m in voice_channel.members if not m.bot and str(m.id) != host_id
+        ]
         if len(players) < 2:
             await interaction.followup.send(
-                'Need at least 2 players in the voice channel.'
+                'Need at least 2 players in the voice channel (excluding the host).'
             )
             return
 
@@ -186,7 +179,7 @@ class KvizGameCog(commands.Cog):
             await interaction.followup.send(str(exc))
             return
 
-        session = GameSession(channel_id, game, str(siq_path))
+        session = GameSession(channel_id, game, str(siq_path), host_id)
         session.save()
         self._sessions[channel_id] = session
         self.logger.info(
