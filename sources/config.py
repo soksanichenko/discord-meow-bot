@@ -46,6 +46,7 @@ class Config(BaseSettings):
     kvizgame_port: int = 8082
     kvizgame_packs_dir: str = '/tmp/kvizgame-packs'
     kvizgame_sessions_dir: str = '/tmp/kvizgame-sessions'
+    kvizgame_frontend_dir: str = ''
     discord_client_id: str = ''
     discord_client_secret: str = ''
     sync_db_url: str = (

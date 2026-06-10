@@ -3,9 +3,12 @@ docker_lib_folder: "/opt/docker"
 docker_volumes:
   images:
     path: "volumes/meow-bot/images"
+  frontend:
+    path: "volumes/meow-bot/frontend"
 docker_network: "active"
 docker_extra_networks: []
 health_port: 8080
+kvizgame_port: 8082
 bot_image_tag: "latest"
 bot_image_pull: "always"
 ...

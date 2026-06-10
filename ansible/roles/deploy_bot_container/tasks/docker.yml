@@ -6,6 +6,13 @@
     state: directory
   become: yes
 
+- name: Create frontend volume directory
+  ansible.builtin.file:
+    path: "{{ docker_lib_folder }}/{{ docker_volumes['frontend']['path'] }}"
+    recurse: yes
+    state: directory
+  become: yes
+
 - name: Ensure Docker network exists
   community.docker.docker_network:
     name: "{{ docker_network }}"
@@ -41,8 +48,13 @@
         target: "/code/images"
         read_only: no
         type: bind
+      - source: "{{ docker_lib_folder }}/{{ docker_volumes['frontend']['path'] }}"
+        target: "/code/frontend"
+        read_only: yes
+        type: bind
     published_ports:
       - "127.0.0.1:{{ health_port }}:{{ health_port }}"
+      - "127.0.0.1:{{ kvizgame_port }}:{{ kvizgame_port }}"
     networks: "{{ [{'name': docker_network}] + docker_extra_networks }}"
     env:
       DISCORD_TOKEN: "{{ discord_token }}"
@@ -59,6 +71,7 @@
       RSSHUB_URL: "http://rsshub:1200"
       TWITCH_CLIENT_ID: "{{ twitch_client_id }}"
       TWITCH_CLIENT_SECRET: "{{ twitch_client_secret }}"
+      KVIZGAME_FRONTEND_DIR: "/code/frontend"
     log_driver: journald
   become: yes
   no_log: true

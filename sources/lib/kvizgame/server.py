@@ -187,4 +187,12 @@ def create_app(sessions: dict | None = None) -> web.Application:
     app.router.add_delete('/sessions/{channel_id}', _delete_session)
     app.router.add_get('/media/{channel_id}/{media_path:.*}', _media_handler)
     app.router.add_get('/ws/{channel_id}', _ws_handler)
+    if config.kvizgame_frontend_dir:
+        _frontend = pathlib.Path(config.kvizgame_frontend_dir)
+
+        async def _index(request: web.Request) -> web.FileResponse:
+            return web.FileResponse(_frontend / 'index.html')
+
+        app.router.add_get('/', _index)
+        app.router.add_static('/assets', _frontend / 'assets')
     return app

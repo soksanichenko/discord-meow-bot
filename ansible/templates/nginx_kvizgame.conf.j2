@@ -1,0 +1,16 @@
+# KvizGame — nginx location block for zelgray.work server block.
+# Place inside the existing `server { }` block in the infra repo.
+#
+# Discord Activity URL mappings (Developer Portal):
+#   Root URL : https://zelgray.work/kvizgame/
+#   /api     → https://zelgray.work/kvizgame   (Discord strips /api prefix)
+
+location /kvizgame/ {
+    proxy_pass         http://127.0.0.1:{{ kvizgame_port }}/;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection "upgrade";
+    proxy_set_header   Host       $host;
+    proxy_set_header   X-Real-IP  $remote_addr;
+    proxy_read_timeout 3600;
+}
