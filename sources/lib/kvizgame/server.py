@@ -12,7 +12,7 @@ from aiohttp import WSMsgType, web
 from sources.config import config
 from sources.lib.kvizgame.game import GameMachine, Settings
 from sources.lib.kvizgame.parser import load
-from sources.lib.kvizgame.session import GameSession
+from sources.lib.kvizgame.session import GameSession, cleanup_stale_media_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +156,18 @@ async def _delete_session(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
 
+async def _on_startup(app: web.Application) -> None:
+    active = {s.media_dir for s in app['sessions'].values() if s.media_dir}
+    cleanup_stale_media_dirs(active)
+
+
+async def _on_cleanup(app: web.Application) -> None:
+    # Media dirs for surviving sessions are cleaned now; load() will re-extract
+    # them if the server restarts with saved sessions still on disk.
+    active = {s.media_dir for s in app['sessions'].values() if s.media_dir}
+    cleanup_stale_media_dirs(active)
+
+
 def create_app(sessions: dict | None = None) -> web.Application:
     """Create and return the aiohttp application.
 
@@ -168,6 +180,8 @@ def create_app(sessions: dict | None = None) -> web.Application:
     """
     app = web.Application()
     app['sessions'] = sessions if sessions is not None else {}
+    app.on_startup.append(_on_startup)
+    app.on_cleanup.append(_on_cleanup)
     app.router.add_post('/token', _token_handler)
     app.router.add_post('/sessions', _create_session)
     app.router.add_delete('/sessions/{channel_id}', _delete_session)

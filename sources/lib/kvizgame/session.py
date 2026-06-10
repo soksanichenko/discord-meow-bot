@@ -22,6 +22,28 @@ from sources.lib.kvizgame.protocol import In, Out, decode, encode
 logger = logging.getLogger(__name__)
 
 _MEDIA_FOLDERS = frozenset({'Images', 'Audio', 'Video'})
+_MEDIA_DIR_PREFIX = 'kvizgame_media_'
+
+
+def cleanup_stale_media_dirs(active_dirs: set[str]) -> None:
+    """Remove /tmp/kvizgame_media_* directories not referenced by any active session.
+
+    Call this on server startup (to purge remnants of previous runs) and on
+    server shutdown (to purge dirs for sessions that won't be resumed).
+
+    Args:
+        active_dirs: Set of media_dir paths currently in use; these are kept.
+    """
+    tmp = pathlib.Path(tempfile.gettempdir())
+    for entry in tmp.iterdir():
+        if (
+            entry.is_dir()
+            and entry.name.startswith(_MEDIA_DIR_PREFIX)
+            and str(entry) not in active_dirs
+        ):
+            shutil.rmtree(entry, ignore_errors=True)
+            logger.debug('Removed stale media dir %s', entry)
+
 
 # How long to wait for any buzz before auto-closing (both window modes).
 _BUZZ_AUTO_CLOSE_S = 30.0
