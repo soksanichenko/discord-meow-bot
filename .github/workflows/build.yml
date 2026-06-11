@@ -1,0 +1,77 @@
+---
+name: Build
+run-name: "${{ github.event.workflow_run.display_title || 'Manual build' }}"
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  verify:
+    name: Verify collaborator
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip deploy]'))
+    steps:
+      - name: Check actor has write access
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const actor = context.payload.workflow_run?.actor?.login ?? context.actor;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor,
+            });
+            if (!['admin', 'write'].includes(data.permission)) {
+              core.setFailed(`${actor} does not have write access — build blocked`);
+            }
+
+  build:
+    name: Build and push (${{ matrix.env }})
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    strategy:
+      matrix:
+        include:
+          - env: prod
+            environment: production
+          - env: dev
+            environment: development
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ matrix.env }}-${{ github.event.workflow_run.head_sha || github.sha }}
+            ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ matrix.env }}-latest
+          build-args: |
+            VITE_DISCORD_CLIENT_ID=${{ secrets.VITE_DISCORD_CLIENT_ID }}
+...
