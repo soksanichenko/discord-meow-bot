@@ -14,17 +14,17 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  deploy:
-    name: deploy
+  verify:
+    name: Verify collaborator
     runs-on: ubuntu-latest
-    environment: production
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       !contains(github.event.workflow_run.head_commit.message, '[skip deploy]')
     steps:
-      - name: Verify actor is a collaborator
+      - name: Check actor is a collaborator
         uses: actions/github-script@v9
         with:
           script: |
@@ -39,32 +39,59 @@ jobs:
               core.setFailed(`${actor} is not a repository collaborator — deploy blocked`);
             }
 
+  build:
+    name: Build and push (${{ matrix.env }})
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    strategy:
+      matrix:
+        include:
+          - env: prod
+            environment: production
+          - env: dev
+            environment: development
+    steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          python-version: "3.12"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Ansible and Infisical SDK
-        run: pip install ansible infisicalsdk==1.0.16
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ matrix.env }}-${{ github.event.workflow_run.head_sha }}
+            ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ matrix.env }}-latest
+          build-args: |
+            VITE_DISCORD_CLIENT_ID=${{ secrets.VITE_DISCORD_CLIENT_ID }}
 
-      - name: Install Ansible collections
-        run: ansible-galaxy collection install -r requirements.yml
-        working-directory: ansible
-
-      - name: Set up SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-      - name: Run deploy
-        working-directory: ansible
-        env:
-          INFISICAL_API_URL: ${{ secrets.INFISICAL_API_URL }}
-          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
-          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml
+  dispatch:
+    name: Trigger infra deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Send repository dispatch to infra
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.DEPLOY_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: 'infra',
+              event_type: 'discord-meow-bot-deploy',
+              client_payload: {
+                sha: '${{ github.event.workflow_run.head_sha }}',
+                ref: 'master',
+              },
+            });
+...
