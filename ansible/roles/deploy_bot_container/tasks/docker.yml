@@ -58,6 +58,8 @@
     networks: "{{ [{'name': docker_network}] + docker_extra_networks }}"
     env:
       DISCORD_TOKEN: "{{ discord_token }}"
+      DISCORD_CLIENT_ID: "{{ discord_client_id }}"
+      DISCORD_CLIENT_SECRET: "{{ discord_client_secret }}"
       HEALTH_PORT: "{{ health_port | string }}"
       BIRTHDAY_IMAGES_DIR: "/code/images"
       YOUTUBE_API_KEY: "{{ youtube_api_key }}"
