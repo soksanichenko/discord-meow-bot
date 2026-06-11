@@ -30,7 +30,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const actor = context.payload.workflow_run.actor.login;
+            const actor = context.payload.workflow_run?.actor?.login ?? context.actor;
             try {
               await github.rest.repos.checkCollaborator({
                 owner: context.repo.owner,
