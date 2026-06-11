@@ -57,6 +57,9 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Ensure frontend directory exists
+        run: mkdir -p frontend
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:

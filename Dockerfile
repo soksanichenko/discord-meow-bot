@@ -1,9 +1,7 @@
-# syntax=docker/dockerfile:1.7
-
 # Stage 1: Build frontend (skipped if frontend/package.json is absent)
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app
-COPY --if-exists frontend/ ./
+COPY frontend/ ./
 RUN if [ -f package.json ]; then npm ci; fi
 ARG VITE_DISCORD_CLIENT_ID
 RUN if [ -f package.json ]; then npm run build; else mkdir -p dist; fi
