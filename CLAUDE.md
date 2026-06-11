@@ -54,8 +54,7 @@ sources/
 │   │   └── alembic/      # Migrations
 ├── config.py             # Pydantic settings — DBConfig + Config
 └── alembic.ini
-ansible/                  # Deployment — see Deployment section
-deploy.sh                 # Runs ansible-playbook for zelgray.work inventory
+deploy.sh                 # Legacy local deploy script — superseded by infra repo
 ```
 
 ## Architecture Principles
@@ -238,23 +237,23 @@ The port is published only to `127.0.0.1` on the host (Docker `published_ports`)
 
 ## Deployment
 
-Ansible-based, targets `zelgray.work` inventory. Secrets are managed via **Infisical** (Ansible `infisical.vault` collection) — not ansible-vault.
+Managed from the **[infra](https://github.com/soksanichenko/infra)** repository — do not add Ansible playbooks or roles here.
 
-```bash
-# Deploy
-./deploy.sh
-# Equivalent to:
-ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml
-```
+- Playbook: `vds/ansible/playbooks/discord-meow-bot.yml`
+- Container role: `vds/ansible/roles/discord-meow-bot/`
+- Nginx role: `vds/ansible/roles/discord-meow-bot-nginx/`
+- Secrets: Infisical, path `/zelgray-work`
+
+**Auto-deploy:** every push to `master` (after tests pass) triggers a `discord-meow-bot-deploy` repository dispatch to infra. The infra workflow checks out both repos and runs the playbook.
+
+**Manual deploy from any branch:** `infra → Actions → Deploy discord-meow-bot → Run workflow → bot_ref: <branch>`.
 
 Deployment does:
-1. Builds Docker image (AlmaLinux 10 + Python 3.12)
-2. Starts container with startup sequence: `create_db.py` → `alembic upgrade head` → `main.py`
+1. Builds Docker image (AlmaLinux 10 + Python 3.12) from `sources/` checked out on the Actions runner
+2. Starts container: `create_db.py` → `alembic upgrade head` → `main.py`
 3. Log driver: `journald`; restart policy: `always`
-4. Bind mounts:
-   - `sources/` → `/code/sources` (read-only)
-   - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
-5. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
+4. Bind mounts: `sources/` → `/code/sources` (read-only), `volumes/meow-bot/images/` → `/code/images` (read-write)
+5. Polls `http://127.0.0.1:8080/health` (up to 3 min) after restart — fails the play if unhealthy.
 
 ## Tests
 

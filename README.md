@@ -200,22 +200,18 @@ python sources/scripts/main.py
 
 ## Deployment
 
-Ansible-based deployment to a Docker container:
+Deployment is managed from the **[infra](https://github.com/soksanichenko/infra)** repository.
+Playbook: `vds/ansible/playbooks/discord-meow-bot.yml`.
+Roles: `vds/ansible/roles/discord-meow-bot/` (container) and `vds/ansible/roles/discord-meow-bot-nginx/` (nginx).
 
-```bash
-./deploy.sh
-```
+Automatic deploy triggers on every push to `master` (after tests pass) via GitHub Actions:
+the bot repo dispatches a `discord-meow-bot-deploy` event to the infra repo,
+which checks out both repos and runs the playbook.
 
-Secrets are managed via Infisical. The following environment variables
-must be set before deploying:
+To deploy manually from any branch, use the **Deploy discord-meow-bot** workflow
+in the infra repo (`Actions → Deploy discord-meow-bot → Run workflow → bot_ref: <branch>`).
 
-| Variable | Description |
-|---|---|
-| `INFISICAL_API_URL` | Infisical API URL |
-| `INFISICAL_CLIENT_ID` | Universal Auth client ID |
-| `INFISICAL_CLIENT_SECRET` | Universal Auth client secret |
-
-See `ansible/` for playbooks and inventory.
+Secrets are managed via Infisical (project `zelgray-work`, path `/zelgray-work`).
 
 ## License
 
