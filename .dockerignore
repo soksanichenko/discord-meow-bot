@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.claude
+.pytest_cache
+.ruff_cache
+venv
+tests
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/.env*
+*.pyc
+__pycache__
+.env*
+SESSION.md
+IDEAS.md
