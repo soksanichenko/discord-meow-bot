@@ -137,7 +137,10 @@ async def _media_handler(request: web.Request) -> web.Response:
     if session is None:
         raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
 
-    file_path = pathlib.Path(session.media_dir) / urllib.parse.unquote(media_path)
+    media_dir_resolved = pathlib.Path(session.media_dir).resolve()
+    file_path = (media_dir_resolved / urllib.parse.unquote(media_path)).resolve()
+    if not file_path.is_relative_to(media_dir_resolved):
+        raise web.HTTPForbidden(reason='Invalid media path')
     if not file_path.is_file():
         raise web.HTTPNotFound(reason=f'Media file {media_path!r} not found')
 

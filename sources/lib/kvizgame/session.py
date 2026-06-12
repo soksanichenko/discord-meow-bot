@@ -62,6 +62,8 @@ class GameSession:
     def __init__(
         self, channel_id: str, game: GameMachine, siq_path: str, host_id: str
     ) -> None:
+        if not channel_id.isdigit():
+            raise ValueError(f'channel_id must be numeric, got {channel_id!r}')
         self._channel_id = channel_id
         self._game = game
         self._siq_path = siq_path
@@ -114,11 +116,15 @@ class GameSession:
                 for m in zf.namelist()
                 if m.split('/')[0] in _MEDIA_FOLDERS and not m.endswith('/')
             ]
+            dest_resolved = pathlib.Path(dest).resolve()
             for member in members:
                 # Some packs URL-encode filenames inside the ZIP.
                 # Decode to get the real Cyrillic name; avoids the 255-byte FS limit.
                 decoded = urllib.parse.unquote(member)
-                target = pathlib.Path(dest) / decoded
+                target = (pathlib.Path(dest) / decoded).resolve()
+                if not target.is_relative_to(dest_resolved):
+                    logger.warning('Skipping zip entry with path traversal: %r', member)
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(member) as src, target.open('wb') as dst:
                     shutil.copyfileobj(src, dst)
