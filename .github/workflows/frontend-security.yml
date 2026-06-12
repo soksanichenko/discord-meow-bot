@@ -3,7 +3,7 @@ name: Frontend Security
 
 on:
   pull_request:
-    branches: ["master"]
+    branches: ["main"]
     paths: ["frontend/**"]
   schedule:
     - cron: '0 9 * * 1,4'  # Every Monday and Thursday at 09:00 UTC
@@ -36,14 +36,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Check frontend exists
+        id: frontend-check
+        run: test -f frontend/package.json && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+
       - uses: actions/setup-node@v4
+        if: steps.frontend-check.outputs.exists == 'true'
         with:
           node-version: 22
 
       - uses: SocketDev/action@v1
+        if: steps.frontend-check.outputs.exists == 'true'
         with:
           mode: firewall-free
 
       - run: sfw npm ci
+        if: steps.frontend-check.outputs.exists == 'true'
         working-directory: frontend
 ...
