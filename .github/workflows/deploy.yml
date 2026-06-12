@@ -6,7 +6,7 @@ on:
   workflow_run:
     workflows: ["Build"]
     types: [completed]
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       sha:
@@ -34,8 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ matrix.environment }}
     if: >-
-      (github.event_name == 'workflow_dispatch' &&
-        (inputs.environment == '' || inputs.environment == matrix.environment)) ||
+      github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     strategy:
       matrix:
@@ -46,6 +45,8 @@ jobs:
             environment: development
     steps:
       - name: Send repository dispatch to infra
+        if: >-
+          inputs.environment == '' || inputs.environment == matrix.environment
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.DEPLOY_TOKEN }}
