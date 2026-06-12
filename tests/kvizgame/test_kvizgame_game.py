@@ -75,9 +75,9 @@ class TestInit:
         g = _game(players=['p1', 'p2'])
         assert g.scores == {'p1': 0, 'p2': 0}
 
-    def test_requires_at_least_two_players(self):
-        with pytest.raises(ValueError, match='At least 2 players'):
-            _game(players=['only'])
+    def test_requires_at_least_one_player(self):
+        with pytest.raises(ValueError, match='At least 1 player'):
+            GameMachine(_package(_round()), [], {}, Settings())
 
     def test_skips_final_round(self):
         rounds = [_round('R1'), _round('Final', is_final=True)]

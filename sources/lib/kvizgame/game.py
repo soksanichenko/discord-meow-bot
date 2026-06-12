@@ -97,8 +97,8 @@ class GameMachine:
         player_names: dict[str, str],
         settings: Settings | None = None,
     ) -> None:
-        if len(player_ids) < 2:
-            raise ValueError('At least 2 players required')
+        if not player_ids:
+            raise ValueError('At least 1 player required')
 
         self._settings = settings or Settings()
         self._players: dict[str, Player] = {
