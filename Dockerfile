@@ -21,6 +21,7 @@ RUN dnf install -y epel-release && \
     dnf install -y python3 ffmpeg-free && \
     dnf clean all
 ENV PYTHONPATH="."
+ENV KVIZGAME_FRONTEND_DIR="/code/frontend"
 WORKDIR /code
 COPY --from=python-builder /code/venv ./venv
 COPY sources/ ./sources/
