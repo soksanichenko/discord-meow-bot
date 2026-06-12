@@ -26,25 +26,15 @@ permissions:
   contents: read
 
 jobs:
-  dispatch:
-    name: Trigger infra deploy (${{ matrix.env }})
+  dispatch-prod:
+    name: Trigger infra deploy (prod)
     runs-on: ubuntu-latest
-    environment: ${{ matrix.environment }}
+    environment: production
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
-    strategy:
-      matrix:
-        include:
-          - env: prod
-            environment: production
-          - env: dev
-            environment: development
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.environment == '' || inputs.environment == 'production'))
     steps:
       - name: Send repository dispatch to infra
-        if: >-
-          (github.event_name == 'workflow_run' && matrix.environment == 'production') ||
-          (github.event_name == 'workflow_dispatch' && (inputs.environment == '' || inputs.environment == matrix.environment))
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.DEPLOY_TOKEN }}
@@ -55,7 +45,31 @@ jobs:
               event_type: 'discord-meow-bot-deploy',
               client_payload: {
                 sha: 'latest',
-                environment: '${{ matrix.environment }}',
+                environment: 'production',
+                ref: 'main',
+              },
+            });
+
+  dispatch-dev:
+    name: Trigger infra deploy (dev)
+    runs-on: ubuntu-latest
+    environment: development
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.environment == '' || inputs.environment == 'development')
+    steps:
+      - name: Send repository dispatch to infra
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.DEPLOY_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: 'infra',
+              event_type: 'discord-meow-bot-deploy',
+              client_payload: {
+                sha: 'latest',
+                environment: 'development',
                 ref: 'main',
               },
             });
