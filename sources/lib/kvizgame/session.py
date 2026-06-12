@@ -116,15 +116,17 @@ class GameSession:
                 for m in zf.namelist()
                 if m.split('/')[0] in _MEDIA_FOLDERS and not m.endswith('/')
             ]
-            dest_resolved = pathlib.Path(dest).resolve()
             for member in members:
                 # Some packs URL-encode filenames inside the ZIP.
                 # Decode to get the real Cyrillic name; avoids the 255-byte FS limit.
                 decoded = urllib.parse.unquote(member)
-                target = (pathlib.Path(dest) / decoded).resolve()
-                if not target.is_relative_to(dest_resolved):
-                    logger.warning('Skipping zip entry with path traversal: %r', member)
+                folder = decoded.split('/')[0]  # already validated in _MEDIA_FOLDERS
+                # Use only the basename — strips any path-traversal sequences.
+                # SIQ archives have a flat structure (Images/file.jpg), so no data lost.
+                filename = pathlib.Path(decoded).name
+                if not filename:
                     continue
+                target = pathlib.Path(dest) / folder / filename
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(member) as src, target.open('wb') as dst:
                     shutil.copyfileobj(src, dst)
