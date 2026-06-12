@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import urllib.parse
 
@@ -137,9 +138,9 @@ async def _media_handler(request: web.Request) -> web.Response:
     if session is None:
         raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
 
-    # Use only the basename after URL-decoding — strips any path-traversal sequences.
+    # Use os.path.basename() after URL-decoding — strips any path-traversal sequences.
     # `folder` is already validated against _VALID_MEDIA_FOLDERS above.
-    filename = pathlib.Path(urllib.parse.unquote(media_path)).name
+    filename = os.path.basename(urllib.parse.unquote(media_path))
     if not filename:
         raise web.HTTPForbidden(reason='Invalid media path')
     file_path = pathlib.Path(session.media_dir) / folder / filename
