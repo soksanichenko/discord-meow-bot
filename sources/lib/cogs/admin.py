@@ -87,7 +87,7 @@ class AdminCog(commands.Cog):
     async def sync_tree(self, context: commands.Context) -> None:
         """Sync a tree of the commands."""
         if await self.bot.is_owner(context.author):
-            await self.bot.tree.sync()
+            await self.bot._sync_command_tree()
             message = 'Syncing is completed'
         else:
             message = 'You are not an owner of the bot'
