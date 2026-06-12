@@ -6,14 +6,14 @@ on:
   workflow_run:
     workflows: ["Build"]
     types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy'
-        required: true
+        description: 'Environment override (leave empty to auto-detect from branch)'
+        required: false
         type: choice
         options:
+          - ''
           - production
           - development
 
@@ -26,26 +26,36 @@ permissions:
 
 jobs:
   dispatch:
-    name: Trigger infra deploy (${{ inputs.environment }})
+    name: Trigger infra deploy
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.environment || ((github.event.workflow_run.head_branch || github.ref_name) == 'main' && 'production' || 'development') }}
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
       github.event_name == 'workflow_dispatch'
     steps:
+      - name: Resolve environment
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            echo "env=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.workflow_run.head_branch || github.ref_name }}" = "main" ]; then
+            echo "env=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=development" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Send repository dispatch to infra
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.DEPLOY_TOKEN }}
           script: |
-            const env = context.payload.inputs.environment;
             await github.rest.repos.createDispatchEvent({
               owner: context.repo.owner,
               repo: 'infra',
               event_type: 'discord-meow-bot-deploy',
               client_payload: {
                 sha: 'latest',
-                environment: env,
+                environment: '${{ steps.resolve.outputs.env }}',
               },
             });
 ...
