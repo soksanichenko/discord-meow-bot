@@ -7,7 +7,7 @@ const isInDiscord = new URLSearchParams(window.location.search).has('frame_id');
 
 export const sdk = isInDiscord
   ? new DiscordSDK(CLIENT_ID)
-  : new DiscordSDKMock(CLIENT_ID, 'mock-guild', 'mock-channel');
+  : new DiscordSDKMock(CLIENT_ID, 'mock-guild', 'mock-channel', null);
 
 export interface AuthResult {
   userId: string;
