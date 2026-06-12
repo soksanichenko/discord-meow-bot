@@ -155,9 +155,40 @@ class MeowBot(Bot):
             _logger.info('Command tree unchanged, skipping sync')
             return
 
-        await self.tree.sync()
+        try:
+            await self.tree.sync()
+        except discord.HTTPException as exc:
+            if exc.code != 50240:
+                raise
+            await self._sync_preserving_entry_points()
+
         _SYNC_HASH_PATH.write_text(current_hash)
         _logger.info('Command tree synced')
+
+    async def _sync_preserving_entry_points(self) -> None:
+        """Sync the command tree while preserving Discord Activity Entry Points.
+
+        Error 50240 means the app has an Entry Point command (type=4, created
+        when Activities are enabled) that cannot be removed via bulk update.
+        We patch the HTTP call temporarily to inject the Entry Points back.
+        """
+        existing = await self.http.get_global_commands(self.application_id)
+        entry_points = [c for c in existing if c.get('type') == 4]
+        if not entry_points:
+            _logger.error(
+                'Got error 50240 but no Entry Point commands found — sync failed'
+            )
+            return
+        original = self.http.bulk_upsert_global_commands
+
+        async def _patched(app_id: int, *, payload: list) -> list:
+            return await original(app_id, payload=list(payload) + entry_points)
+
+        self.http.bulk_upsert_global_commands = _patched
+        try:
+            await self.tree.sync()
+        finally:
+            self.http.bulk_upsert_global_commands = original
 
     def _hash_command_tree(self) -> str:
         """Compute a SHA-1 hash of the current command tree structure.
