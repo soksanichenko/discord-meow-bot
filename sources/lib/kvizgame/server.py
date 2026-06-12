@@ -138,16 +138,26 @@ async def _media_handler(request: web.Request) -> web.Response:
     if session is None:
         raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
 
-    # Use os.path.basename() after URL-decoding — strips any path-traversal sequences.
-    # `folder` is already validated against _VALID_MEDIA_FOLDERS above.
-    filename = os.path.basename(urllib.parse.unquote(media_path))
-    if not filename:
+    # Extract the basename for matching purposes only — never used in path construction.
+    raw_name = os.path.basename(urllib.parse.unquote(media_path))
+    if not raw_name:
         raise web.HTTPForbidden(reason='Invalid media path')
-    file_path = pathlib.Path(session.media_dir) / folder / filename
-    if not file_path.is_file():
+
+    # `folder` is whitelisted above so `folder_path` is trusted (not user-tainted).
+    # Look up the file via os.scandir so the returned path comes from the filesystem,
+    # not from user input — this breaks the taint chain for web.FileResponse.
+    folder_path = pathlib.Path(session.media_dir) / folder
+    try:
+        match = next(
+            (e for e in os.scandir(folder_path) if e.name == raw_name and e.is_file()),
+            None,
+        )
+    except OSError:
+        match = None
+    if match is None:
         raise web.HTTPNotFound(reason=f'Media file {media_path!r} not found')
 
-    return web.FileResponse(file_path)
+    return web.FileResponse(match.path)
 
 
 async def _delete_session(request: web.Request) -> web.Response:
