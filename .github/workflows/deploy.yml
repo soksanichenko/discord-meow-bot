@@ -46,7 +46,8 @@ jobs:
     steps:
       - name: Send repository dispatch to infra
         if: >-
-          inputs.environment == '' || inputs.environment == matrix.environment
+          (github.event_name == 'workflow_run' && matrix.environment == 'production') ||
+          (github.event_name == 'workflow_dispatch' && (inputs.environment == '' || inputs.environment == matrix.environment))
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.DEPLOY_TOKEN }}
