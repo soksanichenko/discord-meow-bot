@@ -24,7 +24,7 @@ class MessagesCog(commands.Cog):
         """Remove context menu on cog unload."""
         self.bot.tree.remove_command(
             'Remove fixed message',
-            type=app_commands.AppCommandType.message,
+            type=discord.AppCommandType.message,
         )
 
     async def remove_fixed_message(
