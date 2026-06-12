@@ -10,8 +10,16 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'Commit SHA of the image to deploy (e.g. prod-abc123)'
+        description: 'Commit SHA of the image to deploy (leave empty for *-latest)'
         required: false
+      environment:
+        description: 'Environment to deploy (leave empty to deploy both)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - production
+          - development
 
 concurrency:
   group: deploy
@@ -22,12 +30,20 @@ permissions:
 
 jobs:
   dispatch:
-    name: Trigger infra deploy
+    name: Trigger infra deploy (${{ matrix.env }})
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ matrix.environment }}
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (inputs.environment == '' || inputs.environment == matrix.environment)) ||
       github.event.workflow_run.conclusion == 'success'
+    strategy:
+      matrix:
+        include:
+          - env: prod
+            environment: production
+          - env: dev
+            environment: development
     steps:
       - name: Send repository dispatch to infra
         uses: actions/github-script@v9
@@ -41,6 +57,7 @@ jobs:
               event_type: 'discord-meow-bot-deploy',
               client_payload: {
                 sha: sha,
+                environment: '${{ matrix.environment }}',
                 ref: 'master',
               },
             });
