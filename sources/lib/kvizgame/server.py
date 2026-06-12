@@ -17,7 +17,7 @@ from sources.lib.kvizgame.session import GameSession, cleanup_stale_media_dirs
 
 logger = logging.getLogger(__name__)
 
-_VALID_MEDIA_FOLDERS = frozenset({'Images', 'Audio', 'Video'})
+_MEDIA_FOLDERS = ('Images', 'Audio', 'Video')
 
 
 async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
@@ -119,45 +119,50 @@ async def _create_session(request: web.Request) -> web.Response:
     return web.json_response({'channel_id': channel_id}, status=201)
 
 
-async def _media_handler(request: web.Request) -> web.Response:
-    """GET /media/{channel_id}/{media_path} — serve a pre-extracted media file.
+def _make_media_handler(trusted_folder: str):
+    """Return a handler for /media/{channel_id}/FOLDER/{filename}.
 
-    media_path must start with Images/, Audio/, or Video/.
-    Files are extracted from the .siq archive at session creation time and
-    served directly from the filesystem, supporting Range requests for video.
+    trusted_folder is a compile-time constant (Images, Audio, or Video), so
+    the constructed filesystem path is never derived from user input.
     """
-    channel_id = request.match_info['channel_id']
-    media_path = request.match_info['media_path']
 
-    folder = media_path.split('/')[0] if '/' in media_path else ''
-    if folder not in _VALID_MEDIA_FOLDERS:
-        raise web.HTTPForbidden(reason='Invalid media path')
-
-    sessions: dict[str, GameSession] = request.app['sessions']
-    session = sessions.get(channel_id)
-    if session is None:
-        raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
-
-    # Extract the basename for matching purposes only — never used in path construction.
-    raw_name = os.path.basename(urllib.parse.unquote(media_path))
-    if not raw_name:
-        raise web.HTTPForbidden(reason='Invalid media path')
-
-    # `folder` is whitelisted above so `folder_path` is trusted (not user-tainted).
-    # Look up the file via os.scandir so the returned path comes from the filesystem,
-    # not from user input — this breaks the taint chain for web.FileResponse.
-    folder_path = pathlib.Path(session.media_dir) / folder
-    try:
-        match = next(
-            (e for e in os.scandir(folder_path) if e.name == raw_name and e.is_file()),
-            None,
+    async def _handler(request: web.Request) -> web.Response:
+        channel_id = request.match_info['channel_id']
+        # Use only the basename — strips any traversal sequences.
+        # The result is used for name comparison only, never in path construction.
+        raw_name = os.path.basename(
+            urllib.parse.unquote(request.match_info['filename'])
         )
-    except OSError:
-        match = None
-    if match is None:
-        raise web.HTTPNotFound(reason=f'Media file {media_path!r} not found')
+        if not raw_name:
+            raise web.HTTPForbidden(reason='Invalid filename')
 
-    return web.FileResponse(match.path)
+        sessions: dict[str, GameSession] = request.app['sessions']
+        session = sessions.get(channel_id)
+        if session is None:
+            raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
+
+        # trusted_folder is a closure constant — folder_path contains no user input,
+        # so os.scandir entries and match.path are not user-tainted.
+        folder_path = pathlib.Path(session.media_dir) / trusted_folder
+        try:
+            match = next(
+                (
+                    e
+                    for e in os.scandir(folder_path)
+                    if e.name == raw_name and e.is_file()
+                ),
+                None,
+            )
+        except OSError:
+            match = None
+        if match is None:
+            raise web.HTTPNotFound(
+                reason=f'File {raw_name!r} not found in {trusted_folder}'
+            )
+
+        return web.FileResponse(match.path)
+
+    return _handler
 
 
 async def _delete_session(request: web.Request) -> web.Response:
@@ -201,7 +206,11 @@ def create_app(sessions: dict | None = None) -> web.Application:
     app.router.add_post('/token', _token_handler)
     app.router.add_post('/sessions', _create_session)
     app.router.add_delete('/sessions/{channel_id}', _delete_session)
-    app.router.add_get('/media/{channel_id}/{media_path:.*}', _media_handler)
+    for _folder in _MEDIA_FOLDERS:
+        app.router.add_get(
+            f'/media/{{channel_id}}/{_folder}/{{filename}}',
+            _make_media_handler(_folder),
+        )
     app.router.add_get('/ws/{channel_id}', _ws_handler)
     if config.kvizgame_frontend_dir:
         _frontend = pathlib.Path(config.kvizgame_frontend_dir)
