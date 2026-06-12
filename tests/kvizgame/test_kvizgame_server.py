@@ -197,7 +197,9 @@ def _game(package: Package | None = None) -> GameMachine:
     )
 
 
-def _session(channel_id: str = 'ch1', package: Package | None = None) -> GameSession:
+def _session(
+    channel_id: str = '123456789012345678', package: Package | None = None
+) -> GameSession:
     return GameSession(channel_id, _game(package), '', 'p1')
 
 
@@ -228,7 +230,7 @@ class TestCreateSession:
         resp = await client.post(
             '/sessions',
             json={
-                'channel_id': 'ch1',
+                'channel_id': '123456789012345678',
                 'siq_path': siq_path,
                 'player_ids': PLAYERS,
                 'player_names': NAMES,
@@ -237,13 +239,13 @@ class TestCreateSession:
         )
         assert resp.status == 201
         body = await resp.json()
-        assert body['channel_id'] == 'ch1'
+        assert body['channel_id'] == '123456789012345678'
 
     async def test_duplicate_channel_returns_409(self, aiohttp_client, tmp_path):
         client: TestClient = await aiohttp_client(create_app())
         siq_path = _make_siq(SIMPLE_SIQ_XML, tmp_path)
         payload = {
-            'channel_id': 'ch1',
+            'channel_id': '123456789012345678',
             'siq_path': siq_path,
             'player_ids': PLAYERS,
             'player_names': NAMES,
@@ -255,7 +257,7 @@ class TestCreateSession:
 
     async def test_missing_fields_returns_400(self, aiohttp_client):
         client: TestClient = await aiohttp_client(create_app())
-        resp = await client.post('/sessions', json={'channel_id': 'ch1'})
+        resp = await client.post('/sessions', json={'channel_id': '123456789012345678'})
         assert resp.status == 400
 
     async def test_invalid_siq_path_returns_422(self, aiohttp_client):
@@ -263,7 +265,7 @@ class TestCreateSession:
         resp = await client.post(
             '/sessions',
             json={
-                'channel_id': 'ch1',
+                'channel_id': '123456789012345678',
                 'siq_path': '/nonexistent/file.siq',
                 'player_ids': PLAYERS,
                 'player_names': NAMES,
@@ -276,11 +278,11 @@ class TestCreateSession:
 class TestDeleteSession:
     async def test_delete_existing_returns_204(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        resp = await client.delete('/sessions/ch1')
+        resp = await client.delete('/sessions/123456789012345678')
         assert resp.status == 204
-        assert 'ch1' not in app['sessions']
+        assert '123456789012345678' not in app['sessions']
 
     async def test_delete_missing_returns_404(self, aiohttp_client):
         client: TestClient = await aiohttp_client(create_app())
@@ -301,9 +303,11 @@ class TestMediaEndpoint:
             SIMPLE_SIQ_XML, tmp_path, {'Images/pic.png': self._PNG}
         )
         app = create_app()
-        app['sessions']['ch1'] = GameSession('ch1', _game(), siq_path, 'host1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', _game(), siq_path, 'host1'
+        )
         client: TestClient = await aiohttp_client(app)
-        resp = await client.get('/media/ch1/Images/pic.png')
+        resp = await client.get('/media/123456789012345678/Images/pic.png')
         assert resp.status == 200
         assert resp.content_type == 'image/png'
         assert await resp.read() == self._PNG
@@ -314,10 +318,12 @@ class TestMediaEndpoint:
             SIMPLE_SIQ_XML, tmp_path, {'Images/Владимир Путин.jpg': self._PNG}
         )
         app = create_app()
-        app['sessions']['ch1'] = GameSession('ch1', _game(), siq_path, 'host1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', _game(), siq_path, 'host1'
+        )
         client: TestClient = await aiohttp_client(app)
         resp = await client.get(
-            '/media/ch1/Images/%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D0%BC%D0%B8%D1%80%20%D0%9F%D1%83%D1%82%D0%B8%D0%BD.jpg'
+            '/media/123456789012345678/Images/%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D0%BC%D0%B8%D1%80%20%D0%9F%D1%83%D1%82%D0%B8%D0%BD.jpg'
         )
         assert resp.status == 200
         assert await resp.read() == self._PNG
@@ -328,9 +334,11 @@ class TestMediaEndpoint:
             SIMPLE_SIQ_XML, tmp_path, {'Audio/track.mp3': b'ID3data'}
         )
         app = create_app()
-        app['sessions']['ch1'] = GameSession('ch1', _game(), siq_path, 'host1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', _game(), siq_path, 'host1'
+        )
         client: TestClient = await aiohttp_client(app)
-        resp = await client.get('/media/ch1/Audio/track.mp3')
+        resp = await client.get('/media/123456789012345678/Audio/track.mp3')
         assert resp.status == 200
         assert resp.content_type == 'audio/mpeg'
 
@@ -342,35 +350,39 @@ class TestMediaEndpoint:
     async def test_missing_file_in_archive_returns_404(self, aiohttp_client, tmp_path):
         siq_path = _make_siq(SIMPLE_SIQ_XML, tmp_path)
         app = create_app()
-        app['sessions']['ch1'] = GameSession('ch1', _game(), siq_path, 'host1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', _game(), siq_path, 'host1'
+        )
         client: TestClient = await aiohttp_client(app)
-        resp = await client.get('/media/ch1/Images/nonexistent.png')
+        resp = await client.get('/media/123456789012345678/Images/nonexistent.png')
         assert resp.status == 404
 
     async def test_invalid_folder_returns_403(self, aiohttp_client, tmp_path):
         siq_path = _make_siq(SIMPLE_SIQ_XML, tmp_path)
         app = create_app()
-        app['sessions']['ch1'] = GameSession('ch1', _game(), siq_path, 'host1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', _game(), siq_path, 'host1'
+        )
         client: TestClient = await aiohttp_client(app)
-        resp = await client.get('/media/ch1/../secret.txt')
+        resp = await client.get('/media/123456789012345678/../secret.txt')
         assert resp.status in (403, 404)  # aiohttp may normalise the path
 
 
 class TestWebSocketConnect:
     async def test_connect_sends_state(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             msg = await _recv_json(ws)
             assert msg['op'] == 'state'
             assert msg['d']['phase'] == 'BOARD'
 
     async def test_connect_missing_player_id_returns_400(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        resp = await client.get('/ws/ch1')
+        resp = await client.get('/ws/123456789012345678')
         assert resp.status == 400
 
     async def test_connect_unknown_channel_returns_404(self, aiohttp_client):
@@ -380,11 +392,11 @@ class TestWebSocketConnect:
 
     async def test_second_player_receives_joined_notification(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws1:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws1:
             await _recv_json(ws1)  # consume initial state
-            async with client.ws_connect('/ws/ch1?player_id=p2') as ws2:
+            async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws2:
                 await _recv_json(ws2)  # consume state for p2
                 # p1 should have received player_joined for p2
                 joined = await _drain_until(ws1, 'player_joined')
@@ -399,9 +411,9 @@ class TestWebSocketConnect:
 class TestGameFlow:
     async def test_select_question_broadcasts_state(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)  # initial state
             await ws.send_str(
                 json.dumps({'op': 'select', 'd': {'theme_idx': 0, 'question_idx': 0}})
@@ -411,9 +423,9 @@ class TestGameFlow:
 
     async def test_wrong_player_select_returns_error(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'select', 'd': {'theme_idx': 0, 'question_idx': 0}})
@@ -423,9 +435,9 @@ class TestGameFlow:
 
     async def test_invalid_json_returns_error(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str('not json')
             err = await _drain_until(ws, 'error')
@@ -433,9 +445,9 @@ class TestGameFlow:
 
     async def test_unknown_op_returns_error(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'fly_to_moon', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -444,9 +456,9 @@ class TestGameFlow:
     async def test_full_question_flow_strict_buzz(self, aiohttp_client):
         """p1 selects → opens buzzer → p1 buzzes first → wins → correct answer."""
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
 
             await ws.send_str(
@@ -477,9 +489,11 @@ class TestGameFlow:
             NAMES,
             Settings(buzz_window_ms=50),  # 50 ms window
         )
-        app['sessions']['ch1'] = GameSession('ch1', game, '', 'p1')
+        app['sessions']['123456789012345678'] = GameSession(
+            '123456789012345678', game, '', 'p1'
+        )
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'select', 'd': {'theme_idx': 0, 'question_idx': 0}})
@@ -497,9 +511,11 @@ class TestGameFlow:
     async def test_round_end_to_game_over(self, aiohttp_client):
         """Single-question round: after answering, advance → ROUND_END → GAME_OVER."""
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1', _package_one_question())
+        app['sessions']['123456789012345678'] = _session(
+            '123456789012345678', _package_one_question()
+        )
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
 
             await ws.send_str(
@@ -523,9 +539,9 @@ class TestGameFlow:
 
     async def test_state_includes_host_id_and_paused(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             state = await _recv_json(ws)
             assert state['d']['host_id'] == 'p1'
             assert state['d']['paused'] is False
@@ -533,10 +549,10 @@ class TestGameFlow:
 
     async def test_non_host_cannot_open_buzzer(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
-        app['sessions']['ch1']._game.select_question('p1', 0, 0)
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
+        app['sessions']['123456789012345678']._game.select_question('p1', 0, 0)
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'open_buzzer', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -544,15 +560,15 @@ class TestGameFlow:
 
     async def test_non_host_cannot_judge(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         # Drive to ANSWERING: select → open → buzz → close
-        g = app['sessions']['ch1']._game
+        g = app['sessions']['123456789012345678']._game
         g.select_question('p1', 0, 0)
         g.open_buzzer()
         g.buzz('p1')
         g.close_buzzer()
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'judge', 'd': {'correct': True}}))
             err = await _drain_until(ws, 'error')
@@ -560,15 +576,15 @@ class TestGameFlow:
 
     async def test_non_host_cannot_advance(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
-        g = app['sessions']['ch1']._game
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
+        g = app['sessions']['123456789012345678']._game
         g.select_question('p1', 0, 0)
         g.open_buzzer()
         g.buzz('p1')
         g.close_buzzer()
         g.judge_answer(True)
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'advance', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -583,9 +599,9 @@ class TestGameFlow:
 class TestPauseResume:
     async def test_host_can_pause(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'pause', 'd': {}}))
             state = await _drain_until(ws, 'state')
@@ -593,9 +609,9 @@ class TestPauseResume:
 
     async def test_non_host_cannot_pause(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session('ch1')
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'pause', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -603,11 +619,11 @@ class TestPauseResume:
 
     async def test_ops_blocked_while_paused(self, aiohttp_client):
         app = create_app()
-        session = _session('ch1')
+        session = _session('123456789012345678')
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'select', 'd': {'theme_idx': 0, 'question_idx': 0}})
@@ -617,11 +633,11 @@ class TestPauseResume:
 
     async def test_host_can_resume(self, aiohttp_client):
         app = create_app()
-        session = _session('ch1')
+        session = _session('123456789012345678')
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'resume', 'd': {}}))
             state = await _drain_until(ws, 'state')
@@ -665,15 +681,15 @@ def _session_with_wrong_answer(
     game.place_bid(player_id, 100)  # → QUESTION
     game.open_buzzer()  # → ANSWERING (player_id fixed)
     game.judge_answer(False)  # fixed answerer → ANSWER_RESULT
-    return GameSession('ch1', game, '', host_id)
+    return GameSession('123456789012345678', game, '', host_id)
 
 
 class TestAppeal:
     async def test_eligible_player_can_request_appeal(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session_with_wrong_answer()
+        app['sessions']['123456789012345678'] = _session_with_wrong_answer()
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'request_appeal', 'd': {}}))
             state = await _drain_until(ws, 'state')
@@ -682,9 +698,9 @@ class TestAppeal:
 
     async def test_host_cannot_request_appeal(self, aiohttp_client):
         app = create_app()
-        app['sessions']['ch1'] = _session_with_wrong_answer()
+        app['sessions']['123456789012345678'] = _session_with_wrong_answer()
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'request_appeal', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -694,15 +710,15 @@ class TestAppeal:
         """Correct judgment → last_wrong_judged_id is None → appeal rejected."""
         app = create_app()
         # Use _session() (2-player, p1 active); p1 answers correctly → no wrong judgment
-        app['sessions']['ch1'] = _session('ch1')
-        g = app['sessions']['ch1']._game
+        app['sessions']['123456789012345678'] = _session('123456789012345678')
+        g = app['sessions']['123456789012345678']._game
         g.select_question('p1', 0, 0)
         g.open_buzzer()
         g.buzz('p1')
         g.close_buzzer()
         g.judge_answer(True)  # correct → last_wrong_judged_id is None
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'request_appeal', 'd': {}}))
             err = await _drain_until(ws, 'error')
@@ -713,9 +729,9 @@ class TestAppeal:
         session = _session_with_wrong_answer()
         session._appeal_by = 'p2'
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'resolve_appeal', 'd': {'accept': True}})
@@ -731,9 +747,9 @@ class TestAppeal:
         session = _session_with_wrong_answer()
         session._appeal_by = 'p2'
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'resolve_appeal', 'd': {'accept': False}})
@@ -745,12 +761,12 @@ class TestAppeal:
 
     async def test_non_host_cannot_resolve_appeal(self, aiohttp_client):
         app = create_app()
-        session = _session('ch1')
+        session = _session('123456789012345678')
         session._appeal_by = 'p2'
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p2') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p2') as ws:
             await _recv_json(ws)
             await ws.send_str(
                 json.dumps({'op': 'resolve_appeal', 'd': {'accept': True}})
@@ -760,12 +776,12 @@ class TestAppeal:
 
     async def test_ops_blocked_while_appeal_pending(self, aiohttp_client):
         app = create_app()
-        session = _session('ch1')
+        session = _session('123456789012345678')
         session._appeal_by = 'p2'
         session._paused = True
-        app['sessions']['ch1'] = session
+        app['sessions']['123456789012345678'] = session
         client: TestClient = await aiohttp_client(app)
-        async with client.ws_connect('/ws/ch1?player_id=p1') as ws:
+        async with client.ws_connect('/ws/123456789012345678?player_id=p1') as ws:
             await _recv_json(ws)
             await ws.send_str(json.dumps({'op': 'resume', 'd': {}}))
             err = await _drain_until(ws, 'error')

@@ -155,11 +155,14 @@ class GameSession:
             'appeal_by': self._appeal_by,
             'game': self._game.to_dict(),
         }
-        (sessions_dir / f'{self._channel_id}.json').write_text(json.dumps(data))
+        (sessions_dir / f'{int(self._channel_id)}.json').write_text(json.dumps(data))
 
     def delete_saved(self) -> None:
         """Remove the saved session file and extracted media directory."""
-        path = pathlib.Path(_config.kvizgame_sessions_dir) / f'{self._channel_id}.json'
+        path = (
+            pathlib.Path(_config.kvizgame_sessions_dir)
+            / f'{int(self._channel_id)}.json'
+        )
         path.unlink(missing_ok=True)
         if self._media_dir:
             shutil.rmtree(self._media_dir, ignore_errors=True)
