@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { setup } from './discord';
 import type { AuthResult } from './discord';
 import { useGame } from './useGame';
@@ -9,6 +9,7 @@ import { Scores } from './screens/Scores';
 import { FinalBid } from './screens/FinalBid';
 import { FinalQuestion } from './screens/FinalQuestion';
 import { FinalJudging } from './screens/FinalJudging';
+import { Lobby } from './screens/Lobby';
 
 export function App() {
   const [auth, setAuth] = useState<AuthResult | null>(null);
@@ -20,6 +21,21 @@ export function App() {
 
   if (authError) return <Centered>Discord auth failed: {authError}</Centered>;
   if (!auth) return <Centered>Connecting to Discord…</Centered>;
+  return <GameOrLobby auth={auth} />;
+}
+
+function GameOrLobby({ auth }: { auth: AuthResult }) {
+  const [gameReady, setGameReady] = useState<boolean | null>(null);
+  const onGameReady = useCallback(() => setGameReady(true), []);
+
+  useEffect(() => {
+    fetch(`/api/sessions/${auth.channelId}`)
+      .then((r) => setGameReady(r.ok))
+      .catch(() => setGameReady(false));
+  }, [auth.channelId]);
+
+  if (gameReady === null) return <Centered>Connecting…</Centered>;
+  if (!gameReady) return <Lobby auth={auth} onGameReady={onGameReady} />;
   return <Game auth={auth} />;
 }
 

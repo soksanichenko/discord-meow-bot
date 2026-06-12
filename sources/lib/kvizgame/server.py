@@ -165,6 +165,24 @@ def _make_media_handler(trusted_folder: str):
     return _handler
 
 
+async def _get_session(request: web.Request) -> web.Response:
+    """GET /sessions/{channel_id} — check whether a session exists."""
+    channel_id = request.match_info['channel_id']
+    sessions: dict[str, GameSession] = request.app['sessions']
+    if channel_id not in sessions:
+        raise web.HTTPNotFound(reason=f'No session for channel {channel_id!r}')
+    return web.json_response({'channel_id': channel_id})
+
+
+async def _list_packs(request: web.Request) -> web.Response:
+    """GET /packs — list available .siq pack files from the packs directory."""
+    packs_dir = pathlib.Path(config.kvizgame_packs_dir)
+    if not packs_dir.is_dir():
+        return web.json_response([])
+    packs = [{'name': p.name, 'path': str(p)} for p in sorted(packs_dir.glob('*.siq'))]
+    return web.json_response(packs)
+
+
 async def _delete_session(request: web.Request) -> web.Response:
     """DELETE /sessions/{channel_id} — remove a session."""
     channel_id = request.match_info['channel_id']
@@ -204,6 +222,8 @@ def create_app(sessions: dict | None = None) -> web.Application:
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     app.router.add_post('/token', _token_handler)
+    app.router.add_get('/packs', _list_packs)
+    app.router.add_get('/sessions/{channel_id}', _get_session)
     app.router.add_post('/sessions', _create_session)
     app.router.add_delete('/sessions/{channel_id}', _delete_session)
     for _folder in _MEDIA_FOLDERS:
