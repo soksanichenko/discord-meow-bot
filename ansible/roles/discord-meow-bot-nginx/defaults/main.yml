@@ -4,4 +4,5 @@ nginx_confd_path: "/opt/docker/nginx/conf.d"
 nginx_custom_locations_path: "{{ nginx_confd_path }}/custom-locations"
 discord_bot_health_user: "meow-bot"
 health_port: 8080
+kvizgame_port: 8082
 ...
