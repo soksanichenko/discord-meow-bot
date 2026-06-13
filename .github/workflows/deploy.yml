@@ -27,16 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Ansible and Infisical SDK
-        run: pip install -r ./requirements.txt
-
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r ./ansible/requirements.yml
+
+      - name: Inject infisicalsdk into ansible-core venv
+        run: pipx inject ansible-core infisicalsdk
 
       - name: Set up SSH key
         uses: webfactory/ssh-agent@v0.9.1
