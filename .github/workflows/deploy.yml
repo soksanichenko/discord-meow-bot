@@ -6,16 +6,8 @@ on:
   workflow_run:
     workflows: ["Build"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment override (leave empty to auto-detect from branch)'
-        required: false
-        type: choice
-        options:
-          - ''
-          - production
-          - development
 
 concurrency:
   group: deploy
@@ -25,37 +17,38 @@ permissions:
   contents: read
 
 jobs:
-  dispatch:
-    name: Trigger infra deploy
+  deploy:
+    name: Deploy
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || ((github.event.workflow_run.head_branch || github.ref_name) == 'main' && 'production' || 'development') }}
+    environment: production
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
       github.event_name == 'workflow_dispatch'
     steps:
-      - name: Resolve environment
-        id: resolve
-        run: |
-          if [ -n "${{ inputs.environment }}" ]; then
-            echo "env=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.workflow_run.head_branch || github.ref_name }}" = "main" ]; then
-            echo "env=production" >> "$GITHUB_OUTPUT"
-          else
-            echo "env=development" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/checkout@v4
 
-      - name: Send repository dispatch to infra
-        uses: actions/github-script@v9
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          github-token: ${{ secrets.DEPLOY_TOKEN }}
-          script: |
-            await github.rest.repos.createDispatchEvent({
-              owner: context.repo.owner,
-              repo: 'infra',
-              event_type: 'discord-meow-bot-deploy',
-              client_payload: {
-                sha: 'latest',
-                environment: '${{ steps.resolve.outputs.env }}',
-              },
-            });
-...
+          python-version: '3.12'
+
+      - name: Install Ansible and Infisical SDK
+        run: pip install ansible infisicalsdk==1.0.16
+
+      - name: Install Ansible collections
+        working-directory: ansible
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Deploy
+        working-directory: ansible
+        env:
+          INFISICAL_API_URL: ${{ secrets.INFISICAL_API_URL }}
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml

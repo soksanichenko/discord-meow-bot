@@ -1,0 +1,25 @@
+---
+- name: Install python3-passlib for htpasswd management
+  ansible.builtin.package:
+    name: python3-passlib
+    state: present
+  become: yes
+
+- name: Manage meow-bot health htpasswd file
+  community.general.htpasswd:
+    path: "{{ nginx_confd_path }}/meow-bot-health.htpasswd"
+    name: "{{ discord_bot_health_user }}"
+    password: "{{ discord_bot_health_password }}"
+    mode: "0644"
+  become: yes
+  no_log: true
+  notify: Restart Nginx container
+
+- name: Deploy discord bot nginx location config
+  ansible.builtin.template:
+    src: discord-bot-locations.conf.j2
+    dest: "{{ nginx_confd_path }}/discord-bot-locations.conf"
+    mode: "0644"
+  become: yes
+  notify: Restart Nginx container
+...

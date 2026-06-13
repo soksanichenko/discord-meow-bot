@@ -2,5 +2,6 @@
 collections:
   - name: infisical.vault
   - name: community.docker
+  - name: community.general
   - name: ansible.posix
 ...

@@ -1,0 +1,7 @@
+---
+- name: Restart Nginx container
+  community.docker.docker_container:
+    name: "{{ nginx_docker_container_name }}"
+    restart: yes
+  become: yes
+...

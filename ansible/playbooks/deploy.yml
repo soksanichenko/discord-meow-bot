@@ -3,6 +3,8 @@
   hosts: all
   pre_tasks:
     - import_tasks: pre_tasks/infisical.yml
+  roles:
+    - discord-meow-bot-nginx
   tasks:
     - import_role:
         name: deploy_bot_container

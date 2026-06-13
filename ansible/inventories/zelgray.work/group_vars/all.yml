@@ -7,6 +7,7 @@ spotify_api_client_id: "{{ infisical_secrets.secrets['spotify-api-client-id'] }}
 spotify_api_client_secret: "{{ infisical_secrets.secrets['spotify-api-client-secret'] }}"
 twitch_client_id: "{{ infisical_secrets.secrets['twitch-client-id-discord-bot'] }}"
 twitch_client_secret: "{{ infisical_secrets.secrets['twitch-secret-discord-bot'] }}"
+discord_bot_health_password: "{{ infisical_secrets.secrets['discord-bot-health-check-password'] }}"
 db_password: "{{ infisical_secrets.secrets['discord-bot-db-password'] }}"
 db_login: "meow-bot"
 db_host: postgresql

@@ -1,18 +1,15 @@
 ---
-- name: Get current timezone
-  ansible.builtin.command: timedatectl show --property=Timezone --value
-  register: timezone_output
-  changed_when: false
+- name: Create images volume directory
+  ansible.builtin.file:
+    path: "{{ docker_lib_folder }}/{{ docker_volumes['images']['path'] }}"
+    recurse: yes
+    state: directory
+  become: yes
 
-- name: Get existing of a docker network
-  community.docker.docker_network_info:
-    name: "{{ docker_network }}"
-  register: docker_network_result
-
-- name: Add a separate docker network
+- name: Ensure Docker network exists
   community.docker.docker_network:
     name: "{{ docker_network }}"
-  when: not docker_network_result.exists
+  become: yes
 
 - name: Start RSSHub container
   community.docker.docker_container:
@@ -25,108 +22,49 @@
     log_driver: journald
   become: yes
 
-- name: Create temporary build directory
-  ansible.builtin.tempfile:
-    state: directory
-    suffix: build
-  register: docker_temp_directory
+- name: Deploy discord-meow-bot container
+  community.docker.docker_container:
+    name: discord-meow-bot
+    image: "ghcr.io/soksanichenko/discord-meow-bot:{{ bot_image_tag }}"
+    state: started
+    pull: always
+    restart: yes
+    restart_policy: always
+    command:
+      - "-c"
+      - >-
+        venv/bin/python3 sources/scripts/create_db.py &&
+        venv/bin/alembic -c sources/alembic.ini upgrade head &&
+        venv/bin/python3 sources/scripts/main.py
+    mounts:
+      - source: "{{ docker_lib_folder }}/{{ docker_volumes['images']['path'] }}"
+        target: "/code/images"
+        read_only: no
+        type: bind
+    published_ports:
+      - "127.0.0.1:{{ health_port }}:{{ health_port }}"
+    networks:
+      - name: "{{ docker_network }}"
+    env:
+      DISCORD_TOKEN: "{{ discord_token }}"
+      HEALTH_PORT: "{{ health_port | string }}"
+      BIRTHDAY_IMAGES_DIR: "/code/images"
+      YOUTUBE_API_KEY: "{{ youtube_api_key }}"
+      SPOTIFY_API_CLIENT_ID: "{{ spotify_api_client_id }}"
+      SPOTIFY_API_CLIENT_SECRET: "{{ spotify_api_client_secret }}"
+      DB_LOGIN: "{{ db_login }}"
+      DB_PASSWORD: "{{ db_password }}"
+      DB_HOST: "{{ db_host }}"
+      DB_DATABASE: "{{ db_database }}"
+      DB_PORT: "{{ db_port | string }}"
+      RSSHUB_URL: "http://rsshub:1200"
+      TWITCH_CLIENT_ID: "{{ twitch_client_id }}"
+      TWITCH_CLIENT_SECRET: "{{ twitch_client_secret }}"
+    log_driver: journald
+  become: yes
+  no_log: true
 
-- name: Working in a build directory
-  block:
-    - name: Prepare Dockerfile
-      ansible.builtin.template:
-        dest: "{{ docker_temp_directory.path }}/Dockerfile"
-        src: "Dockerfile.j2"
-
-    - name: Create volume directory for a container
-      ansible.builtin.file:
-        path: "{{ docker_lib_folder }}/{{ item.value.path }}"
-        recurse: yes
-        state: directory
-      become: yes
-      loop: "{{ docker_volumes | dict2items }}"
-
-    - name: Copy req.txt for building a docker image
-      ansible.builtin.copy:
-        dest: "{{ docker_temp_directory.path }}/requirements.txt"
-        src: "../../../../sources/requirements.txt"
-
-    - name: Copy sources
-      ansible.posix.synchronize:
-        dest: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
-        src: "../../../../sources/"
-        owner: false
-        group: false
-        delete: yes
-        rsync_opts:
-          - "--exclude=*.pyc"
-          - "--exclude=__pycache__/"
-      become: yes
-      register: sources_result
-
-    - name: Build a docker image
-      community.docker.docker_image:
-        name: "discord-meow-bot"
-        force_source: yes
-        build:
-          path: "{{ docker_temp_directory.path }}"
-          pull: yes
-          network: host
-        source: build
-      become: yes
-
-    - name: Up a docker container with the bot
-      community.docker.docker_container:
-        name: "discord-meow-bot"
-        image: "discord-meow-bot"
-        state: started
-        restart: "{{ sources_result.changed }}"
-        restart_policy: always
-        command:
-          - "-c"
-          - >-
-            venv/bin/python3 sources/scripts/create_db.py &&
-            venv/bin/alembic -c sources/alembic.ini upgrade head &&
-            venv/bin/python3 sources/scripts/main.py
-        mounts:
-          - source: "{{ docker_lib_folder }}/{{ docker_volumes['sources']['path'] }}"
-            target: "/code/sources"
-            read_only: yes
-            type: bind
-          - source: "{{ docker_lib_folder }}/{{ docker_volumes['images']['path'] }}"
-            target: "/code/images"
-            read_only: no
-            type: bind
-        published_ports:
-          - "127.0.0.1:{{ health_port }}:{{ health_port }}"
-        networks:
-          - name: "{{ docker_network }}"
-        env:
-          DISCORD_TOKEN: "{{ discord_token }}"
-          HEALTH_PORT: "{{ health_port | string }}"
-          BIRTHDAY_IMAGES_DIR: "/code/images"
-          YOUTUBE_API_KEY: "{{ youtube_api_key }}"
-          SPOTIFY_API_CLIENT_ID: "{{ spotify_api_client_id }}"
-          SPOTIFY_API_CLIENT_SECRET: "{{ spotify_api_client_secret }}"
-          DB_LOGIN: "{{ db_login }}"
-          DB_PASSWORD: "{{ db_password }}"
-          DB_HOST: "{{ db_host }}"
-          DB_DATABASE: "{{ db_database }}"
-          DB_PORT: "{{ db_port | string }}"
-          RSSHUB_URL: "http://rsshub:1200"
-          TWITCH_CLIENT_ID: "{{ twitch_client_id }}"
-          TWITCH_CLIENT_SECRET: "{{ twitch_client_secret }}"
-        log_driver: journald
-      become: yes
-      no_log: true
-
-  always:
-    - name: Remove temp build directory
-      ansible.builtin.file:
-        path: "{{ docker_temp_directory.path }}"
-        state: absent
-
-- name: Wait for the bot health endpoint to become ready
+- name: Wait for bot health endpoint
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ health_port }}/health"
     status_code: 200

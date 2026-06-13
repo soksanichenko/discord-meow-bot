@@ -1,0 +1,6 @@
+---
+nginx_docker_container_name: "nginx-server"
+nginx_confd_path: "/opt/docker/nginx/conf.d"
+discord_bot_health_user: "meow-bot"
+health_port: 8080
+...
