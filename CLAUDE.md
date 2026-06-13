@@ -25,7 +25,7 @@ sources/
 │   │   ├── stats.py      # /stats group + on_message counter + background import
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
 │   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket
-│   │   ├── user.py       # /get-timestamp, /my-settings, /force-timezone
+│   │   ├── user.py       # /get-timestamp, /set-timezone, /my-settings, /force-timezone, /timezones
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
@@ -169,13 +169,16 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
 | `/reminders add/list/cancel` | reminders.py | Message reminders |
 | `/get-timestamp` | user.py | Generate Discord timestamp |
+| `/set-timezone` | user.py | Set your own timezone |
 | `/my-settings` | user.py | Show personal timezone |
 | `/force-timezone` | user.py | Set timezone for another user (admin) |
+| `/timezones` | user.py | Show timezone(s) for guild members (admin) |
 | `/domain-fixer ...` | domain_fixer.py | URL domain rules (admin) |
 | `/stats leaderboard` | stats.py | Top message senders |
 | `/stats import [since]` | stats.py | Import message history (admin) |
 | `/stats import-status` | stats.py | Show import progress (admin) |
 | `/telegram-relay add` | telegram_relay.py | Forward a Telegram channel to Discord (admin) |
+| `/telegram-relay modify` | telegram_relay.py | Change Discord channel for a relay (admin) |
 | `/telegram-relay remove` | telegram_relay.py | Stop forwarding a Telegram channel (admin) |
 | `/telegram-relay list` | telegram_relay.py | Show active Telegram relays (admin) |
 | `/youtube-relay add` | youtube_relay.py | Forward a YouTube channel's uploads to Discord (admin) |
@@ -266,7 +269,7 @@ Deployment does:
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.0 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start) |
-| `aiohttp` | 3.14.0 | HTTP client (YouTube API, Spotify API, Twitch API) |
+| `aiohttp` | 3.14.1 | HTTP client (YouTube API, Spotify API, Twitch API) |
 | `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
 | `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |
 | `prometheus_client` | 0.25.0 | Prometheus `/metrics` endpoint |

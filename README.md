@@ -10,6 +10,28 @@
 
 A Discord bot with quality-of-life features for servers.
 
+## Table of Contents
+
+- [Features](#features)
+  - [URL Domain Fixer](#url-domain-fixer)
+  - [Birthday Reminders](#birthday-reminders)
+  - [Message Reminders](#message-reminders)
+  - [Cross-Platform Music Link Conversion](#cross-platform-music-link-conversion)
+  - [Message Statistics](#message-statistics)
+  - [Telegram Channel Relay](#telegram-channel-relay)
+  - [YouTube Channel Relay](#youtube-channel-relay)
+  - [Twitch Stream Relay](#twitch-stream-relay)
+  - [Scheduled Event Auto-Start](#scheduled-event-auto-start)
+  - [Voice Channel Auto-Status](#voice-channel-auto-status)
+  - [Bot Owner Commands](#bot-owner-commands)
+  - [Timestamps](#timestamps)
+  - [Timezone & Settings](#timezone--settings)
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [Running](#running)
+- [Deployment](#deployment)
+- [License](#license)
+
 ## Features
 
 ### URL Domain Fixer
@@ -71,6 +93,7 @@ polling RSS feeds via a self-hosted RSSHub instance. No Telegram account
 or credentials required — only public channels.
 
 - `/telegram-relay add <username> <#channel>` — start forwarding (admin)
+- `/telegram-relay modify <username>` — change the Discord channel for a relay (admin)
 - `/telegram-relay remove <username>` — stop forwarding (admin)
 - `/telegram-relay list` — show active relays (admin)
 
@@ -146,8 +169,10 @@ displayed in every user's local timezone.
 - `/get-timestamp` — generate a Discord timestamp
 
 ### Timezone & Settings
+- `/set-timezone` — set your own timezone
 - `/my-settings` — show your stored timezone
 - `/force-timezone` — set timezone for another member (admin)
+- `/timezones` — show timezone(s) for guild members (admin)
 - `/server timezone-set/remove` — guild fallback timezone (admin)
 - `/server settings` — show guild settings (admin)
 - `/server info` — server info
