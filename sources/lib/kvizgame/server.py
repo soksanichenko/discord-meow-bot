@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 import pathlib
@@ -234,9 +235,18 @@ def create_app(sessions: dict | None = None) -> web.Application:
     app.router.add_get('/ws/{channel_id}', _ws_handler)
     if config.kvizgame_frontend_dir:
         _frontend = pathlib.Path(config.kvizgame_frontend_dir)
+        _cfg_json = _json.dumps(
+            {
+                'clientId': config.discord_client_id,
+                'proxyTarget': config.discord_proxy_target,
+            }
+        )
+        _config_script = f'<script>window.__KVIZGAME_CONFIG__={_cfg_json}</script>'
+        _index_html = (_frontend / 'index.html').read_text()
+        _index_html = _index_html.replace('</head>', f'{_config_script}</head>', 1)
 
-        async def _index(request: web.Request) -> web.FileResponse:
-            return web.FileResponse(_frontend / 'index.html')
+        async def _index(request: web.Request) -> web.Response:
+            return web.Response(text=_index_html, content_type='text/html')
 
         app.router.add_get('/', _index)
         app.router.add_static('/assets', _frontend / 'assets')

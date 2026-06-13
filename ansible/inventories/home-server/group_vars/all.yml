@@ -15,4 +15,7 @@ db_login: "meow-bot"
 db_host: postgresql
 db_port: 5432
 db_database: "meow-bot"
+discord_proxy_target: "homeserver.zelgray.work"
+bot_image_tag: "dev"
+bot_image_pull: "never"
 ...

@@ -10,5 +10,5 @@ INFISICAL_TOKEN=$(infisical login \
 infisical export \
   --token="${INFISICAL_TOKEN}" \
   --projectId="${INFISICAL_PROJECT_ID}" \
-  --env=dev --path=/discord-meow-bot-local \
+  --env=dev --path=/github-common-infisical-secrets \
   --format=dotenv > .env

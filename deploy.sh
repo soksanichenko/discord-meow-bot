@@ -15,6 +15,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+echo "=== Infisical vars ==="
+: "${INFISICAL_CLIENT_ID:?INFISICAL_CLIENT_ID is not set}"
+: "${INFISICAL_CLIENT_SECRET:?INFISICAL_CLIENT_SECRET is not set}"
+: "${INFISICAL_API_URL:?INFISICAL_API_URL is not set}"
+
 echo "=== Running tests ==="
 python -m pytest "${PROJECT_DIR}/tests/" -q --tb=short
 
@@ -38,5 +43,8 @@ fi
 
 echo "=== Deploying ==="
 pushd "${PROJECT_DIR}/ansible" || exit 1
+INFISICAL_API_URL="${INFISICAL_API_URL}" \
+INFISICAL_CLIENT_ID="${INFISICAL_CLIENT_ID}" \
+INFISICAL_CLIENT_SECRET="${INFISICAL_CLIENT_SECRET}" \
 ansible-playbook -i "${INVENTORY}" -vv "playbooks/deploy.yml" ${EXTRA_VARS}
 popd || exit 1

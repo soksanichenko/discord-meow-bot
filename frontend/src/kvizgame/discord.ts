@@ -1,9 +1,20 @@
 import { DiscordSDK, DiscordSDKMock, patchUrlMappings } from '@discord/embedded-app-sdk';
 
-const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID as string;
+declare global {
+  interface Window {
+    __KVIZGAME_CONFIG__?: { clientId: string; proxyTarget: string };
+  }
+}
 
 // Detect whether we're running inside a Discord Activity iframe.
 const isInDiscord = new URLSearchParams(window.location.search).has('frame_id');
+
+// In production the server injects window.__KVIZGAME_CONFIG__ into index.html.
+// In local dev (Vite) fall back to .env vars.
+const CLIENT_ID =
+  window.__KVIZGAME_CONFIG__?.clientId || (import.meta.env.VITE_DISCORD_CLIENT_ID as string);
+const PROXY_TARGET =
+  window.__KVIZGAME_CONFIG__?.proxyTarget || (import.meta.env.VITE_DISCORD_PROXY_TARGET as string);
 
 export const sdk = isInDiscord
   ? new DiscordSDK(CLIENT_ID)
@@ -29,7 +40,7 @@ export async function setup(): Promise<AuthResult> {
 
   // Patch fetch + WebSocket to go through Discord's reverse proxy.
   // The prefix must match the URL mapping configured in the Developer Portal.
-  patchUrlMappings([{ prefix: '/api', target: 'zelgray.work' }]);
+  patchUrlMappings([{ prefix: '/api', target: PROXY_TARGET }]);
 
   const { code } = await sdk.commands.authorize({
     client_id: CLIENT_ID,

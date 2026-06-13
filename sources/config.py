@@ -49,6 +49,7 @@ class Config(BaseSettings):
     kvizgame_frontend_dir: str = ''
     discord_client_id: str = ''
     discord_client_secret: str = ''
+    discord_proxy_target: str = ''
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

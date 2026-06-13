@@ -2,9 +2,7 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/ ./
-RUN if [ -f package.json ]; then npm ci; fi
-ARG VITE_DISCORD_CLIENT_ID
-RUN if [ -f package.json ]; then npm run build; else mkdir -p dist; fi
+RUN if [ -f package.json ]; then npm ci && npm run build; else mkdir -p dist; fi
 
 # Stage 2: Build Python venv
 FROM almalinux:10 AS python-builder

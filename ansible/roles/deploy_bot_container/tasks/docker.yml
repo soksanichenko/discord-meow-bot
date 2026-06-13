@@ -6,13 +6,6 @@
     state: directory
   become: yes
 
-- name: Create frontend volume directory
-  ansible.builtin.file:
-    path: "{{ docker_lib_folder }}/{{ docker_volumes['frontend']['path'] }}"
-    recurse: yes
-    state: directory
-  become: yes
-
 - name: Ensure Docker network exists
   community.docker.docker_network:
     name: "{{ docker_network }}"
@@ -35,7 +28,7 @@
     image: "ghcr.io/soksanichenko/discord-meow-bot:{{ bot_image_tag }}"
     state: started
     pull: "{{ bot_image_pull }}"
-    restart: yes
+    recreate: yes
     restart_policy: always
     command:
       - "-c"
@@ -48,10 +41,6 @@
         target: "/code/images"
         read_only: no
         type: bind
-      - source: "{{ docker_lib_folder }}/{{ docker_volumes['frontend']['path'] }}"
-        target: "/code/frontend"
-        read_only: yes
-        type: bind
     published_ports:
       - "127.0.0.1:{{ health_port }}:{{ health_port }}"
       - "127.0.0.1:{{ kvizgame_port }}:{{ kvizgame_port }}"
@@ -60,6 +49,7 @@
       DISCORD_TOKEN: "{{ discord_token }}"
       DISCORD_CLIENT_ID: "{{ discord_client_id }}"
       DISCORD_CLIENT_SECRET: "{{ discord_client_secret }}"
+      DISCORD_PROXY_TARGET: "{{ discord_proxy_target }}"
       HEALTH_PORT: "{{ health_port | string }}"
       BIRTHDAY_IMAGES_DIR: "/code/images"
       YOUTUBE_API_KEY: "{{ youtube_api_key }}"
