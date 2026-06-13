@@ -124,9 +124,6 @@ class TwitchRelayCog(commands.Cog):
         )
         self._twitch.user_auth_refresh_callback = self._on_token_refresh
 
-        self._eventsub = EventSubWebsocket(self._twitch)
-        self._eventsub.start()
-
         asyncio.create_task(self._init_subscriptions())
 
     async def _init_subscriptions(self) -> None:
@@ -137,7 +134,9 @@ class TwitchRelayCog(commands.Cog):
             await asyncio.gather(*[self._subscribe_user(uid) for uid in unique_ids])
             self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
         else:
-            self.logger.info('No Twitch relays configured; EventSub running')
+            self.logger.info(
+                'No Twitch relays configured; EventSub will start on first relay'
+            )
         await self._cleanup_stale_sessions()
 
     async def cog_unload(self) -> None:
@@ -174,10 +173,13 @@ class TwitchRelayCog(commands.Cog):
             True if subscribed (or already subscribed), False on error.
         """
         if self._eventsub is None:
-            self.logger.warning(
-                'EventSub not ready; cannot subscribe %s', twitch_user_id
-            )
-            return False
+            if self._twitch is None:
+                self.logger.warning(
+                    'Twitch client not ready; cannot subscribe %s', twitch_user_id
+                )
+                return False
+            self._eventsub = EventSubWebsocket(self._twitch)
+            self._eventsub.start()
         if twitch_user_id in self._subscription_ids:
             return True
         try:

@@ -138,7 +138,7 @@ class MeowBot(Bot):
         await self.add_cog(UserCog(self))
         await self.add_cog(YouTubeRelayCog(self))
         await self.add_cog(VoiceCog(self))
-        await self._sync_command_tree()
+        asyncio.create_task(self._sync_command_tree())
 
     async def _sync_command_tree(self) -> None:
         """Sync slash commands with Discord only when the tree has changed.
