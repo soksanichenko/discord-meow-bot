@@ -1,6 +1,6 @@
 ---
 infisical_project_id: "286db07f-4dba-4ca9-a515-f017d77b8bf1"
-infisical_path: "/hosts/zelgray-work"
+infisical_path: "/hosts/home-server"
 discord_token: "{{ infisical_secrets.secrets['discord-bot-token'] }}"
 discord_client_id: "{{ infisical_secrets.secrets['discord-bot-client-id'] }}"
 discord_client_secret: "{{ infisical_secrets.secrets['discord-bot-client-secret'] }}"
