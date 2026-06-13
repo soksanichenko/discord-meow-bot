@@ -27,7 +27,7 @@
     name: discord-meow-bot
     image: "ghcr.io/soksanichenko/discord-meow-bot:{{ bot_image_tag }}"
     state: started
-    pull: always
+    pull: "{{ bot_image_pull }}"
     restart: yes
     restart_policy: always
     command:
@@ -43,8 +43,7 @@
         type: bind
     published_ports:
       - "127.0.0.1:{{ health_port }}:{{ health_port }}"
-    networks:
-      - name: "{{ docker_network }}"
+    networks: "{{ [{'name': docker_network}] + docker_extra_networks }}"
     env:
       DISCORD_TOKEN: "{{ discord_token }}"
       HEALTH_PORT: "{{ health_port | string }}"

@@ -4,6 +4,8 @@ docker_volumes:
   images:
     path: "volumes/meow-bot/images"
 docker_network: "active"
+docker_extra_networks: []
 health_port: 8080
 bot_image_tag: "latest"
+bot_image_pull: "always"
 ...
