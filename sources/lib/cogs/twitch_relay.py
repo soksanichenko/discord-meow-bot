@@ -127,15 +127,17 @@ class TwitchRelayCog(commands.Cog):
         self._eventsub = EventSubWebsocket(self._twitch)
         self._eventsub.start()
 
+        asyncio.create_task(self._init_subscriptions())
+
+    async def _init_subscriptions(self) -> None:
+        """Subscribe to all saved relays in the background after cog_load returns."""
         relays = await get_all_relays()
         unique_ids = {r.twitch_user_id for r in relays}
-        for user_id in unique_ids:
-            await self._subscribe_user(user_id)
         if unique_ids:
+            await asyncio.gather(*[self._subscribe_user(uid) for uid in unique_ids])
             self.logger.info('Subscribed to %d Twitch channel(s)', len(unique_ids))
         else:
             self.logger.info('No Twitch relays configured; EventSub running')
-
         await self._cleanup_stale_sessions()
 
     async def cog_unload(self) -> None:

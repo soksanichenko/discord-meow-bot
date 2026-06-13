@@ -71,5 +71,9 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ github.event.workflow_run.head_sha || github.sha }}
             ghcr.io/${{ github.repository_owner }}/discord-meow-bot:latest
+          labels: |
+            org.opencontainers.image.description=Discord bot with URL fixing, relays, birthdays and more
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
