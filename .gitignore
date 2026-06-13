@@ -5,4 +5,5 @@ vault-pass
 *.pyc
 __pycache__
 IDEAS.md
+SESSION.md
 .coverage
