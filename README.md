@@ -1,5 +1,13 @@
 # Discord Meow Bot
 
+[![Lint](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/lint.yml/badge.svg)](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/lint.yml)
+[![Test](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/test.yml/badge.svg)](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/test.yml)
+[![Deploy](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/deploy.yml/badge.svg)](https://github.com/soksanichenko/discord-meow-bot/actions/workflows/deploy.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![discord.py](https://img.shields.io/badge/discord.py-2.7.1-5865F2)
+![Docker Image](https://img.shields.io/badge/ghcr.io-discord--meow--bot-blue?logo=docker)
+![License](https://img.shields.io/github/license/soksanichenko/discord-meow-bot)
+
 A Discord bot with quality-of-life features for servers.
 
 ## Features
