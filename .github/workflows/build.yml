@@ -53,6 +53,9 @@ jobs:
       - name: Ensure frontend directory exists
         run: mkdir -p frontend
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -68,3 +71,5 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/discord-meow-bot:${{ github.event.workflow_run.head_sha || github.sha }}
             ghcr.io/${{ github.repository_owner }}/discord-meow-bot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
