@@ -407,6 +407,10 @@ class TwitchRelayCog(commands.Cog):
     async def _fetch_stream_info(self, twitch_user_id: str) -> dict | None:
         """Fetch stream title, category, viewers, and channel icon for a live embed.
 
+        Retries up to 3 times with a 3-second delay to handle the propagation lag
+        between Twitch firing stream.online via EventSub and the stream appearing
+        in the get_streams REST API.
+
         Args:
             twitch_user_id: Twitch numeric user ID.
 
@@ -416,15 +420,30 @@ class TwitchRelayCog(commands.Cog):
         """
         if self._twitch is None:
             return None
+        _max_attempts = 4
+        _retry_delay = 3
         try:
             stream = None
-            async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
-                stream = s
-                break
+            for attempt in range(1, _max_attempts + 1):
+                async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
+                    stream = s
+                    break
+                if stream is not None:
+                    break
+                if attempt < _max_attempts:
+                    self.logger.debug(
+                        'stream.online for %s: get_streams returned no data (attempt %d/%d), retrying in %ds',
+                        twitch_user_id,
+                        attempt,
+                        _max_attempts,
+                        _retry_delay,
+                    )
+                    await asyncio.sleep(_retry_delay)
             if stream is None:
                 self.logger.warning(
-                    'stream.online for %s: get_streams returned no data, falling back to plain text',
+                    'stream.online for %s: get_streams returned no data after %d attempts, falling back to plain text',
                     twitch_user_id,
+                    _max_attempts,
                 )
                 return None
             profile_image_url = None
