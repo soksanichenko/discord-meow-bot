@@ -1,5 +1,4 @@
 -r sources/requirements.txt
-ansible==14.0.0
 pre-commit==4.6.0
 infisicalsdk==1.0.16
 pytest==9.0.3

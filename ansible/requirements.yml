@@ -1,6 +1,8 @@
 ---
 collections:
-  - name: infisical.vault
+  - source: https://github.com/soksanichenko/infisical-ansible-collection.git
+    type: git
+    version: feat/read-secrets-include-imports
   - name: community.docker
   - name: community.general
   - name: ansible.posix

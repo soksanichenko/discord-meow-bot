@@ -33,11 +33,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install Ansible and Infisical SDK
-        run: pip install -r requirements.txt
+        run: pip install -r ./requirements.txt
 
       - name: Install Ansible collections
-        working-directory: ansible
-        run: ansible-galaxy collection install -r requirements.yml
+        run: ansible-galaxy collection install -r ./ansible/requirements.yml
 
       - name: Set up SSH key
         uses: webfactory/ssh-agent@v0.9.1

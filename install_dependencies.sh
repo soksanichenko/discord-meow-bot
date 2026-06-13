@@ -7,7 +7,7 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 ansible-galaxy install -r "$SCRIPT_DIR/ansible/requirements.yml"
 pre-commit install
 
-INFISICAL_BINARY="/usr/local/bin/infisical"
+INFISICAL_BINARY="/usr/bin/infisical"
 
 if [[ ! -f "$INFISICAL_BINARY" ]]; then
     echo "Installing infisical CLI..."
