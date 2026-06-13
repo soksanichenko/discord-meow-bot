@@ -33,17 +33,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install Ansible and Infisical SDK
-        run: pip install ansible infisicalsdk==1.0.16
+        run: pip install -r requirements.txt
 
       - name: Install Ansible collections
         working-directory: ansible
         run: ansible-galaxy collection install -r requirements.yml
 
       - name: Set up SSH key
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Deploy
         working-directory: ansible

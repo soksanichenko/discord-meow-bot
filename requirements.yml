@@ -1,5 +1,6 @@
 ---
 collections:
-  - name: bitwarden.secrets
-    version: 1.0.1
+  - source: https://github.com/soksanichenko/infisical-ansible-collection.git
+    type: git
+    version: feat/read-secrets-include-imports
 ...
