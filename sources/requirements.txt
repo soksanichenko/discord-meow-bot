@@ -2,6 +2,7 @@ aiohttp==3.14.1
 prometheus_client==0.25.0
 twitchAPI==4.5.0
 APScheduler==3.11.2
+tzlocal==5.3.1
 alembic==1.18.4
 psycopg[binary]==3.3.4
 dateparser==1.4.0
