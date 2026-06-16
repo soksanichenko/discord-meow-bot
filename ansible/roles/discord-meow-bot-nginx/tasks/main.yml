@@ -7,7 +7,7 @@
 
 - name: Manage meow-bot health htpasswd file
   community.general.htpasswd:
-    path: "{{ nginx_confd_path }}/meow-bot-health.htpasswd"
+    path: "{{ nginx_custom_locations_path }}/meow-bot-health.htpasswd"
     name: "{{ discord_bot_health_user }}"
     password: "{{ discord_bot_health_password }}"
     mode: "0644"

@@ -1,6 +1,6 @@
 location = /discord-bot/health {
     auth_basic "Restricted";
-    auth_basic_user_file {{ nginx_confd_path }}/meow-bot-health.htpasswd;
+    auth_basic_user_file  conf.d/{{ discord_proxy_target }}-custom-locations/meow-bot-health.htpasswd;
     proxy_pass            http://discord-meow-bot:{{ health_port }}/health;
     proxy_read_timeout    5s;
     proxy_connect_timeout 3s;
