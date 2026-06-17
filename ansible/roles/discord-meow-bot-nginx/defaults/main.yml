@@ -1,7 +1,9 @@
 ---
+nginx_confd_container_path: "/etc/nginx/conf.d"
 nginx_docker_container_name: "nginx-server"
 nginx_confd_path: "/opt/docker/nginx/conf.d"
 nginx_custom_locations_path: "{{ nginx_confd_path }}/{{ discord_proxy_target }}-custom-locations"
+nginx_htpasswd_path: "{{ nginx_confd_path }}/htpasswd"
 discord_bot_health_user: "meow-bot"
 health_port: 8080
 kvizgame_port: 8082
