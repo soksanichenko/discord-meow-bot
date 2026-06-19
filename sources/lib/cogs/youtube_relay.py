@@ -1391,6 +1391,17 @@ class YouTubeRelayCog(commands.Cog):
                 continue
 
             try:
+                if video_id:
+                    # Write video_id to seen_video_ids BEFORE sending to Discord.
+                    # If the process is killed between this write and the Discord send,
+                    # the next poll will find the video in seen_ids and skip it (a miss),
+                    # which is far preferable to a duplicate post.
+                    current_seen = [video_id] + [
+                        v for v in current_seen if v != video_id
+                    ]
+                    await update_last_video_id(
+                        relay.id, video_id, current_seen[:_SEEN_WINDOW]
+                    )
                 if is_live and video_id:
                     (
                         viewers,
@@ -1419,17 +1430,6 @@ class YouTubeRelayCog(commands.Cog):
                         service='youtube', type='short' if is_short else 'video'
                     ).inc()
                 posted += 1
-                if video_id:
-                    # Persist seen_video_ids immediately after each successful Discord
-                    # post so that a crash before the final sentinel update cannot cause
-                    # the same video to be re-posted: on the next poll the video_id will
-                    # already be in seen_ids and will be filtered at line 1345.
-                    current_seen = [video_id] + [
-                        v for v in current_seen if v != video_id
-                    ]
-                    await update_last_video_id(
-                        relay.id, relay.last_video_id, current_seen[:_SEEN_WINDOW]
-                    )
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay %d',
