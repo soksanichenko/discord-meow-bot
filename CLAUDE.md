@@ -115,7 +115,7 @@ Rules:
 - `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
 - `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
-- `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `message_*` are custom notification texts (NULL = use built-in default)
+- `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, seen_video_ids JSON, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `seen_video_ids` is a sliding window of recently-posted video IDs for deduplication; `message_*` are custom notification texts (NULL = use built-in default)
 - `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
 - `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1)
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
@@ -262,12 +262,13 @@ Deployment does:
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.py` | v2.7.1 (git) | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.50 | ORM |
+| `SQLAlchemy[asyncio]` | 2.0.51 | ORM |
+| `SQLAlchemy-Utils` | 0.42.1 | `create_database` / `database_exists` (used in `db/utils.py`) |
 | `psycopg[binary]` | 3.3.4 | Async + sync PostgreSQL driver |
 | `alembic` | 1.18.4 | DB migrations |
 | `pydantic-settings` | 2.14.1 | Config from env vars |
 | `tldextract` | 5.3.1 | URL domain extraction |
-| `dateparser` | 1.4.0 | Natural language date parsing |
+| `dateparser` | 1.4.1 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start) |
 | `aiohttp` | 3.14.1 | HTTP client (YouTube API, Spotify API, Twitch API) |
 | `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |

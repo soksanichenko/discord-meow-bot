@@ -350,6 +350,86 @@ class TestOnStreamOnline:
 
 
 # ---------------------------------------------------------------------------
+# _fetch_stream_info — stream metadata fetching and thumbnail cache-busting
+# ---------------------------------------------------------------------------
+
+
+class TestFetchStreamInfo:
+    def _stream(
+        self,
+        thumbnail_url: str = 'https://cdn.jtvnw.net/previews-ttv/live_user_streamer-{width}x{height}.jpg',
+        title: str = 'Playing games',
+        game_name: str = 'Minecraft',
+        viewer_count: int = 100,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            thumbnail_url=thumbnail_url,
+            title=title,
+            game_name=game_name,
+            viewer_count=viewer_count,
+        )
+
+    def _make_twitch(
+        self,
+        stream: SimpleNamespace | None = None,
+        profile_image_url: str = 'https://example.com/pic.jpg',
+    ) -> MagicMock:
+        mock = MagicMock()
+
+        async def get_streams(**_):
+            if stream is not None:
+                yield stream
+
+        async def get_users(**_):
+            yield SimpleNamespace(profile_image_url=profile_image_url)
+
+        mock.get_streams = get_streams
+        mock.get_users = get_users
+        return mock
+
+    async def test_thumbnail_url_has_cache_buster(self):
+        cog = _make_cog()
+        cog._twitch = self._make_twitch(self._stream())
+
+        result = await cog._fetch_stream_info('123')
+
+        assert result is not None
+        url = result['thumbnail_url']
+        assert '?t=' in url
+        assert url.split('?t=')[1].isdigit()
+
+    async def test_thumbnail_placeholders_replaced(self):
+        cog = _make_cog()
+        cog._twitch = self._make_twitch(self._stream())
+
+        result = await cog._fetch_stream_info('123')
+
+        assert result is not None
+        url = result['thumbnail_url']
+        assert '1280' in url
+        assert '720' in url
+        assert '{width}' not in url
+        assert '{height}' not in url
+
+    async def test_returns_none_when_twitch_not_configured(self):
+        cog = _make_cog()
+        cog._twitch = None
+
+        result = await cog._fetch_stream_info('123')
+
+        assert result is None
+
+    async def test_returns_none_when_stream_not_found(self):
+        cog = _make_cog()
+        cog._twitch = self._make_twitch(stream=None)
+
+        with patch('sources.lib.cogs.twitch_relay.asyncio.sleep', AsyncMock()):
+            result = await cog._fetch_stream_info('123')
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
 # _relay_autocomplete — choice labels and filtering
 # ---------------------------------------------------------------------------
 
