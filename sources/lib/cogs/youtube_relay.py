@@ -1358,7 +1358,8 @@ class YouTubeRelayCog(commands.Cog):
             )
             return
 
-        newly_posted_ids: list[str] = []
+        # Maintained across posts so each per-post DB write includes all IDs posted so far.
+        current_seen: list[str] = list(relay.seen_video_ids or [])
         posted = 0
         for entry in reversed(new_entries):
             link = entry.get('link')
@@ -1419,7 +1420,16 @@ class YouTubeRelayCog(commands.Cog):
                     ).inc()
                 posted += 1
                 if video_id:
-                    newly_posted_ids.append(video_id)
+                    # Persist seen_video_ids immediately after each successful Discord
+                    # post so that a crash before the final sentinel update cannot cause
+                    # the same video to be re-posted: on the next poll the video_id will
+                    # already be in seen_ids and will be filtered at line 1345.
+                    current_seen = [video_id] + [
+                        v for v in current_seen if v != video_id
+                    ]
+                    await update_last_video_id(
+                        relay.id, relay.last_video_id, current_seen[:_SEEN_WINDOW]
+                    )
             except discord.Forbidden:
                 self.logger.warning(
                     'No permission to post in channel %d for relay %d',
@@ -1429,11 +1439,6 @@ class YouTubeRelayCog(commands.Cog):
                 return
 
         latest_id = self._video_id_from_entry(entries[0])
-        existing_seen = relay.seen_video_ids or []
-        posted_set = set(newly_posted_ids)
-        updated_seen = newly_posted_ids + [
-            v for v in existing_seen if v not in posted_set
-        ]
         if latest_id:
-            await update_last_video_id(relay.id, latest_id, updated_seen[:_SEEN_WINDOW])
+            await update_last_video_id(relay.id, latest_id, current_seen[:_SEEN_WINDOW])
         self.logger.info('Relay %d: posted %d new video(s)', relay.id, posted)
