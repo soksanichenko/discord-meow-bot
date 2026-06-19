@@ -450,8 +450,12 @@ class TwitchRelayCog(commands.Cog):
             async for u in self._twitch.get_users(user_ids=[twitch_user_id]):
                 profile_image_url = u.profile_image_url
                 break
-            thumbnail_url = stream.thumbnail_url.replace('{width}', '1280').replace(
-                '{height}', '720'
+            ts = int(time.time())
+            thumbnail_url = (
+                stream.thumbnail_url.replace('{width}', '1280').replace(
+                    '{height}', '720'
+                )
+                + f'?t={ts}'
             )
             return {
                 'title': stream.title,
