@@ -321,6 +321,27 @@ class VoiceChannel(Base):
     status: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AutoResponder(Base):
+    """An automatic reply triggered when a specific user is mentioned in a guild."""
+
+    __tablename__ = 'auto_responders'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    response_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # NULL means the responder never expires.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (Index('uq_auto_responders', 'guild_id', 'user_id', unique=True),)
+
+
 class MessageStats(Base):
     """Aggregate message count per user per guild."""
 

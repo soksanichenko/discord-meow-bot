@@ -1669,4 +1669,87 @@ class TestUpdateTwitchRelayChannel:
             )
         assert result == 'streamer'
         assert relay.discord_channel_id == 200
+
+
+# ---------------------------------------------------------------------------
+# auto_responder operations
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAutoResponder:
+    async def test_returns_false_when_not_found(self):
+        session, ctx = _make_session()
+        session.execute = AsyncMock(return_value=MagicMock(rowcount=0))
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import delete_auto_responder
+
+            result = await delete_auto_responder(guild_id=1, user_id=2)
+        assert result is False
+
+    async def test_returns_true_when_deleted(self):
+        session, ctx = _make_session()
+        session.execute = AsyncMock(return_value=MagicMock(rowcount=1))
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import delete_auto_responder
+
+            result = await delete_auto_responder(guild_id=1, user_id=2)
+        assert result is True
+        session.commit.assert_awaited_once()
+
+
+class TestListAutoResponders:
+    async def test_returns_active_responders(self):
+        r1 = SimpleNamespace(user_id=1)
+        r2 = SimpleNamespace(user_id=2)
+        session, ctx = _make_session(scalars_rows=[r1, r2])
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import list_auto_responders
+
+            result = await list_auto_responders(guild_id=10)
+        assert result == [r1, r2]
+
+    async def test_returns_empty_list_when_none(self):
+        session, ctx = _make_session(scalars_rows=[])
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import list_auto_responders
+
+            result = await list_auto_responders(guild_id=10)
+        assert result == []
+
+
+class TestDeleteExpiredAutoResponders:
+    async def test_returns_count_of_deleted_rows(self):
+        session, ctx = _make_session()
+        session.execute = AsyncMock(return_value=MagicMock(rowcount=3))
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import (
+                delete_expired_auto_responders,
+            )
+
+            count = await delete_expired_auto_responders()
+        assert count == 3
+        session.commit.assert_awaited_once()
+
+    async def test_returns_zero_when_nothing_expired(self):
+        session, ctx = _make_session()
+        session.execute = AsyncMock(return_value=MagicMock(rowcount=0))
+        with patch(
+            'sources.lib.db.operations.auto_responder.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.auto_responder import (
+                delete_expired_auto_responders,
+            )
+
+            count = await delete_expired_auto_responders()
+        assert count == 0
         session.commit.assert_awaited_once()

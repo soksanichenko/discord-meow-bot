@@ -121,6 +121,7 @@ Rules:
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
 - `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
 - `VoiceChannel(channel_id PK, guild_id FK, name, status nullable)` — cached voice/stage channel records; status mirrors the last VOICE_CHANNEL_STATUS_UPDATE Gateway event; rows are kept in sync with Discord (creates, renames, deletes)
+- `AutoResponder(id PK, guild_id FK, user_id, response_text, expires_at nullable)` — per-user auto-reply triggered when the user is mentioned; one row per guild+user; expires_at=NULL means never expires; 5-minute cooldown enforced in-memory
 
 ### Migrations
 
@@ -195,6 +196,9 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/twitch-relay set-message` | twitch_relay.py | Set a custom stream notification message (admin) |
 | `/twitch-relay remove-message` | twitch_relay.py | Reset notification message to default (admin) |
 | `/twitch-relay list` | twitch_relay.py | Show active Twitch relays (admin) |
+| `/auto-responder set` | auto_responder.py | Set your own auto-reply when mentioned (any user) |
+| `/auto-responder remove` | auto_responder.py | Remove your own auto-reply (any user) |
+| `/auto-responder list` | auto_responder.py | Show all active auto-responders in this guild (any user) |
 | `/bot-stats` | admin.py | Live metrics embed: latency, relay counts, errors (bot owner only) |
 | `/help [command]` | help.py | List all commands or show details for one; auto-reflects new commands |
 

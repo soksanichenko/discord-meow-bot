@@ -13,6 +13,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 
 from sources.config import config
 from sources.lib.cogs.admin import AdminCog
+from sources.lib.cogs.auto_responder import AutoResponderCog
 from sources.lib.cogs.birthdays import BirthdaysCog
 from sources.lib.cogs.domain_fixer import DomainFixerCog
 from sources.lib.cogs.events import EventsCog
@@ -124,6 +125,7 @@ class MeowBot(Bot):
         """Load all cogs and sync the slash command tree with Discord if it changed."""
         self.tree.on_error = self.on_tree_error
         await self.add_cog(AdminCog(self))
+        await self.add_cog(AutoResponderCog(self))
         await self.add_cog(EventsCog(self))
         await self.add_cog(HelpCog(self))
         await self.add_cog(BirthdaysCog(self))
