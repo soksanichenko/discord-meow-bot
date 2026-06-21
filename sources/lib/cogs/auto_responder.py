@@ -228,7 +228,9 @@ class AutoResponderCog(commands.Cog):
                 continue
 
             self._cooldowns[cooldown_key] = now
-            await message.channel.send(responder.response_text)
+            await message.reply(
+                f'**{mentioned_user.display_name}**: {responder.response_text}'
+            )
             self.logger.info(
                 'Auto-responder fired for user %d in guild %d',
                 mentioned_user.id,

@@ -16,6 +16,7 @@ A Discord bot with quality-of-life features for servers.
   - [URL Domain Fixer](#url-domain-fixer)
   - [Birthday Reminders](#birthday-reminders)
   - [Message Reminders](#message-reminders)
+  - [Auto-Responder](#auto-responder)
   - [Cross-Platform Music Link Conversion](#cross-platform-music-link-conversion)
   - [Message Statistics](#message-statistics)
   - [Telegram Channel Relay](#telegram-channel-relay)
@@ -66,6 +67,17 @@ the original channel.
 - `/reminders add` — set a reminder on the current or any message
 - `/reminders list` — list your pending reminders
 - `/reminders cancel` — cancel a pending reminder
+
+### Auto-Responder
+Any guild member can set an automatic reply that fires when they are mentioned.
+The bot replies to the triggering message with the configured text, prefixed
+by the mentioned user's bold display name. A 5-minute per-user cooldown prevents
+spam. An optional expiry time removes the responder automatically.
+
+- `/auto-responder set <response> [expires]` — set your own auto-reply; `expires`
+  accepts natural language, e.g. `in 7 days`, `1 jan 2027`
+- `/auto-responder remove` — remove your own auto-reply
+- `/auto-responder list` — show all active auto-responders on this server
 
 ### Cross-Platform Music Link Conversion
 When a user posts a YouTube, YouTube Music, or Spotify link in a configured

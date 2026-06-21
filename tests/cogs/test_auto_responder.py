@@ -17,6 +17,7 @@ def _make_message(guild_id: int, author_id: int, mentions: list) -> MagicMock:
     msg.author = SimpleNamespace(id=author_id)
     msg.mentions = mentions
     msg.channel = AsyncMock()
+    msg.reply = AsyncMock()
     return msg
 
 
@@ -70,7 +71,7 @@ class TestOnMessage:
 
         bot = _make_bot()
         cog = AutoResponderCog(bot)
-        mentioned = SimpleNamespace(id=2)
+        mentioned = SimpleNamespace(id=2, display_name='Alice')
         msg = _make_message(1, 1, [mentioned])
         responder = SimpleNamespace(response_text='I am away')
 
@@ -81,14 +82,14 @@ class TestOnMessage:
         ):
             await cog.on_message(msg)
 
-        msg.channel.send.assert_awaited_once_with('I am away')
+        msg.reply.assert_awaited_once_with('**Alice**: I am away')
 
     async def test_does_not_send_when_no_responder(self):
         from sources.lib.cogs.auto_responder import AutoResponderCog
 
         bot = _make_bot()
         cog = AutoResponderCog(bot)
-        mentioned = SimpleNamespace(id=2)
+        mentioned = SimpleNamespace(id=2, display_name='Alice')
         msg = _make_message(1, 1, [mentioned])
 
         with patch(
@@ -98,14 +99,14 @@ class TestOnMessage:
         ):
             await cog.on_message(msg)
 
-        msg.channel.send.assert_not_awaited()
+        msg.reply.assert_not_awaited()
 
     async def test_cooldown_suppresses_second_fire(self):
         from sources.lib.cogs.auto_responder import AutoResponderCog
 
         bot = _make_bot()
         cog = AutoResponderCog(bot)
-        mentioned = SimpleNamespace(id=2)
+        mentioned = SimpleNamespace(id=2, display_name='Alice')
         msg = _make_message(1, 1, [mentioned])
         responder = SimpleNamespace(response_text='away')
 
@@ -117,15 +118,15 @@ class TestOnMessage:
             await cog.on_message(msg)
             await cog.on_message(msg)
 
-        # Only the first message should trigger a send
-        assert msg.channel.send.await_count == 1
+        # Only the first message should trigger a reply
+        assert msg.reply.await_count == 1
 
     async def test_cooldown_expires_after_300_seconds(self):
         from sources.lib.cogs.auto_responder import AutoResponderCog
 
         bot = _make_bot()
         cog = AutoResponderCog(bot)
-        mentioned = SimpleNamespace(id=2)
+        mentioned = SimpleNamespace(id=2, display_name='Alice')
         msg = _make_message(1, 1, [mentioned])
         responder = SimpleNamespace(response_text='away')
 
@@ -140,15 +141,15 @@ class TestOnMessage:
         ):
             await cog.on_message(msg)
 
-        msg.channel.send.assert_awaited_once_with('away')
+        msg.reply.assert_awaited_once_with('**Alice**: away')
 
     async def test_multiple_mentions_each_checked_independently(self):
         from sources.lib.cogs.auto_responder import AutoResponderCog
 
         bot = _make_bot()
         cog = AutoResponderCog(bot)
-        user_a = SimpleNamespace(id=2)
-        user_b = SimpleNamespace(id=3)
+        user_a = SimpleNamespace(id=2, display_name='Alice')
+        user_b = SimpleNamespace(id=3, display_name='Bob')
         msg = _make_message(1, 1, [user_a, user_b])
 
         responders = {
@@ -164,4 +165,4 @@ class TestOnMessage:
         ):
             await cog.on_message(msg)
 
-        assert msg.channel.send.await_count == 2
+        assert msg.reply.await_count == 2
