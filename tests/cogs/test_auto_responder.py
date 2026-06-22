@@ -1,8 +1,10 @@
-"""Tests for the AutoResponderCog on_message listener and cooldown logic."""
+"""Tests for the AutoResponderCog on_message listener, cooldown, and expiry logic."""
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytz
 
 
 def _make_bot():
@@ -166,3 +168,45 @@ class TestOnMessage:
             await cog.on_message(msg)
 
         assert msg.reply.await_count == 2
+
+
+class TestNormalizeExpiry:
+    def test_midnight_with_timezone_shifts_to_9am(self):
+        from sources.lib.cogs.auto_responder import normalize_expiry
+
+        tz = pytz.timezone('Europe/Kyiv')
+        midnight = tz.localize(datetime(2026, 12, 25, 0, 0, 0))
+        result = normalize_expiry(midnight, 'Europe/Kyiv')
+
+        assert result.hour == 9
+        assert result.day == 25
+        assert result.month == 12
+        assert str(result.tzinfo) == 'Europe/Kyiv'
+
+    def test_midnight_without_timezone_shifts_to_9am_utc(self):
+        from sources.lib.cogs.auto_responder import normalize_expiry
+
+        midnight = datetime(2026, 12, 25, 0, 0, 0, tzinfo=pytz.UTC)
+        result = normalize_expiry(midnight, None)
+
+        assert result.hour == 9
+        assert result.tzinfo == pytz.UTC
+
+    def test_non_midnight_time_is_unchanged(self):
+        from sources.lib.cogs.auto_responder import normalize_expiry
+
+        tz = pytz.timezone('Europe/Kyiv')
+        dt = tz.localize(datetime(2026, 12, 25, 23, 30, 0))
+        result = normalize_expiry(dt, 'Europe/Kyiv')
+
+        assert result == dt
+
+    def test_partial_midnight_not_treated_as_date_only(self):
+        from sources.lib.cogs.auto_responder import normalize_expiry
+
+        # 00:30:00 is NOT midnight — should be left unchanged
+        tz = pytz.timezone('Europe/Kyiv')
+        dt = tz.localize(datetime(2026, 12, 25, 0, 30, 0))
+        result = normalize_expiry(dt, 'Europe/Kyiv')
+
+        assert result == dt

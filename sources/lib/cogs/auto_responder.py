@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import discord
+import pytz
 from discord import app_commands
 from discord.ext import commands, tasks
 
@@ -15,6 +16,7 @@ from sources.lib.db.operations.auto_responder import (
     list_auto_responders,
     upsert_auto_responder,
 )
+from sources.lib.db.operations.birthdays import get_guild_settings
 from sources.lib.db.operations.guilds import upsert_guild
 from sources.lib.db.operations.users import get_user
 from sources.lib.utils.logger import Logger
@@ -22,6 +24,28 @@ from sources.lib.views.reminders import parse_when
 
 _COOLDOWN_SECONDS = 300
 _MAX_RESPONSE_LEN = 500
+_DATE_ONLY_HOUR = 9
+
+
+def normalize_expiry(expires_at: datetime, timezone_str: str | None) -> datetime:
+    """Shift a midnight expiry to 9:00 AM when only a date was entered.
+
+    dateparser returns 00:00:00 when no time component is present.
+    A date-only input like "25 dec" should mean "keep active all day",
+    so we move the cutoff to 9 AM in the user's (or guild's) timezone.
+
+    Args:
+        expires_at: The datetime returned by parse_when.
+        timezone_str: IANA timezone name, or None to use UTC.
+
+    Returns:
+        The original datetime unchanged if it has a non-zero time component,
+        otherwise the same date at 09:00:00 in the resolved timezone.
+    """
+    if expires_at.hour == 0 and expires_at.minute == 0 and expires_at.second == 0:
+        tz = pytz.timezone(timezone_str) if timezone_str else pytz.UTC
+        return tz.localize(expires_at.replace(tzinfo=None, hour=_DATE_ONLY_HOUR))
+    return expires_at
 
 
 class AutoResponderCog(commands.Cog):
@@ -94,6 +118,9 @@ class AutoResponderCog(commands.Cog):
         if expires is not None:
             db_user = await get_user(interaction.user.id)
             timezone_str = db_user.timezone if db_user else None
+            if timezone_str is None:
+                guild_settings = await get_guild_settings(interaction.guild_id)
+                timezone_str = guild_settings.timezone if guild_settings else None
             expires_at = parse_when(expires, timezone_str)
             if expires_at is None:
                 await interaction.response.send_message(
@@ -102,6 +129,7 @@ class AutoResponderCog(commands.Cog):
                     ephemeral=True,
                 )
                 return
+            expires_at = normalize_expiry(expires_at, timezone_str)
             if expires_at <= datetime.now(tz=UTC):
                 await interaction.response.send_message(
                     'The expiry time must be in the future.',

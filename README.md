@@ -75,7 +75,9 @@ by the mentioned user's bold display name. A 5-minute per-user cooldown prevents
 spam. An optional expiry time removes the responder automatically.
 
 - `/auto-responder set <response> [expires]` — set your own auto-reply; `expires`
-  accepts natural language, e.g. `in 7 days`, `1 jan 2027`
+  accepts natural language, e.g. `in 7 days`, `1 jan 2027`, `25 dec`; a date
+  without a time expires at 09:00 in your timezone (falls back to guild timezone,
+  then UTC)
 - `/auto-responder remove` — remove your own auto-reply
 - `/auto-responder list` — show all active auto-responders on this server
 
