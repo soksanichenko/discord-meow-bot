@@ -49,7 +49,7 @@ _YT_API_CHANNELS = 'https://www.googleapis.com/youtube/v3/channels'
 _YT_API_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos'
 _YT_RSS_BASE = 'https://www.youtube.com/feeds/videos.xml'
 
-_SEEN_WINDOW = 15  # matches the max number of entries in a YouTube RSS feed
+_SEEN_WINDOW = 30  # 2× feed size so resync merges don't evict recently-posted IDs
 
 # Ordered list of (flag_key, display_label) for all content types.
 _CONTENT_TYPES: list[tuple[str, str]] = [
@@ -1329,10 +1329,18 @@ class YouTubeRelayCog(commands.Cog):
             new_entries.append(entry)
         else:
             # Sentinel aged out of the RSS window; resync silently.
+            # Merge old seen IDs with the current feed so videos that temporarily
+            # dropped out (YouTube feeds are eventually consistent) are not re-posted
+            # if they reappear before the new sentinel.
             latest_id = self._video_id_from_entry(entries[0])
             new_seen = [v for e in entries if (v := self._video_id_from_entry(e))]
+            merged_seen = list(
+                dict.fromkeys(new_seen + list(relay.seen_video_ids or []))
+            )
             if latest_id:
-                await update_last_video_id(relay.id, latest_id, new_seen[:_SEEN_WINDOW])
+                await update_last_video_id(
+                    relay.id, latest_id, merged_seen[:_SEEN_WINDOW]
+                )
             self.logger.warning(
                 'Relay %d: last_video_id %r aged out of feed; resynced to %s',
                 relay.id,
