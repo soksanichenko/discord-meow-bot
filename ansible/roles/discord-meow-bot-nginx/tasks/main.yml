@@ -1,4 +1,13 @@
 ---
+- name: Create meow-bot static subdirectory
+  ansible.builtin.file:
+    path: "{{ nginx_html_path }}/static/meow-bot"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: yes
+
 - name: Sync meow-bot static files to nginx
   ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../../frontend/static/"
