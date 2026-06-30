@@ -1,0 +1,329 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --accent: #4f8ef7;
+    --accent-hover: #6ea3ff;
+    --text: #e2e6f0;
+    --text-muted: #8891a8;
+    --link: #4f8ef7;
+    --link-hover: #6ea3ff;
+    --tag-bg: #1e2235;
+    --radius: 10px;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15, 17, 23, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.header-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.02em;
+    text-decoration: none;
+}
+
+.header-name:hover {
+    color: var(--text);
+}
+
+.header-name span {
+    color: var(--accent);
+}
+
+.lang-selector {
+    position: relative;
+}
+
+.lang-selector select {
+    appearance: none;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.4rem 2.2rem 0.4rem 0.9rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238891a8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+}
+
+.lang-selector select:hover,
+.lang-selector select:focus {
+    border-color: var(--accent);
+}
+
+main {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 3rem 2rem 5rem;
+}
+
+.intro {
+    margin-bottom: 3rem;
+}
+
+.intro-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.intro-heading img {
+    height: 2.8rem;
+    width: auto;
+    border: none;
+    padding: 0;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.intro h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.intro p {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+}
+
+.intro a { color: var(--link); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s, color 0.2s; }
+.intro a:hover { color: var(--link-hover); border-bottom-color: var(--link-hover); }
+
+.section {
+    margin-bottom: 2.5rem;
+    padding: 1.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.section h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 1rem;
+}
+
+.section p {
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.section p:last-child { margin-bottom: 0; }
+
+.section a { color: var(--link); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s, color 0.2s; }
+.section a:hover { color: var(--link-hover); border-bottom-color: var(--link-hover); }
+
+.section strong { color: var(--text); font-weight: 600; }
+
+.games-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.game-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.game-title { font-weight: 600; color: var(--text); font-size: 0.95rem; }
+.game-stats { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; margin-left: 1rem; }
+
+.specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.spec-item {
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.spec-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.2rem; }
+.spec-value { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.tag {
+    background: var(--tag-bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+}
+
+.social-links {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.social-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.social-link:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 600px) {
+    header { padding: 0.75rem 1rem; }
+    main { padding: 2rem 1rem 4rem; }
+    .intro h1 { font-size: 1.5rem; }
+    .game-item { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+    .game-stats { margin-left: 0; }
+}
+
+/* Document pages */
+.doc-content {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 3rem 2rem 5rem;
+}
+
+.doc-content h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+}
+
+.doc-content .doc-updated {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+}
+
+.doc-content h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.doc-content h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.doc-content h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-top: 1rem;
+    margin-bottom: 0.4rem;
+}
+
+.doc-content p {
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.doc-content ul {
+    color: var(--text-muted);
+    padding-left: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.doc-content li {
+    margin-bottom: 0.4rem;
+}
+
+.doc-content a {
+    color: var(--link);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.doc-content a:hover {
+    color: var(--link-hover);
+    border-bottom-color: var(--link-hover);
+}
+
+.doc-content strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.ukraine-statement {
+    padding: 1.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    line-height: 1.8;
+}
+
+.ukraine-statement p {
+    margin-bottom: 0.75rem;
+}
+
+.ukraine-statement p:last-child {
+    margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+    .doc-content { padding: 2rem 1rem 4rem; }
+}
