@@ -30,15 +30,15 @@
 
 - name: Deploy meow-bot HTML pages from templates
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/../../frontend/templates/{{ item }}.j2"
-    dest: "{{ nginx_html_path }}/{{ item }}"
+    src: "{{ item }}.j2"
+    dest: "{{ nginx_html_path }}/static/meow-bot/{{ item }}"
     owner: root
     group: root
     mode: "0644"
   become: yes
   loop:
-    - static/meow-bot/meow-bot-pp.html
-    - static/meow-bot/meow-bot-tos.html
+    - meow-bot-pp.html
+    - meow-bot-tos.html
 
 - name: Install python3-passlib for htpasswd management
   ansible.builtin.package:
