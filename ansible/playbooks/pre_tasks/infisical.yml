@@ -1,5 +1,6 @@
 ---
 - name: Login to Infisical
+  tags: always
   infisical.vault.login:
     url: "{{ lookup('env', 'INFISICAL_API_URL') }}"
     auth_method: universal_auth
