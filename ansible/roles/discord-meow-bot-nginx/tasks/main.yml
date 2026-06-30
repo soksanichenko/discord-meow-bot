@@ -1,4 +1,36 @@
 ---
+- name: Sync meow-bot static files to nginx
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../frontend/static/"
+    dest: "{{ nginx_html_path }}/static/meow-bot/"
+    delete: yes
+    recursive: yes
+    checksum: yes
+  become: yes
+
+- name: Compute meow-bot static file version hashes
+  ansible.builtin.set_fact:
+    meow_bot_static_file_versions: >-
+      {{ meow_bot_static_file_versions | default({}) | combine(
+        {item: (lookup('file', playbook_dir + '/../../frontend/static/' + item) | hash('md5'))[:8]}
+      ) }}
+  loop:
+    - js/meow-bot-pp.js
+    - js/meow-bot-tos.js
+    - js/i18n.js
+
+- name: Deploy meow-bot HTML pages from templates
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../frontend/templates/{{ item }}.j2"
+    dest: "{{ nginx_html_path }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: yes
+  loop:
+    - static/meow-bot/meow-bot-pp.html
+    - static/meow-bot/meow-bot-tos.html
+
 - name: Install python3-passlib for htpasswd management
   ansible.builtin.package:
     name: python3-passlib
