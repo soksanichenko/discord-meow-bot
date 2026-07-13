@@ -17,6 +17,58 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+GH_REPO="${REGISTRY#ghcr.io/}"
+
+# Prod (zelgray.work) full deploys go through the existing GitHub Actions
+# Test -> Build -> Deploy chain instead of building/pushing locally, so no
+# local GHCR credentials are needed. --tags runs (infra-only changes) and
+# other inventories (e.g. home-server) keep the local build+push+ansible path.
+if [[ -z "$ANSIBLE_TAGS" && "$(basename "$INVENTORY")" == "zelgray.work" ]]; then
+  echo "=== Running tests ==="
+  python -m pytest "${PROJECT_DIR}/tests/" -q --tb=short
+
+  BRANCH="$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  if [[ "$BRANCH" != "main" ]]; then
+    echo "Prod auto-deploy only triggers from 'main' (current branch: ${BRANCH})." >&2
+    exit 1
+  fi
+
+  if [[ -n "$(git -C "$PROJECT_DIR" status --porcelain)" ]]; then
+    echo "Working tree has uncommitted changes — commit first." >&2
+    exit 1
+  fi
+
+  watch_workflow() {
+    local workflow="$1"
+    echo "=== Waiting for '${workflow}' run ==="
+    local run_id=""
+    for _ in $(seq 1 60); do
+      run_id=$(gh run list --repo "$GH_REPO" --workflow "$workflow" --branch main \
+        --json databaseId,createdAt \
+        --jq "[.[] | select(.createdAt > \"${SINCE}\")] | sort_by(.createdAt) | .[0].databaseId // empty" \
+        2>/dev/null || true)
+      [[ -n "$run_id" ]] && break
+      sleep 5
+    done
+    if [[ -z "$run_id" ]]; then
+      echo "Timed out waiting for '${workflow}' to start." >&2
+      exit 1
+    fi
+    gh run watch "$run_id" --repo "$GH_REPO" --exit-status
+  }
+
+  SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "=== Pushing main to trigger Test -> Build -> Deploy ==="
+  git -C "$PROJECT_DIR" push origin main
+
+  watch_workflow "test.yml"
+  watch_workflow "build.yml"
+  watch_workflow "deploy.yml"
+
+  echo "=== Deploy complete ==="
+  exit 0
+fi
+
 if [[ -z "$ANSIBLE_TAGS" ]]; then
   echo "=== Running tests ==="
   python -m pytest "${PROJECT_DIR}/tests/" -q --tb=short

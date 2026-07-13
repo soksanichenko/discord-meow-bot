@@ -242,20 +242,29 @@ The port is published only to `127.0.0.1` on the host (Docker `published_ports`)
 Ansible-based, targets `zelgray.work` inventory. Secrets are managed via **Infisical** (Ansible `infisical.vault` collection) — not ansible-vault.
 
 ```bash
-# Deploy
+# Deploy to prod (zelgray.work)
 ./deploy.sh
-# Equivalent to:
-ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml
 ```
 
-Deployment does:
-1. Builds Docker image (AlmaLinux 10 + Python 3.12)
-2. Starts container with startup sequence: `create_db.py` → `alembic upgrade head` → `main.py`
-3. Log driver: `journald`; restart policy: `always`
-4. Bind mounts:
+For the default case (no `--tags`, prod inventory), `./deploy.sh` no longer builds/pushes Docker images locally. Instead it:
+1. Runs tests locally (fast fail before pushing)
+2. Verifies the current branch is `main` and the working tree is clean
+3. `git push origin main`
+4. Watches the existing GitHub Actions chain via `gh run watch`: `Test` → `Build` (pushes image to GHCR using the runner's own `GITHUB_TOKEN`) → `Deploy` (runs the Ansible playbook below from the runner)
+
+No local GHCR login/credentials are needed for prod deploys. `gh` CLI must be authenticated (`gh auth status`).
+
+Two cases still use the local path (`docker build` → `docker push`/`--local` SSH transfer → local `ansible-playbook`):
+- `./deploy.sh --tags <tag>` — infra-only changes (e.g. `nginx`), no new image needed
+- `./deploy.sh -i inventories/home-server` — CI only deploys to `zelgray.work`, so other inventories still run the full local flow
+
+The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv playbooks/deploy.yml`):
+1. Starts container with startup sequence: `create_db.py` → `alembic upgrade head` → `main.py`
+2. Log driver: `journald`; restart policy: `always`
+3. Bind mounts:
    - `sources/` → `/code/sources` (read-only)
    - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
-5. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
+4. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
 
 ## Tests
 
@@ -270,7 +279,7 @@ Deployment does:
 | `SQLAlchemy-Utils` | 0.42.1 | `create_database` / `database_exists` (used in `db/utils.py`) |
 | `psycopg[binary]` | 3.3.4 | Async + sync PostgreSQL driver |
 | `alembic` | 1.18.4 | DB migrations |
-| `pydantic-settings` | 2.14.1 | Config from env vars |
+| `pydantic-settings` | 2.14.2 | Config from env vars |
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.1 | Natural language date parsing |
 | `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start) |

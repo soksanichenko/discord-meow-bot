@@ -239,14 +239,18 @@ python sources/scripts/main.py
 
 ## Deployment
 
-Ansible-based deployment to a Docker container:
+Ansible-based deployment to a Docker container. To deploy to prod:
 
 ```bash
 ./deploy.sh
 ```
 
-Secrets are managed via Infisical. The following environment variables
-must be set before deploying:
+This runs tests locally, pushes `main`, then watches the existing GitHub Actions
+`Test` → `Build` → `Deploy` pipeline (`gh` CLI must be authenticated). No local
+Docker build/push or GHCR credentials are needed.
+
+Secrets are managed via Infisical, both in CI and for local Ansible runs against
+other inventories. The following environment variables must be set for those:
 
 | Variable | Description |
 |---|---|
