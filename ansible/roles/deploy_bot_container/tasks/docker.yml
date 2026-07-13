@@ -19,6 +19,8 @@
     restart_policy: always
     networks:
       - name: "{{ docker_network }}"
+    labels:
+      monitoring.critical: "true"
     log_driver: journald
   become: yes
 
@@ -59,6 +61,8 @@
       RSSHUB_URL: "http://rsshub:1200"
       TWITCH_CLIENT_ID: "{{ twitch_client_id }}"
       TWITCH_CLIENT_SECRET: "{{ twitch_client_secret }}"
+    labels:
+      monitoring.critical: "true"
     log_driver: journald
   become: yes
   no_log: true
