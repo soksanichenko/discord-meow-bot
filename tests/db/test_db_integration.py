@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sources.lib.db.models import (
+    AutoResponder,
     DomainFixer,
     Guild,
     GuildDomainFixer,
@@ -72,6 +73,8 @@ class TestSchema:
             'twitch_auth',
             'twitch_relays',
             'twitch_live_sessions',
+            'voice_channels',
+            'auto_responders',
         ]
         for table in expected_tables:
             result = await db_session.execute(
@@ -617,3 +620,128 @@ class TestTwitchAuth:
 
         updated = await db_session.get(TwitchAuth, 1)
         assert updated.access_token == 'token_b'
+
+
+class TestAutoResponderExpiry:
+    """expires_at SQL filter and bulk delete work correctly against real PostgreSQL."""
+
+    # Guild IDs 910_070–910_071 reserved for this class.
+    _GUILD_FILTER = 910_070
+    _GUILD_DELETE = 910_071
+
+    async def test_expired_responder_excluded_from_active_query(
+        self, db_session: AsyncSession
+    ) -> None:
+        """The (expires_at IS NULL OR expires_at > now) filter must exclude past-expiry rows
+        and include rows that are active or have no expiry.
+
+        Args:
+            db_session: Async session bound to the test container.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        db_session.add(Guild(id=self._GUILD_FILTER, name='AR Expiry Filter'))
+        await db_session.flush()
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_FILTER,
+                user_id=1,
+                response_text='expired',
+                expires_at=now - timedelta(hours=1),
+            )
+        )
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_FILTER,
+                user_id=2,
+                response_text='active',
+                expires_at=now + timedelta(hours=1),
+            )
+        )
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_FILTER,
+                user_id=3,
+                response_text='never',
+                expires_at=None,
+            )
+        )
+        await db_session.commit()
+
+        def _active_query(user_id: int):
+            return select(AutoResponder).where(
+                AutoResponder.guild_id == self._GUILD_FILTER,
+                AutoResponder.user_id == user_id,
+                (AutoResponder.expires_at.is_(None)) | (AutoResponder.expires_at > now),
+            )
+
+        assert (await db_session.scalars(_active_query(1))).one_or_none() is None
+        assert (await db_session.scalars(_active_query(2))).one_or_none() is not None
+        assert (await db_session.scalars(_active_query(3))).one_or_none() is not None
+
+    async def test_bulk_delete_removes_expired_rows_only(
+        self, db_session: AsyncSession
+    ) -> None:
+        """The bulk-delete WHERE clause used by delete_expired_auto_responders must
+        delete past-expiry rows and leave active and null-expiry rows untouched.
+
+        Args:
+            db_session: Async session bound to the test container.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import delete
+
+        now = datetime.now(UTC)
+        db_session.add(Guild(id=self._GUILD_DELETE, name='AR Expiry Delete'))
+        await db_session.flush()
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_DELETE,
+                user_id=1,
+                response_text='will be deleted',
+                expires_at=now - timedelta(minutes=5),
+            )
+        )
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_DELETE,
+                user_id=2,
+                response_text='survives',
+                expires_at=now + timedelta(hours=2),
+            )
+        )
+        db_session.add(
+            AutoResponder(
+                guild_id=self._GUILD_DELETE,
+                user_id=3,
+                response_text='survives forever',
+                expires_at=None,
+            )
+        )
+        await db_session.commit()
+
+        result = await db_session.execute(
+            delete(AutoResponder).where(
+                AutoResponder.expires_at.isnot(None),
+                AutoResponder.expires_at <= now,
+            )
+        )
+        await db_session.commit()
+
+        assert result.rowcount >= 1
+
+        remaining = list(
+            (
+                await db_session.scalars(
+                    select(AutoResponder).where(
+                        AutoResponder.guild_id == self._GUILD_DELETE
+                    )
+                )
+            ).all()
+        )
+        texts = {r.response_text for r in remaining}
+        assert 'will be deleted' not in texts
+        assert 'survives' in texts
+        assert 'survives forever' in texts
