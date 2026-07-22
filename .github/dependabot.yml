@@ -5,7 +5,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    target-branch: "master"
+    target-branch: "main"
     groups:
       pip-dependencies:
         patterns:
@@ -19,7 +19,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    target-branch: "master"
+    target-branch: "main"
     groups:
       github-actions-dependencies:
         patterns:
