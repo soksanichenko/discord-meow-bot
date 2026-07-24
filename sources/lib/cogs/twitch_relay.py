@@ -39,6 +39,7 @@ from sources.lib.db.operations.twitch_relay import (
     update_relay_channel,
 )
 from sources.lib.utils.logger import Logger
+from sources.lib.utils.metrics import api_call_latency, relay_fetch_errors, relay_posts
 
 _TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
@@ -197,6 +198,7 @@ class TwitchRelayCog(commands.Cog):
             self.logger.info('Subscription for %s already active', twitch_user_id)
             return True
         except Exception as exc:
+            relay_fetch_errors.labels(service='twitch').inc()
             self.logger.warning(
                 'Failed to subscribe to %s (%s): %s',
                 twitch_user_id,
@@ -274,6 +276,7 @@ class TwitchRelayCog(commands.Cog):
                     )
                     await asyncio.sleep(retry_delay)
                 else:
+                    relay_fetch_errors.labels(service='twitch').inc()
                     self.logger.error(
                         'Task %s timed out after %ss on all %d attempt(s)',
                         name,
@@ -418,6 +421,7 @@ class TwitchRelayCog(commands.Cog):
                 )
                 sent = await channel.send(f'{message}\n{url}')
             await add_live_session(relay.id, sent.id)
+            relay_posts.labels(service='twitch', type='online').inc()
             self.logger.info(
                 'Posted stream.online for %s to channel %d',
                 relay.twitch_login,
@@ -525,9 +529,10 @@ class TwitchRelayCog(commands.Cog):
         try:
             stream = None
             for attempt in range(1, max_attempts + 1):
-                async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
-                    stream = s
-                    break
+                with api_call_latency.labels(service='twitch').time():
+                    async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
+                        stream = s
+                        break
                 if stream is not None:
                     break
                 if attempt < max_attempts:
@@ -547,9 +552,10 @@ class TwitchRelayCog(commands.Cog):
                 )
                 return None
             profile_image_url = None
-            async for u in self._twitch.get_users(user_ids=[twitch_user_id]):
-                profile_image_url = u.profile_image_url
-                break
+            with api_call_latency.labels(service='twitch').time():
+                async for u in self._twitch.get_users(user_ids=[twitch_user_id]):
+                    profile_image_url = u.profile_image_url
+                    break
             ts = int(time.time())
             thumbnail_url = (
                 stream.thumbnail_url.replace('{width}', '1280').replace(
@@ -565,6 +571,7 @@ class TwitchRelayCog(commands.Cog):
                 'profile_image_url': profile_image_url,
             }
         except Exception as exc:
+            relay_fetch_errors.labels(service='twitch').inc()
             self.logger.warning(
                 'Failed to fetch stream info for %s: %s', twitch_user_id, exc
             )
