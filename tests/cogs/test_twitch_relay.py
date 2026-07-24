@@ -592,6 +592,33 @@ class TestRelayAutocomplete:
 
 
 # ---------------------------------------------------------------------------
+# _is_eventsub_connected — EventSub WebSocket connection health metric
+# ---------------------------------------------------------------------------
+
+
+class TestIsEventsubConnected:
+    def test_no_eventsub_yet(self):
+        cog = _make_cog()
+        cog._eventsub = None
+        assert cog._is_eventsub_connected() == 0.0
+
+    def test_eventsub_with_no_connection_yet(self):
+        cog = _make_cog()
+        cog._eventsub = SimpleNamespace(_connection=None)
+        assert cog._is_eventsub_connected() == 0.0
+
+    def test_connection_open(self):
+        cog = _make_cog()
+        cog._eventsub = SimpleNamespace(_connection=SimpleNamespace(closed=False))
+        assert cog._is_eventsub_connected() == 1.0
+
+    def test_connection_closed(self):
+        cog = _make_cog()
+        cog._eventsub = SimpleNamespace(_connection=SimpleNamespace(closed=True))
+        assert cog._is_eventsub_connected() == 0.0
+
+
+# ---------------------------------------------------------------------------
 # _run_with_timeout — fire-and-forget task hang protection
 # ---------------------------------------------------------------------------
 

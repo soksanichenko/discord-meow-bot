@@ -36,3 +36,7 @@ scheduler_job_failures = Counter(
     'Number of APScheduler job failures',
     ['job'],
 )
+twitch_eventsub_connected = Gauge(
+    'twitch_eventsub_connected',
+    'Whether the Twitch EventSub WebSocket connection is currently open (1) or not (0)',
+)

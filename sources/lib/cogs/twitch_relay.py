@@ -39,7 +39,12 @@ from sources.lib.db.operations.twitch_relay import (
     update_relay_channel,
 )
 from sources.lib.utils.logger import Logger
-from sources.lib.utils.metrics import api_call_latency, relay_fetch_errors, relay_posts
+from sources.lib.utils.metrics import (
+    api_call_latency,
+    relay_fetch_errors,
+    relay_posts,
+    twitch_eventsub_connected,
+)
 
 _TOKEN_URL = 'https://id.twitch.tv/oauth2/token'
 _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
@@ -103,6 +108,20 @@ class TwitchRelayCog(commands.Cog):
         self._http_session: aiohttp.ClientSession | None = None
         # twitch_user_id → (stream.online sub_id, stream.offline sub_id)
         self._subscription_ids: dict[str, tuple[str, str]] = {}
+        twitch_eventsub_connected.set_function(self._is_eventsub_connected)
+
+    def _is_eventsub_connected(self) -> float:
+        """Report whether the EventSub WebSocket connection is currently open.
+
+        Reads twitchAPI's internal connection object rather than a public
+        property, since the library does not expose one; falls back to
+        "not connected" if that internal shape ever changes.
+
+        Returns:
+            1.0 if connected, 0.0 otherwise.
+        """
+        connection = getattr(self._eventsub, '_connection', None)
+        return 1.0 if connection is not None and not connection.closed else 0.0
 
     async def cog_load(self) -> None:
         """Authenticate with Twitch, start EventSub, and subscribe to all saved relays."""
