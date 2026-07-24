@@ -130,7 +130,10 @@ Forwards Twitch stream start and end notifications to Discord channels via
 EventSub WebSocket. Posts a rich embed on stream start (channel icon, stream
 title, game, viewer count, preview thumbnail) and updates it to a "stream
 ended" embed when the stream finishes. Stale sessions from before a bot
-restart are cleaned up automatically on startup.
+restart are cleaned up automatically on startup. A stuck notification handler
+(e.g. a hung DB or Twitch API call) is retried automatically instead of
+failing silently; `/twitch-relay force-check` can also be run manually to
+check current live status and post a missing notification.
 
 One-time setup: run `/twitch-relay authorize` (bot owner) to complete the
 Twitch Device Code Grant flow. Then admins can add relays per server.
@@ -143,6 +146,7 @@ Twitch Device Code Grant flow. Then admins can add relays per server.
 - `/twitch-relay remove <channel>` — stop forwarding (admin)
 - `/twitch-relay list` — show active relays (admin)
 - `/twitch-relay sync` — re-subscribe to EventSub (admin)
+- `/twitch-relay force-check` — check live status now and post a notification if one is missing (admin)
 
 ### Scheduled Event Auto-Start
 Automatically transitions Discord scheduled events from *Scheduled* to *Active*

@@ -190,6 +190,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
 | `/twitch-relay authorize` | twitch_relay.py | Twitch Device Code Grant auth (bot owner only) |
 | `/twitch-relay sync` | twitch_relay.py | Re-subscribe to EventSub for all or one channel (admin) |
+| `/twitch-relay force-check` | twitch_relay.py | Check live status now and post a notification if one is missing (admin) |
 | `/twitch-relay add` | twitch_relay.py | Forward a Twitch channel's streams to Discord (admin) |
 | `/twitch-relay remove` | twitch_relay.py | Stop forwarding a Twitch channel (admin) |
 | `/twitch-relay modify` | twitch_relay.py | Change the Discord channel for a relay (admin) |

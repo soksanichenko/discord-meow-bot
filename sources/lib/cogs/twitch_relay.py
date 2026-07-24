@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 
 import aiohttp
@@ -239,7 +240,55 @@ class TwitchRelayCog(commands.Cog):
                 'Unhandled error in %s', task.get_name(), exc_info=exc
             )
 
-    def _dispatch(self, coro: object, name: str) -> None:
+    async def _run_with_timeout(
+        self,
+        coro_factory: Callable[[], Coroutine],
+        name: str,
+        timeout: float,
+        retries: int,
+        retry_delay: float,
+    ) -> None:
+        """Run a coroutine with a timeout, retrying instead of hanging forever on expiry.
+
+        Args:
+            coro_factory: Zero-argument callable returning a fresh coroutine on
+                each call, so the operation can be re-run after a timeout.
+            name: Task name, used in log messages.
+            timeout: Maximum number of seconds to wait per attempt.
+            retries: Number of additional attempts after the first one times out.
+            retry_delay: Seconds to wait before each retry.
+        """
+        total_attempts = retries + 1
+        for attempt in range(1, total_attempts + 1):
+            try:
+                await asyncio.wait_for(coro_factory(), timeout=timeout)
+                return
+            except TimeoutError:
+                if attempt < total_attempts:
+                    self.logger.warning(
+                        'Task %s timed out after %ss (attempt %d/%d), retrying',
+                        name,
+                        timeout,
+                        attempt,
+                        total_attempts,
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    self.logger.error(
+                        'Task %s timed out after %ss on all %d attempt(s)',
+                        name,
+                        timeout,
+                        total_attempts,
+                    )
+
+    def _dispatch(
+        self,
+        coro_factory: Callable[[], Coroutine],
+        name: str,
+        timeout: float = 60,
+        retries: int = 2,
+        retry_delay: float = 5,
+    ) -> None:
         """Schedule a coroutine as a Task on the bot's main event loop.
 
         twitchAPI runs EventSub WebSocket in a background thread with its own
@@ -248,13 +297,25 @@ class TwitchRelayCog(commands.Cog):
         timeout context manager.  call_soon_threadsafe ensures the Task runs
         in the correct loop.
 
+        Each attempt is wrapped in a timeout, so a stuck await (e.g. a hung DB
+        or Twitch API call) is retried instead of silently never completing.
+
         Args:
-            coro: Coroutine to schedule.
-            name: Task name used in error log messages.
+            coro_factory: Zero-argument callable returning a fresh coroutine
+                per attempt.
+            name: Task name used in log messages.
+            timeout: Maximum number of seconds to allow each attempt to run.
+            retries: Number of additional attempts after the first timeout.
+            retry_delay: Seconds to wait before each retry.
         """
 
         def _create() -> None:
-            task = self.bot.loop.create_task(coro, name=name)
+            task = self.bot.loop.create_task(
+                self._run_with_timeout(
+                    coro_factory, name, timeout, retries, retry_delay
+                ),
+                name=name,
+            )
             task.add_done_callback(self._task_done_callback)
 
         self.bot.loop.call_soon_threadsafe(_create)
@@ -265,7 +326,9 @@ class TwitchRelayCog(commands.Cog):
         Args:
             event: Twitch stream.online event from the EventSub library.
         """
-        self._dispatch(self._handle_stream_online(event), 'twitch-stream-online')
+        self._dispatch(
+            lambda: self._handle_stream_online(event), 'twitch-stream-online'
+        )
 
     async def _handle_stream_online(self, event: StreamOnlineEvent) -> None:
         """Post a notification to all configured Discord channels when a stream goes live.
@@ -290,52 +353,84 @@ class TwitchRelayCog(commands.Cog):
         url = f'https://www.twitch.tv/{twitch_login}'
         stream_info = await self._fetch_stream_info(twitch_user_id)
         for relay in targets:
-            channel = await resolve_channel(self.bot, relay.discord_channel_id)
-            if channel is None:
-                self.logger.warning(
-                    'Discord channel %d not found for relay %d',
-                    relay.discord_channel_id,
-                    relay.id,
-                )
-                continue
-
-            try:
-                if stream_info:
-                    author_text = (
-                        relay.custom_message
-                        or f'{twitch_display_name} is now live on Twitch!'
-                    )
-                    embed = self._build_live_embed(
-                        author_text=author_text,
-                        title=stream_info['title'],
-                        url=url,
-                        game=stream_info['game'],
-                        viewers=stream_info['viewers'],
-                        thumbnail_url=stream_info['thumbnail_url'],
-                        profile_image_url=stream_info['profile_image_url'],
-                    )
-                    sent = await channel.send(embed=embed)
-                else:
-                    message = (
-                        relay.custom_message
-                        or f'**{twitch_display_name}** is now live on Twitch!'
-                    )
-                    sent = await channel.send(f'{message}\n{url}')
-                await add_live_session(relay.id, sent.id)
-                self.logger.info(
-                    'Posted stream.online for %s to channel %d',
-                    twitch_login,
-                    relay.discord_channel_id,
-                )
-            except discord.Forbidden:
-                self.logger.warning(
-                    'No permission to post in channel %d for relay %d',
-                    relay.discord_channel_id,
-                    relay.id,
-                )
+            await self._post_live_notification(
+                relay, twitch_display_name, url, stream_info
+            )
 
         if twitch_login != targets[0].twitch_login:
             await update_login(twitch_user_id, twitch_login)
+
+    async def _post_live_notification(
+        self,
+        relay: TwitchRelay,
+        twitch_display_name: str,
+        url: str,
+        stream_info: dict | None,
+    ) -> bool:
+        """Post a live-stream announcement for one relay and record the live session.
+
+        Args:
+            relay: The relay to post the notification to.
+            twitch_display_name: Broadcaster display name used in the default message.
+            url: Twitch channel URL.
+            stream_info: Dict from _fetch_stream_info, or None for a plain-text fallback.
+
+        Returns:
+            True if the notification was posted (or a session for this relay
+            already existed), False if the Discord channel was missing or the
+            bot lacked permission to post there.
+        """
+        existing = await get_live_sessions_for_user(relay.twitch_user_id)
+        if any(s.relay_id == relay.id for s in existing):
+            # Already announced (e.g. a retry after a timed-out earlier attempt) —
+            # skip to avoid posting a duplicate announcement.
+            return True
+
+        channel = await resolve_channel(self.bot, relay.discord_channel_id)
+        if channel is None:
+            self.logger.warning(
+                'Discord channel %d not found for relay %d',
+                relay.discord_channel_id,
+                relay.id,
+            )
+            return False
+
+        try:
+            if stream_info:
+                author_text = (
+                    relay.custom_message
+                    or f'{twitch_display_name} is now live on Twitch!'
+                )
+                embed = self._build_live_embed(
+                    author_text=author_text,
+                    title=stream_info['title'],
+                    url=url,
+                    game=stream_info['game'],
+                    viewers=stream_info['viewers'],
+                    thumbnail_url=stream_info['thumbnail_url'],
+                    profile_image_url=stream_info['profile_image_url'],
+                )
+                sent = await channel.send(embed=embed)
+            else:
+                message = (
+                    relay.custom_message
+                    or f'**{twitch_display_name}** is now live on Twitch!'
+                )
+                sent = await channel.send(f'{message}\n{url}')
+            await add_live_session(relay.id, sent.id)
+            self.logger.info(
+                'Posted stream.online for %s to channel %d',
+                relay.twitch_login,
+                relay.discord_channel_id,
+            )
+            return True
+        except discord.Forbidden:
+            self.logger.warning(
+                'No permission to post in channel %d for relay %d',
+                relay.discord_channel_id,
+                relay.id,
+            )
+            return False
 
     async def _on_stream_offline(self, event: StreamOfflineEvent) -> None:
         """Dispatch the stream.offline handler to the bot's main event loop.
@@ -343,7 +438,9 @@ class TwitchRelayCog(commands.Cog):
         Args:
             event: Twitch stream.offline event from the EventSub library.
         """
-        self._dispatch(self._handle_stream_offline(event), 'twitch-stream-offline')
+        self._dispatch(
+            lambda: self._handle_stream_offline(event), 'twitch-stream-offline'
+        )
 
     async def _handle_stream_offline(self, event: StreamOfflineEvent) -> None:
         """Edit the stream announcement when a tracked stream ends.
@@ -404,15 +501,19 @@ class TwitchRelayCog(commands.Cog):
             self.logger.warning('Failed to fetch VOD for %s: %s', twitch_user_id, exc)
         return None
 
-    async def _fetch_stream_info(self, twitch_user_id: str) -> dict | None:
+    async def _fetch_stream_info(
+        self, twitch_user_id: str, max_attempts: int = 4
+    ) -> dict | None:
         """Fetch stream title, category, viewers, and channel icon for a live embed.
 
         Retries up to 3 times with a 3-second delay to handle the propagation lag
         between Twitch firing stream.online via EventSub and the stream appearing
-        in the get_streams REST API.
+        in the get_streams REST API. Pass max_attempts=1 for manual/on-demand
+        checks where no propagation lag is expected.
 
         Args:
             twitch_user_id: Twitch numeric user ID.
+            max_attempts: Number of get_streams attempts before giving up.
 
         Returns:
             Dict with title, game, viewers, thumbnail_url, profile_image_url keys,
@@ -420,30 +521,29 @@ class TwitchRelayCog(commands.Cog):
         """
         if self._twitch is None:
             return None
-        _max_attempts = 4
         _retry_delay = 3
         try:
             stream = None
-            for attempt in range(1, _max_attempts + 1):
+            for attempt in range(1, max_attempts + 1):
                 async for s in self._twitch.get_streams(user_id=[twitch_user_id]):
                     stream = s
                     break
                 if stream is not None:
                     break
-                if attempt < _max_attempts:
+                if attempt < max_attempts:
                     self.logger.debug(
                         'stream.online for %s: get_streams returned no data (attempt %d/%d), retrying in %ds',
                         twitch_user_id,
                         attempt,
-                        _max_attempts,
+                        max_attempts,
                         _retry_delay,
                     )
                     await asyncio.sleep(_retry_delay)
             if stream is None:
                 self.logger.warning(
-                    'stream.online for %s: get_streams returned no data after %d attempts, falling back to plain text',
+                    'get_streams returned no data for %s after %d attempt(s)',
                     twitch_user_id,
-                    _max_attempts,
+                    max_attempts,
                 )
                 return None
             profile_image_url = None
@@ -833,6 +933,73 @@ class TwitchRelayCog(commands.Cog):
                         pass
             ok = await self._subscribe_user(user_id)
             lines.append(f'{"✓" if ok else "✗"} **{login}**')
+
+        await interaction.followup.send('\n'.join(lines), ephemeral=True)
+
+    @relay.command(
+        name='force-check',
+        description='Check live status now and post a notification if one is missing',
+    )
+    @app_commands.describe(
+        channel='Twitch channel to check (leave empty to check all configured channels)'
+    )
+    @app_commands.autocomplete(channel=_channel_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    async def relay_force_check(
+        self,
+        interaction: discord.Interaction,
+        channel: str | None = None,
+    ) -> None:
+        """Manually check current live status and post a notification if one is missing.
+
+        Useful when a stream.online EventSub notification was lost (e.g. the
+        handler failed silently) and no announcement was ever posted.
+
+        Args:
+            interaction: The Discord interaction.
+            channel: Twitch user ID from autocomplete, or None to check all
+                relays configured in this guild.
+        """
+        if self._twitch is None:
+            await interaction.response.send_message(
+                'Twitch is not configured.', ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        relays = await get_guild_relays(interaction.guild_id)
+        if channel:
+            relays = [r for r in relays if r.twitch_user_id == channel]
+        if not relays:
+            await interaction.followup.send(
+                'No matching Twitch relay found.', ephemeral=True
+            )
+            return
+
+        lines = []
+        for relay in relays:
+            if await get_live_sessions_for_user(relay.twitch_user_id):
+                lines.append(
+                    f'**{relay.twitch_login}** — already has an active announcement.'
+                )
+                continue
+
+            stream_info = await self._fetch_stream_info(
+                relay.twitch_user_id, max_attempts=1
+            )
+            if stream_info is None:
+                lines.append(f'**{relay.twitch_login}** — not currently live.')
+                continue
+
+            url = f'https://www.twitch.tv/{relay.twitch_login}'
+            posted = await self._post_live_notification(
+                relay, relay.twitch_login, url, stream_info
+            )
+            lines.append(
+                f'**{relay.twitch_login}** — '
+                + ('notification posted.' if posted else 'failed to post, see logs.')
+            )
 
         await interaction.followup.send('\n'.join(lines), ephemeral=True)
 

@@ -1,5 +1,6 @@
 """Tests for Twitch relay cog pure business logic."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -190,6 +191,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(
                 _stream_online_event('123', 'streamer', 'streamer')
@@ -213,6 +218,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
@@ -247,6 +256,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
@@ -267,6 +280,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(
                 _stream_online_event('123', 'new_name', 'new_name')
@@ -288,6 +305,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', mock_update),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
@@ -307,6 +328,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
@@ -324,6 +349,10 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
 
@@ -345,8 +374,36 @@ class TestOnStreamOnline:
             ),
             patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
             patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
         ):
             await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
+
+    async def test_existing_live_session_skips_duplicate_post(self):
+        """A relay that already has a live session (e.g. a retry after a timed-out
+        earlier attempt) must not be posted to again."""
+        relay = _relay(relay_id=7)
+        channel = AsyncMock()
+        cog = _make_cog()
+        cog.bot.get_channel.return_value = channel
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[SimpleNamespace(relay_id=7)]),
+            ),
+        ):
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
+
+        channel.send.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -532,3 +589,239 @@ class TestRelayAutocomplete:
             choices = await cog._relay_autocomplete(self._interaction({}), '')
 
         assert choices == []
+
+
+# ---------------------------------------------------------------------------
+# _run_with_timeout — fire-and-forget task hang protection
+# ---------------------------------------------------------------------------
+
+
+class TestRunWithTimeout:
+    async def test_completes_normally_without_timeout(self):
+        cog = _make_cog()
+
+        async def quick() -> str:
+            return 'done'
+
+        await cog._run_with_timeout(
+            quick, 'test-task', timeout=1, retries=2, retry_delay=0
+        )
+
+    async def test_retries_then_gives_up_and_logs_error(self):
+        cog = _make_cog()
+        cog.logger = MagicMock()
+        calls = 0
+
+        async def always_slow() -> None:
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(10)
+
+        await cog._run_with_timeout(
+            always_slow, 'test-task', timeout=0.01, retries=2, retry_delay=0
+        )
+
+        assert calls == 3  # first attempt + 2 retries
+        assert cog.logger.warning.call_count == 2
+        cog.logger.error.assert_called_once()
+        assert 'test-task' in cog.logger.error.call_args[0]
+
+    async def test_succeeds_on_retry_without_error_log(self):
+        cog = _make_cog()
+        cog.logger = MagicMock()
+        calls = 0
+
+        async def fails_once() -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await asyncio.sleep(10)
+
+        await cog._run_with_timeout(
+            fails_once, 'test-task', timeout=0.01, retries=2, retry_delay=0
+        )
+
+        assert calls == 2
+        cog.logger.warning.assert_called_once()
+        cog.logger.error.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# relay_force_check — manual live-status check and notification command
+# ---------------------------------------------------------------------------
+
+
+def _force_check_interaction(guild_id: int = 1) -> AsyncMock:
+    interaction = AsyncMock(spec=discord.Interaction)
+    interaction.response = AsyncMock()
+    interaction.followup = AsyncMock()
+    interaction.guild_id = guild_id
+    return interaction
+
+
+class TestForceCheck:
+    async def test_twitch_not_configured_skips(self):
+        cog = _make_cog()
+        cog._twitch = None
+        interaction = _force_check_interaction()
+
+        await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        interaction.response.send_message.assert_awaited_once()
+        interaction.response.defer.assert_not_called()
+
+    async def test_no_matching_relay(self):
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+
+        with patch(
+            'sources.lib.cogs.twitch_relay.get_guild_relays',
+            AsyncMock(return_value=[]),
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        message = interaction.followup.send.call_args[0][0]
+        assert 'No matching' in message
+
+    async def test_existing_live_session_skips_check_and_post(self):
+        relay = _relay()
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_guild_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[SimpleNamespace(id=1)]),
+            ),
+            patch.object(cog, '_fetch_stream_info', AsyncMock()) as fetch_mock,
+            patch.object(cog, '_post_live_notification', AsyncMock()) as post_mock,
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        fetch_mock.assert_not_awaited()
+        post_mock.assert_not_awaited()
+        message = interaction.followup.send.call_args[0][0]
+        assert 'already has an active announcement' in message
+
+    async def test_not_live_reports_and_skips_post(self):
+        relay = _relay()
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_guild_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(cog, '_fetch_stream_info', AsyncMock(return_value=None)),
+            patch.object(cog, '_post_live_notification', AsyncMock()) as post_mock,
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        post_mock.assert_not_awaited()
+        message = interaction.followup.send.call_args[0][0]
+        assert 'not currently live' in message
+
+    async def test_live_posts_notification(self):
+        relay = _relay()
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+        stream_info = {
+            'title': 't',
+            'game': 'g',
+            'viewers': 1,
+            'thumbnail_url': None,
+            'profile_image_url': None,
+        }
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_guild_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(
+                cog, '_fetch_stream_info', AsyncMock(return_value=stream_info)
+            ) as fetch_mock,
+            patch.object(
+                cog, '_post_live_notification', AsyncMock(return_value=True)
+            ) as post_mock,
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        fetch_mock.assert_awaited_once_with(relay.twitch_user_id, max_attempts=1)
+        post_mock.assert_awaited_once_with(
+            relay, relay.twitch_login, 'https://www.twitch.tv/streamer', stream_info
+        )
+        message = interaction.followup.send.call_args[0][0]
+        assert 'notification posted' in message
+
+    async def test_failed_post_is_reported(self):
+        relay = _relay()
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+        stream_info = {
+            'title': 't',
+            'game': 'g',
+            'viewers': 1,
+            'thumbnail_url': None,
+            'profile_image_url': None,
+        }
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_guild_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(
+                cog, '_fetch_stream_info', AsyncMock(return_value=stream_info)
+            ),
+            patch.object(cog, '_post_live_notification', AsyncMock(return_value=False)),
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel=None)
+
+        message = interaction.followup.send.call_args[0][0]
+        assert 'failed to post' in message
+
+    async def test_channel_filter_narrows_relays(self):
+        relay1 = _relay(relay_id=1, twitch_user_id='111', twitch_login='alpha')
+        relay2 = _relay(relay_id=2, twitch_user_id='222', twitch_login='beta')
+        cog = _make_cog()
+        cog._twitch = MagicMock()
+        interaction = _force_check_interaction()
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_guild_relays',
+                AsyncMock(return_value=[relay1, relay2]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(cog, '_fetch_stream_info', AsyncMock(return_value=None)),
+        ):
+            await cog.relay_force_check.callback(cog, interaction, channel='222')
+
+        message = interaction.followup.send.call_args[0][0]
+        assert message == '**beta** — not currently live.'
