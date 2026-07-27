@@ -4,6 +4,7 @@ vault-pass
 .env
 *.pyc
 __pycache__
+*.logs
 IDEAS.md
 SESSION.md
 .coverage
