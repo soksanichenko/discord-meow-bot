@@ -3,7 +3,7 @@ alembic==1.18.5
 APScheduler==3.11.3
 dateparser==1.4.1
 discord.py==2.7.1
-feedparser==6.0.12
+feedparser==6.0.14
 prometheus_client==0.26.0
 psycopg[binary]==3.3.4
 pydantic-settings==2.14.2
