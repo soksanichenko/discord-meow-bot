@@ -1,5 +1,5 @@
 -r sources/requirements.txt
-infisicalsdk==1.0.16
+infisicalsdk==1.0.17
 pre-commit==4.6.2
 pytest==9.1.1
 pytest-asyncio==1.4.0
