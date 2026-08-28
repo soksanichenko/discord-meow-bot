@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 
 import aiohttp
 import discord
@@ -15,7 +16,12 @@ from sources.lib.db.operations.music_links import (
     get_allowed_channels,
     remove_allowed_channel,
 )
-from sources.lib.spotify import SpotifyClient, clean_yt_title
+from sources.lib.spotify import (
+    SpotifyClient,
+    clean_yt_title,
+    is_cover_title,
+    parse_artist_title,
+)
 from sources.lib.utils.logger import Logger
 from sources.lib.utils.metrics import api_call_latency
 
@@ -27,6 +33,11 @@ _YT_MUSIC_PATTERN = re.compile(
     r'https?://music\.youtube\.com/watch\?(?:[^&\s]*&)*v=([a-zA-Z0-9_-]{11})'
 )
 _SPOTIFY_PATTERN = re.compile(r'https?://open\.spotify\.com/track/([a-zA-Z0-9]+)')
+
+# Below this similarity score, a Spotify search hit is considered an
+# unreliable guess (e.g. a cover with no real match) and discarded.
+_MIN_MATCH_CONFIDENCE = 0.5
+_SPOTIFY_SEARCH_LIMIT = 5
 
 
 class MusicLinksCog(commands.Cog):
@@ -81,7 +92,7 @@ class MusicLinksCog(commands.Cog):
             video_id: YouTube video ID (11-character string).
 
         Returns:
-            Spotify track URL, or None if no match was found.
+            Spotify track URL, or None if no confident match was found.
         """
         try:
             with api_call_latency.labels(service='youtube').time():
@@ -116,34 +127,98 @@ class MusicLinksCog(commands.Cog):
         title = snippet['title']
         channel_title = snippet.get('channelTitle', '')
 
-        # Topic channels (auto-generated) have clean titles already.
-        if not channel_title.endswith('- Topic'):
+        artist = None
+        # Topic channels (auto-generated) name the artist directly and have
+        # clean titles already.
+        if channel_title.endswith(' - Topic'):
+            artist = channel_title.removesuffix(' - Topic')
+        else:
+            # A cover's audio is a different recording from anything on
+            # Spotify — neither the original nor someone else's cover is
+            # "this track", so don't attempt a match at all.
+            if is_cover_title(title):
+                return None
             title = clean_yt_title(title)
+            parsed = parse_artist_title(title)
+            if parsed:
+                artist, title = parsed
 
         token = await self._spotify.get_token()
         if not token:
             return None
 
+        if artist:
+            tracks = await self._search_spotify(token, f'artist:{artist} track:{title}')
+            if not tracks:
+                tracks = await self._search_spotify(token, f'{artist} {title}')
+        else:
+            tracks = await self._search_spotify(token, title)
+
+        if not tracks:
+            return None
+
+        scored = [(t, self._match_confidence(title, artist, t)) for t in tracks]
+        best_track, best_score = max(scored, key=lambda pair: pair[1])
+        if best_score < _MIN_MATCH_CONFIDENCE:
+            return None
+
+        return best_track['external_urls']['spotify']
+
+    async def _search_spotify(self, token: str, query: str) -> list[dict]:
+        """Run a Spotify track search and return the raw track items.
+
+        Args:
+            token: Valid Spotify access token.
+            query: Spotify search query string.
+
+        Returns:
+            List of track objects from the search response (possibly empty).
+        """
         try:
             with api_call_latency.labels(service='spotify').time():
                 async with self._session.get(
                     'https://api.spotify.com/v1/search',
                     headers={'Authorization': f'Bearer {token}'},
-                    params={'q': title, 'type': 'track', 'limit': 1},
+                    params={
+                        'q': query,
+                        'type': 'track',
+                        'limit': _SPOTIFY_SEARCH_LIMIT,
+                    },
                 ) as resp:
                     if resp.status != 200:
                         self._logger.warning('Spotify search returned %d', resp.status)
-                        return None
+                        return []
                     data = await resp.json()
         except aiohttp.ClientError as exc:
             self._logger.warning('Spotify search request error: %s', exc)
-            return None
+            return []
+        return data.get('tracks', {}).get('items', [])
 
-        tracks = data.get('tracks', {}).get('items', [])
-        if not tracks:
-            return None
+    @staticmethod
+    def _match_confidence(title: str, artist: str | None, track: dict) -> float:
+        """Score how well a Spotify track matches the searched title/artist.
 
-        return tracks[0]['external_urls']['spotify']
+        Args:
+            title: Searched track title.
+            artist: Searched artist name, or None if unknown.
+            track: Spotify track object from the search response.
+
+        Returns:
+            Similarity score between 0 and 1.
+        """
+        title_score = SequenceMatcher(
+            None, title.lower(), track['name'].lower()
+        ).ratio()
+
+        track_artists = track.get('artists', [])
+        if not artist or not track_artists:
+            return title_score
+
+        artist_score = max(
+            SequenceMatcher(None, artist.lower(), a['name'].lower()).ratio()
+            for a in track_artists
+        )
+        return (title_score + artist_score) / 2
 
     async def _spotify_to_youtube(self, track_id: str) -> str | None:
         """Convert a Spotify track ID to a YouTube Music URL.

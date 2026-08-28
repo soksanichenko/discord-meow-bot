@@ -88,6 +88,9 @@ channel, the bot replies with the matching link on the other platform.
 - YouTube / YouTube Music link → Spotify track
 - Spotify link → YouTube Music link
 
+If the video is a cover/fan performance, or no confidently matching track is
+found, the bot stays silent rather than posting an unrelated link.
+
 Active only in channels explicitly added via `/music-links channel-add`.
 
 - `/music-links channel-add/remove/list` — manage active channels (admin)

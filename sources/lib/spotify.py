@@ -17,6 +17,7 @@ _TITLE_NOISE_RE = re.compile(
     r'[^\)\]]*[\)\]]',
     re.IGNORECASE,
 )
+_COVER_MARKER_RE = re.compile(r'\bcovers?\b', re.IGNORECASE)
 
 
 def clean_yt_title(title: str) -> str:
@@ -29,6 +30,39 @@ def clean_yt_title(title: str) -> str:
         Cleaned title suitable for external API searches.
     """
     return _TITLE_NOISE_RE.sub('', title).strip(' -–—|')
+
+
+def is_cover_title(title: str) -> bool:
+    """Return True if the title marks the video as a cover/fan performance.
+
+    A cover's audio is a different recording from anything on Spotify, so it
+    should never be matched to another track — neither the original song nor
+    someone else's cover of it.
+
+    Args:
+        title: Raw YouTube video title.
+
+    Returns:
+        True if the title mentions "cover"/"covers".
+    """
+    return bool(_COVER_MARKER_RE.search(title))
+
+
+def parse_artist_title(title: str) -> tuple[str, str] | None:
+    """Split an "Artist - Title" YouTube title into its two parts.
+
+    Args:
+        title: Cleaned YouTube video title.
+
+    Returns:
+        (artist, title) tuple, or None if the title has no such structure.
+    """
+    artist, sep, rest = title.partition(' - ')
+    artist = artist.strip()
+    rest = rest.strip()
+    if not sep or not artist or not rest:
+        return None
+    return artist, rest
 
 
 @dataclass

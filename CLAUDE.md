@@ -29,6 +29,7 @@ sources/
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
+│   ├── spotify.py        # Spotify Web API client + YouTube title matching utilities (music_links.py)
 │   ├── utils/            # Shared helpers used across cogs
 │   │   ├── logger.py     # Logger singleton
 │   │   ├── metrics.py    # Shared Prometheus metrics (counters, gauges, histogram)

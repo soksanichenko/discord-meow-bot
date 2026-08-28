@@ -3,7 +3,13 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from sources.lib.spotify import SpotifyClient, _SpotifyToken, clean_yt_title
+from sources.lib.spotify import (
+    SpotifyClient,
+    _SpotifyToken,
+    clean_yt_title,
+    is_cover_title,
+    parse_artist_title,
+)
 
 
 class TestCleanYtTitle:
@@ -62,6 +68,50 @@ class TestCleanYtTitle:
     def test_multiple_noise_sections(self):
         result = clean_yt_title('Song Name (Official Video) [HD]')
         assert result == 'Song Name'
+
+
+class TestIsCoverTitle:
+    def test_detects_cover_by_phrase(self):
+        assert is_cover_title('Hamburger Song cover by Sardaukar Chant Dude')
+
+    def test_detects_cover_of_phrase(self):
+        title = (
+            'Every time we charge - a Warhammer 40k Space Marine cover of '
+            "'Every Time We Touch'"
+        )
+        assert is_cover_title(title)
+
+    def test_detects_parenthetical_cover(self):
+        assert is_cover_title('Jutes - Kill or Be Killed (Maphra Vocal Cover)')
+
+    def test_detects_plural_covers(self):
+        assert is_cover_title('My favorite covers of 2024')
+
+    def test_plain_title_is_not_a_cover(self):
+        assert not is_cover_title('Song Name (Official Video)')
+
+    def test_does_not_match_substring_words(self):
+        assert not is_cover_title('Song Name (Full Coverage Mix)')
+
+
+class TestParseArtistTitle:
+    def test_splits_artist_and_title(self):
+        assert parse_artist_title('Jutes - Kill or Be Killed') == (
+            'Jutes',
+            'Kill or Be Killed',
+        )
+
+    def test_returns_none_without_separator(self):
+        assert parse_artist_title('Kill or Be Killed') is None
+
+    def test_returns_none_with_empty_artist(self):
+        assert parse_artist_title(' - Kill or Be Killed') is None
+
+    def test_splits_on_first_separator_only(self):
+        assert parse_artist_title('Alan Walker - Faded - Remix') == (
+            'Alan Walker',
+            'Faded - Remix',
+        )
 
 
 class TestSpotifyTokenIsValid:
