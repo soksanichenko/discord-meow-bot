@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 
 import aiohttp
 import discord
+from apscheduler.events import EVENT_JOB_ERROR
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord import app_commands
 from discord.ext import commands
 from twitchAPI.eventsub.websocket import EventSubWebsocket
@@ -43,6 +45,7 @@ from sources.lib.utils.metrics import (
     api_call_latency,
     relay_fetch_errors,
     relay_posts,
+    scheduler_job_failures,
     twitch_eventsub_connected,
 )
 
@@ -51,6 +54,10 @@ _DEVICE_URL = 'https://id.twitch.tv/oauth2/device'
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # Discord followup messages expire after 15 minutes; cap device code polling there.
 _MAX_POLL_SECONDS = 800
+# twitchAPI's own reconnect logic can give up silently after repeated
+# failures (observed after a network outage); this is how often we check
+# for that and rebuild the connection from scratch.
+_EVENTSUB_WATCHDOG_MINUTES = 3
 
 
 class _SetMessageModal(discord.ui.Modal):
@@ -108,6 +115,7 @@ class TwitchRelayCog(commands.Cog):
         self._http_session: aiohttp.ClientSession | None = None
         # twitch_user_id → (stream.online sub_id, stream.offline sub_id)
         self._subscription_ids: dict[str, tuple[str, str]] = {}
+        self._scheduler = AsyncIOScheduler()
         twitch_eventsub_connected.set_function(self._is_eventsub_connected)
 
     def _is_eventsub_connected(self) -> float:
@@ -147,6 +155,50 @@ class TwitchRelayCog(commands.Cog):
 
         asyncio.create_task(self._init_subscriptions())
 
+        self._scheduler.add_job(
+            self._check_eventsub_health,
+            trigger='interval',
+            minutes=_EVENTSUB_WATCHDOG_MINUTES,
+            id='twitch_eventsub_watchdog',
+            replace_existing=True,
+        )
+        self._scheduler.add_listener(
+            lambda e: scheduler_job_failures.labels(job=e.job_id).inc(),
+            EVENT_JOB_ERROR,
+        )
+        self._scheduler.start()
+
+    async def _check_eventsub_health(self) -> None:
+        """Recreate the EventSub connection if it dropped and never recovered.
+
+        twitchAPI's own reconnect logic can exhaust its retries and go silent
+        after a network outage, leaving stream notifications dead until the
+        bot is restarted. This periodic check catches that and rebuilds the
+        connection from scratch.
+        """
+        if self._eventsub is None or self._twitch is None:
+            return
+        if self._is_eventsub_connected():
+            return
+
+        self.logger.warning('Twitch EventSub connection is down; recreating')
+        try:
+            await self._eventsub.stop()
+        except Exception as exc:
+            self.logger.warning('Error stopping stale EventSub connection: %s', exc)
+
+        self._subscription_ids.clear()
+        self._eventsub = EventSubWebsocket(self._twitch)
+        self._eventsub.start()
+
+        relays = await get_all_relays()
+        unique_ids = {r.twitch_user_id for r in relays}
+        await asyncio.gather(*[self._subscribe_user(uid) for uid in unique_ids])
+        self.logger.info(
+            'Twitch EventSub connection recreated and re-subscribed to %d channel(s)',
+            len(unique_ids),
+        )
+
     async def _init_subscriptions(self) -> None:
         """Subscribe to all saved relays in the background after cog_load returns."""
         relays = await get_all_relays()
@@ -161,7 +213,9 @@ class TwitchRelayCog(commands.Cog):
         await self._cleanup_stale_sessions()
 
     async def cog_unload(self) -> None:
-        """Stop EventSub and close the Twitch client."""
+        """Stop the watchdog, EventSub, and close the Twitch client."""
+        if self._scheduler.running:
+            self._scheduler.shutdown(wait=False)
         if self._eventsub is not None:
             await self._eventsub.stop()
         if self._twitch is not None:

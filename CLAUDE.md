@@ -24,7 +24,7 @@ sources/
 │   │   ├── reminders.py  # /reminders group (add, list, cancel)
 │   │   ├── stats.py      # /stats group + on_message counter + background import
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
-│   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket
+│   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket + reconnect watchdog
 │   │   ├── user.py       # /get-timestamp, /set-timezone, /my-settings, /force-timezone, /timezones
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
@@ -284,7 +284,7 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 | `pydantic-settings` | 2.14.2 | Config from env vars |
 | `tldextract` | 5.3.1 | URL domain extraction |
 | `dateparser` | 1.4.1 | Natural language date parsing |
-| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start) |
+| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start, relay polling, Twitch EventSub reconnect watchdog) |
 | `aiohttp` | 3.14.1 | HTTP client (YouTube API, Spotify API, Twitch API) |
 | `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
 | `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |

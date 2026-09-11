@@ -136,7 +136,10 @@ ended" embed when the stream finishes. Stale sessions from before a bot
 restart are cleaned up automatically on startup. A stuck notification handler
 (e.g. a hung DB or Twitch API call) is retried automatically instead of
 failing silently; `/twitch-relay force-check` can also be run manually to
-check current live status and post a missing notification.
+check current live status and post a missing notification. A background
+watchdog checks the EventSub connection every few minutes and rebuilds it
+automatically if it drops and doesn't recover on its own (e.g. after a
+network outage).
 
 One-time setup: run `/twitch-relay authorize` (bot owner) to complete the
 Twitch Device Code Grant flow. Then admins can add relays per server.
