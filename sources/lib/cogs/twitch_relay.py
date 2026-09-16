@@ -135,8 +135,14 @@ class TwitchRelayCog(commands.Cog):
         """Authenticate with Twitch, start EventSub, and subscribe to all saved relays."""
         self._http_session = aiohttp.ClientSession()
 
-        if not (config.twitch_client_id and config.twitch_client_secret):
-            self.logger.warning('Twitch credentials not configured; relay disabled')
+        if not (
+            config.twitch_client_id
+            and config.twitch_client_secret
+            and config.encryption_key
+        ):
+            self.logger.warning(
+                'Twitch credentials or ENCRYPTION_KEY not configured; relay disabled'
+            )
             return
 
         self._twitch = await Twitch(
@@ -867,6 +873,13 @@ class TwitchRelayCog(commands.Cog):
         if not config.twitch_client_id:
             await interaction.response.send_message(
                 'Twitch credentials are not configured.', ephemeral=True
+            )
+            return
+        if not config.encryption_key:
+            await interaction.response.send_message(
+                'ENCRYPTION_KEY is not configured — required to store Twitch '
+                'tokens securely.',
+                ephemeral=True,
             )
             return
 

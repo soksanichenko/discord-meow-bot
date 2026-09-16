@@ -43,6 +43,7 @@ class Config(BaseSettings):
     youtube_relay_poll_interval_minutes: int = 5
     twitch_client_id: str = ''
     twitch_client_secret: SecretStr = SecretStr('')
+    encryption_key: SecretStr = SecretStr('')
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

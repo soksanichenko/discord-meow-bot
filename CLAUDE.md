@@ -81,6 +81,7 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (EventSub relay) |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret |
+| `ENCRYPTION_KEY` | Fernet key (generate with `Fernet.generate_key()`) used to encrypt Twitch OAuth tokens at rest. Required to use the Twitch relay |
 | `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (default: `8080`) |
 
 Both sync and async DB URLs use `postgresql+psycopg://` (psycopg3) and are constructed from the DB_* variables.
@@ -118,7 +119,7 @@ Rules:
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 - `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, seen_video_ids JSON, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `seen_video_ids` is a sliding window of recently-posted video IDs for deduplication; `message_*` are custom notification texts (NULL = use built-in default)
 - `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
-- `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1)
+- `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1); `access_token`/`refresh_token` are encrypted at rest (see `ENCRYPTION_KEY`) — always go through `db/operations/twitch_auth.py`, never read/write the columns directly
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
 - `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
 - `VoiceChannel(channel_id PK, guild_id FK, name, status nullable)` — cached voice/stage channel records; status mirrors the last VOICE_CHANNEL_STATUS_UPDATE Gateway event; rows are kept in sync with Discord (creates, renames, deletes)
@@ -289,3 +290,4 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 | `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
 | `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |
 | `prometheus_client` | 0.25.0 | Prometheus `/metrics` endpoint |
+| `cryptography` | 43.0.0 | Fernet encryption for Twitch tokens at rest |
