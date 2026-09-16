@@ -229,6 +229,7 @@ bot = MeowBot(
     intents=intents,
     activity=discord.Game('Rolling the balls of wool'),
     status=discord.Status.online,
+    allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
 )
 
 
