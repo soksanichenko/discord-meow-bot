@@ -61,7 +61,7 @@ class VoiceCog(commands.Cog):
             try:
                 await voice_channel.edit(status=status)
                 await set_voice_channel_status(voice_channel.id, status)
-            except discord.errors.Forbidden:
+            except (discord.errors.Forbidden, discord.errors.DiscordServerError):
                 pass
 
     @commands.Cog.listener()
