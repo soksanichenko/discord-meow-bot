@@ -242,6 +242,7 @@ async def remove_relay_by_id(relay_id: int) -> bool:
 
 async def set_relay_message_by_id(
     relay_id: int,
+    guild_id: int,
     content_type: str,
     message: str | None,
 ) -> str | None:
@@ -249,6 +250,7 @@ async def set_relay_message_by_id(
 
     Args:
         relay_id: Primary key of the YouTubeRelay row.
+        guild_id: Discord guild ID (scope guard against cross-guild access).
         content_type: One of 'video', 'short', 'live'.
         message: Custom text, or None to reset to the built-in default.
 
@@ -261,7 +263,12 @@ async def set_relay_message_by_id(
         'live': 'message_live',
     }
     async with AsyncSession() as session:
-        relay = await session.get(YouTubeRelay, relay_id)
+        relay = await session.scalar(
+            select(YouTubeRelay).where(
+                YouTubeRelay.id == relay_id,
+                YouTubeRelay.guild_id == guild_id,
+            )
+        )
         if relay is None:
             return None
         setattr(relay, field_map[content_type], message)
