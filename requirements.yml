@@ -2,7 +2,7 @@
 collections:
   - source: https://github.com/soksanichenko/infisical-ansible-collection.git
     type: git
-    version: feat/read-secrets-include-imports
+    version: 1932e5c1018699c06a1e3457451d620d56856f37
   - name: community.docker
   - name: community.general
   - name: ansible.posix
