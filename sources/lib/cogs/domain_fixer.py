@@ -1,5 +1,7 @@
 """Domain fixer management cog"""
 
+import re
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -14,6 +16,8 @@ from sources.lib.db.operations.domain_fixers import (
 )
 from sources.lib.db.operations.guilds import upsert_guild
 from sources.lib.utils.logger import Logger
+
+_LABEL_RE = re.compile(r'^[a-z0-9-]+$', re.IGNORECASE)
 
 
 def _normalize_source_domain(raw: str) -> str:
@@ -126,6 +130,22 @@ class DomainFixerCog(commands.Cog):
             replacement: Domain name to replace with.
             subdomain: Optional subdomain override.
         """
+        if not _LABEL_RE.fullmatch(replacement):
+            await interaction.response.send_message(
+                'Replacement must contain only letters, numbers, and hyphens '
+                '(no dots, slashes, or query strings).',
+                ephemeral=True,
+            )
+            return
+
+        if subdomain and not _LABEL_RE.fullmatch(subdomain):
+            await interaction.response.send_message(
+                'Subdomain must contain only letters, numbers, and hyphens '
+                '(no dots, slashes, or query strings).',
+                ephemeral=True,
+            )
+            return
+
         normalized_source = _normalize_source_domain(source)
         await upsert_guild(
             guild_id=interaction.guild_id, guild_name=interaction.guild.name
