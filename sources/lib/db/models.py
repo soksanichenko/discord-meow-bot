@@ -243,7 +243,13 @@ class YouTubeLiveSession(Base):
 
 
 class TwitchAuth(Base):
-    """Stored Twitch OAuth tokens for EventSub WebSocket subscriptions (single row)."""
+    """Stored Twitch OAuth tokens for EventSub WebSocket subscriptions (single row).
+
+    Tokens are stored in plaintext. This is accepted risk, not an oversight:
+    DB access is already restricted to the bot and to admins with server
+    access, and Twitch tokens can be revoked/rotated via
+    /twitch-relay authorize if the database is ever compromised.
+    """
 
     __tablename__ = 'twitch_auth'
 
