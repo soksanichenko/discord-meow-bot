@@ -109,6 +109,14 @@ class MeowBot(Bot):
         """Log all unhandled app-command errors through the main discord logger."""
         cmd = interaction.command.name if interaction.command else '<unknown>'
         command_errors.labels(command=cmd).inc()
+
+        if isinstance(error, discord.app_commands.MissingPermissions):
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "You don't have permission to use this command.", ephemeral=True
+                )
+            return
+
         _logger.error(
             'App command error in /%s: %s: %s',
             cmd,

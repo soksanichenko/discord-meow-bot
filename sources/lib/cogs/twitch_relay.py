@@ -973,6 +973,7 @@ class TwitchRelayCog(commands.Cog):
     @app_commands.describe(channel='Twitch channel to sync (leave empty for all)')
     @app_commands.autocomplete(channel=_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_sync(
         self,
         interaction: discord.Interaction,
@@ -1032,6 +1033,7 @@ class TwitchRelayCog(commands.Cog):
     )
     @app_commands.autocomplete(channel=_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_force_check(
         self,
         interaction: discord.Interaction,
