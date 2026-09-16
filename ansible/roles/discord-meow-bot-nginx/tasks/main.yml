@@ -52,7 +52,7 @@
     path: "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"
     name: "{{ discord_bot_health_user }}"
     password: "{{ discord_bot_health_password }}"
-    mode: "0644"
+    mode: "0640"
   become: yes
   no_log: true
   notify: Restart Nginx container
