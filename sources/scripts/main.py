@@ -71,6 +71,10 @@ async def _start_health_server(bot_instance: 'MeowBot') -> None:
     app.router.add_get('/metrics', _metrics_handler)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
+    # Must bind 0.0.0.0 for the Docker published_ports mapping to reach it;
+    # this also makes /metrics reachable by any other container on the same
+    # Docker network (nginx only proxies /health externally). Accepted risk —
+    # mitigation is network segmentation, not narrowing this bind.
     await web.TCPSite(runner, '0.0.0.0', config.health_port).start()
 
 
