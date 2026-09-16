@@ -1,11 +1,12 @@
 """Stats cog — per-guild message count statistics and leaderboard."""
 
 import asyncio
+from collections import defaultdict
 from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from sources.lib.db.operations.stats import (
     get_all_channel_progress,
@@ -18,6 +19,7 @@ from sources.lib.db.operations.stats import (
 from sources.lib.utils.logger import Logger
 
 _CHECKPOINT_EVERY = 500
+_FLUSH_INTERVAL_SECONDS = 30
 
 
 class StatsCog(commands.Cog):
@@ -36,6 +38,10 @@ class StatsCog(commands.Cog):
         self.bot = bot
         self.logger = Logger()
         self._import_tasks: dict[int, asyncio.Task] = {}
+        # Buffered message counts, flushed to the DB periodically instead of
+        # writing on every single message. A crash between flushes loses at
+        # most one interval's worth of counts — an accepted trade-off.
+        self._buffer: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
 
     async def cog_load(self) -> None:
         """Resume any imports that were in progress when the bot last stopped."""
@@ -48,17 +54,40 @@ class StatsCog(commands.Cog):
             self._import_tasks[guild_id] = asyncio.create_task(
                 self._run_import(guild, since_dt=None)
             )
+        self._flush_buffer.start()
+
+    async def cog_unload(self) -> None:
+        """Stop the flush loop and write out any remaining buffered counts."""
+        self._flush_buffer.cancel()
+        await self._do_flush()
+
+    @tasks.loop(seconds=_FLUSH_INTERVAL_SECONDS)
+    async def _flush_buffer(self) -> None:
+        """Periodically write buffered message counts to the database."""
+        await self._do_flush()
+
+    @_flush_buffer.before_loop
+    async def _before_flush(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def _do_flush(self) -> None:
+        """Write out and clear all currently buffered message counts."""
+        if not self._buffer:
+            return
+        pending, self._buffer = self._buffer, defaultdict(lambda: defaultdict(int))
+        for guild_id, counts in pending.items():
+            await increment_message_counts(guild_id, dict(counts))
 
     @commands.Cog.listener('on_message')
     async def on_message(self, message: discord.Message) -> None:
-        """Increment the sender's message count for every non-bot guild message.
+        """Buffer a message count increment for every non-bot guild message.
 
         Args:
             message: The incoming Discord message.
         """
         if message.author.bot or message.guild is None:
             return
-        await increment_message_counts(message.guild.id, {message.author.id: 1})
+        self._buffer[message.guild.id][message.author.id] += 1
 
     @stats.command(
         name='leaderboard', description='Show top message senders in this server'
