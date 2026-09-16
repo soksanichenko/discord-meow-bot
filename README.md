@@ -7,8 +7,11 @@
 [![discord.py](https://img.shields.io/badge/discord.py-2.7.1-5865F2)](https://github.com/Rapptz/discord.py/releases/tag/v2.7.1)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-discord--meow--bot-blue?logo=docker)](https://github.com/soksanichenko/discord-meow-bot/pkgs/container/discord-meow-bot)
 [![License](https://img.shields.io/github/license/soksanichenko/discord-meow-bot)](https://opensource.org/licenses/MIT)
+[![Invite](https://img.shields.io/badge/Discord-Invite%20Bot-5865F2?logo=discord&logoColor=white)](https://discord.com/api/oauth2/authorize?client_id=1229557618423369829&scope=bot%20applications.commands&permissions=281758713113600)
 
 A Discord bot with quality-of-life features for servers.
+
+**[Invite Discord Meow Bot to your server](https://discord.com/api/oauth2/authorize?client_id=1229557618423369829&scope=bot%20applications.commands&permissions=281758713113600)** — grants exactly the permissions the bot needs (see `/server permissions` to check anytime after inviting).
 
 ## Table of Contents
 
