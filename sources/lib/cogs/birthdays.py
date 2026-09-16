@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ _DEFAULT_MESSAGE = '🎂 Happy birthday, {mention}! 🎉'
 _DEFAULT_MESSAGE_WITH_AGE = (
     "🎂 Happy birthday, {mention}! You're turning **{age}** today! 🎉"
 )
+_PLACEHOLDER_RE = re.compile(r'\{(mention|username|display_name|age)\}')
 
 
 @dataclass
@@ -56,13 +58,6 @@ class _BirthdayEvent:
     record: GuildMemberBirthday
 
 
-class _SafeFormatDict(dict):
-    """dict subclass that returns the key placeholder for missing keys."""
-
-    def __missing__(self, key: str) -> str:
-        return f'{{{key}}}'
-
-
 def _format_message(
     template: str | None,
     member: discord.Member,
@@ -74,6 +69,11 @@ def _format_message(
     Uses the custom template if provided, otherwise falls back to the default.
     Available variables: {mention}, {username}, {display_name}, {age}.
 
+    Substitutes only exact, bare placeholders (no format specs, no attribute
+    access) so an admin-supplied template can't trigger a format-spec DoS
+    (e.g. {mention:>300000000}) or attribute traversal (e.g. {mention.__globals__}).
+    Anything else is left as literal text.
+
     Args:
         template: Custom message template, or None for the default.
         member: The birthday member.
@@ -83,14 +83,13 @@ def _format_message(
     age = _format_ordinal(current_year - birth_year) if birth_year else ''
     if template is None:
         template = _DEFAULT_MESSAGE_WITH_AGE if birth_year else _DEFAULT_MESSAGE
-    return template.format_map(
-        _SafeFormatDict(
-            mention=member.mention,
-            username=member.name,
-            display_name=member.display_name,
-            age=age,
-        )
-    )
+    values = {
+        'mention': member.mention,
+        'username': member.name,
+        'display_name': member.display_name,
+        'age': age,
+    }
+    return _PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], template)
 
 
 def _format_ordinal(n: int) -> str:
