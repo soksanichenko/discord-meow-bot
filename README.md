@@ -45,6 +45,7 @@ Default rules:
 - `tiktok.com` → `tnktok.com`
 
 Admins can add, remove, list, and initialise default rules with `/domain-fixer`.
+Replacement domain and subdomain values must be a single label (letters, numbers, hyphens only).
 
 ### Birthday Reminders
 Tracks members' birthdays per server and announces them at 9:00 in the
@@ -199,6 +200,7 @@ displayed in every user's local timezone.
 - `/timezones` — show timezone(s) for guild members (admin)
 - `/server timezone-set/remove` — guild fallback timezone (admin)
 - `/server settings` — show guild settings (admin)
+- `/server permissions` — check whether the bot has the Discord permissions it needs, with a fixed re-invite link if not (admin)
 - `/server info` — server info
 - `/server list-members` — list members with a given role
 
@@ -230,6 +232,7 @@ All configuration is done via environment variables:
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval | `5` |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (stream relay) | — |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret | — |
+| `ENCRYPTION_KEY` | Fernet key encrypting Twitch OAuth tokens at rest (generate with `Fernet.generate_key()`); required to use the Twitch relay | — |
 | `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (`/health`, `/metrics`) | `8080` |
 
 ## Running

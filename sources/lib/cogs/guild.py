@@ -12,6 +12,33 @@ from sources.lib.db.operations.birthdays import (
 from sources.lib.db.operations.guilds import delete_guild, upsert_guild
 from sources.lib.utils.get_timestamp import autocomplete_timezone, role_autocomplete
 
+# Permissions the bot actually uses on a guild (see cogs that perform each action).
+_REQUIRED_PERMISSIONS = discord.Permissions(
+    view_channel=True,
+    send_messages=True,
+    send_messages_in_threads=True,
+    manage_messages=True,
+    embed_links=True,
+    attach_files=True,
+    read_message_history=True,
+    manage_roles=True,
+    manage_events=True,
+    set_voice_channel_status=True,
+)
+
+_PERMISSION_LABELS = {
+    'view_channel': 'View Channels',
+    'send_messages': 'Send Messages',
+    'send_messages_in_threads': 'Send Messages in Threads',
+    'manage_messages': 'Manage Messages',
+    'embed_links': 'Embed Links',
+    'attach_files': 'Attach Files',
+    'read_message_history': 'Read Message History',
+    'manage_roles': 'Manage Roles',
+    'manage_events': 'Manage Events',
+    'set_voice_channel_status': 'Set Voice Channel Status',
+}
+
 
 class GuildCog(commands.Cog):
     """Guild-related commands and listeners."""
@@ -41,6 +68,57 @@ class GuildCog(commands.Cog):
         )
         embed.add_field(name='Timezone', value=timezone_value, inline=False)
 
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @server.command(
+        name='permissions',
+        description='Check whether the bot has the Discord permissions it needs',
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def server_permissions(self, interaction: discord.Interaction) -> None:
+        """Report missing bot permissions and a re-invite link that grants them.
+
+        Args:
+            interaction: The Discord interaction.
+        """
+        current = interaction.guild.me.guild_permissions
+        # Administrator bypasses all individual permission checks in Discord.
+        missing = discord.Permissions(
+            0 if current.administrator else _REQUIRED_PERMISSIONS.value & ~current.value
+        )
+        missing_names = [
+            label
+            for flag, label in _PERMISSION_LABELS.items()
+            if getattr(missing, flag)
+        ]
+
+        if not missing_names:
+            embed = discord.Embed(
+                title='Bot permissions',
+                description='The bot has all the permissions it needs on this server.',
+                color=discord.Color.green(),
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        invite_url = (
+            'https://discord.com/api/oauth2/authorize'
+            f'?client_id={self.bot.application_id}'
+            '&scope=bot%20applications.commands'
+            f'&permissions={_REQUIRED_PERMISSIONS.value}'
+            f'&guild_id={interaction.guild_id}'
+            '&disable_guild_select=true'
+        )
+        embed = discord.Embed(
+            title='Missing bot permissions',
+            description='\n'.join(f'- {name}' for name in missing_names),
+            color=discord.Color.red(),
+        )
+        embed.add_field(
+            name='Fix it',
+            value=f'[Re-invite the bot with the correct permissions]({invite_url})',
+            inline=False,
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @server.command(name='timezone-set', description='Set the server timezone')

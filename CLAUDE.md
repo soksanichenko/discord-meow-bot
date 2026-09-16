@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, Twitch stream relay, and scheduled event auto-start. Deployed via Ansible + Docker on a remote server.
+A Discord bot written in Python 3.12 with `discord.py` v2.7.1. Features: URL domain fixing (Reddit, Twitter, TikTok → privacy-friendly mirrors), voice channel auto-status, user timezone management, timestamp generation, birthday reminders, auto-responder, cross-platform music link conversion, message reminders, message statistics/leaderboard, Telegram channel relay, YouTube channel relay, Twitch stream relay, and scheduled event auto-start. Deployed via Ansible + Docker on a remote server.
 
 ## Project Structure
 
@@ -14,6 +14,7 @@ sources/
 ├── lib/
 │   ├── cogs/             # Discord Cogs — one file per feature group
 │   │   ├── admin.py      # ?sync-tree command + /bot-stats (owner only)
+│   │   ├── auto_responder.py  # /auto-responder group + on_message listener
 │   │   ├── birthdays.py  # /birthday group + hourly announcement scheduler
 │   │   ├── domain_fixer.py  # /domain-fixer group (admin URL rule management)
 │   │   ├── events.py     # Scheduled event auto-start (APScheduler one-shot jobs)
@@ -30,19 +31,23 @@ sources/
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── spotify.py        # Spotify Web API client + YouTube title matching utilities (music_links.py)
+│   ├── scheduler.py      # ReminderScheduler — wraps APScheduler for /reminders
+│   ├── views/
+│   │   └── reminders.py  # RemindModal, RescheduleView, parse_when() (used by reminders.py cog)
 │   ├── utils/            # Shared helpers used across cogs
 │   │   ├── logger.py     # Logger singleton
 │   │   ├── metrics.py    # Shared Prometheus metrics (counters, gauges, histogram)
 │   │   ├── get_timestamp.py  # Timestamp parsing, autocomplete, TimestampFormatView
 │   │   ├── discord_utils.py  # require_timezone, get_command, guild helpers
-│   │   └── domains_fixer.py  # URLFixer class + fix_urls()
+│   │   ├── domains_fixer.py  # URLFixer class + fix_urls()
+│   │   └── crypto.py     # Fernet encrypt/decrypt helpers (ENCRYPTION_KEY) for secrets stored at rest
 │   ├── db/
 │   │   ├── __init__.py   # Async engine + session factory
 │   │   ├── models.py     # SQLAlchemy ORM models
 │   │   ├── utils.py      # DB helper utilities
 │   │   ├── crud/base.py  # Generic CRUD class (CRUDBase — get, create, update, delete, upsert)
-│   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py,
-│   │   │                 #   music_links.py, reminders.py, stats.py,
+│   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py, auto_responder.py,
+│   │   │                 #   domain_fixers.py, music_links.py, reminders.py, stats.py,
 │   │   │                 #   telegram_relay.py, twitch_auth.py, twitch_live_session.py,
 │   │   │                 #   twitch_relay.py, voice_channels.py,
 │   │                 #   youtube_relay.py, youtube_live_session.py
@@ -169,6 +174,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/server list-members` | guild.py | List members |
 | `/server timezone-set/remove` | guild.py | Guild fallback timezone (admin) |
 | `/server settings` | guild.py | Show guild timezone (admin) |
+| `/server permissions` | guild.py | Check bot permissions on this server and offer a fixed re-invite link (admin) |
 | `/music-links channel-add/remove/list` | music_links.py | Manage music link channels (admin) |
 | `/reminders add/list/cancel` | reminders.py | Message reminders |
 | `/get-timestamp` | user.py | Generate Discord timestamp |
@@ -265,8 +271,7 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 1. Starts container with startup sequence: `create_db.py` → `alembic upgrade head` → `main.py`
 2. Log driver: `journald`; restart policy: `always`
 3. Bind mounts:
-   - `sources/` → `/code/sources` (read-only)
-   - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images)
+   - `volumes/meow-bot/images/` → `/code/images` (read-write, birthday images; owned by the container's non-root user, see `bot_container_uid`)
 4. After container restart, Ansible polls `http://127.0.0.1:8080/health` (up to 3 min) and fails the play if the bot doesn't come up healthy.
 
 ## Tests
@@ -277,17 +282,18 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 
 | Package | Version | Purpose |
 |---|---|---|
-| `discord.py` | v2.7.1 (git) | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.51 | ORM |
+| `discord.py` | 2.7.1 | Discord API |
+| `SQLAlchemy[asyncio]` | 2.0.52 | ORM |
 | `SQLAlchemy-Utils` | 0.42.1 | `create_database` / `database_exists` (used in `db/utils.py`) |
-| `psycopg[binary]` | 3.3.4 | Async + sync PostgreSQL driver |
-| `alembic` | 1.18.4 | DB migrations |
-| `pydantic-settings` | 2.14.2 | Config from env vars |
-| `tldextract` | 5.3.1 | URL domain extraction |
-| `dateparser` | 1.4.1 | Natural language date parsing |
-| `APScheduler` | 3.11.2 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start, relay polling, Twitch EventSub reconnect watchdog) |
-| `aiohttp` | 3.14.1 | HTTP client (YouTube API, Spotify API, Twitch API) |
-| `feedparser` | 6.0.12 | RSS feed parsing (Telegram relay, YouTube relay) |
+| `psycopg[binary]` | 3.3.5 | Async + sync PostgreSQL driver |
+| `alembic` | 1.19.2 | DB migrations |
+| `pydantic-settings` | 2.15.0 | Config from env vars |
+| `tldextract` | 5.3.2 | URL domain extraction |
+| `dateparser` | 1.4.3 | Natural language date parsing |
+| `tzlocal` | 5.4.4 | Local timezone detection (transitive dependency of `APScheduler`/`dateparser`) |
+| `APScheduler` | 3.11.3 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start, relay polling, Twitch EventSub reconnect watchdog) |
+| `aiohttp` | 3.14.3 | HTTP client (YouTube API, Spotify API, Twitch API) |
+| `feedparser` | 6.0.14 | RSS feed parsing (Telegram relay, YouTube relay) |
 | `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |
-| `prometheus_client` | 0.25.0 | Prometheus `/metrics` endpoint |
-| `cryptography` | 43.0.0 | Fernet encryption for Twitch tokens at rest |
+| `prometheus_client` | 0.26.0 | Prometheus `/metrics` endpoint |
+| `cryptography` | 50.0.0 | Fernet encryption for Twitch tokens at rest |

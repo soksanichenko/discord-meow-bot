@@ -52,7 +52,7 @@ class DomainFixerCog(commands.Cog):
     group = app_commands.Group(
         name='domain-fixer',
         description='Manage URL domain replacement rules',
-        default_permissions=discord.Permissions(administrator=True),
+        default_permissions=discord.Permissions(manage_guild=True),
     )
 
     @group.command(
