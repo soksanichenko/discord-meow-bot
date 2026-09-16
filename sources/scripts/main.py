@@ -237,7 +237,7 @@ async def main():
     utils.setup_logging()
     await _start_health_server(bot)
     async with bot:
-        await bot.start(token=config.discord_token, reconnect=True)
+        await bot.start(token=config.discord_token.get_secret_value(), reconnect=True)
 
 
 if __name__ == '__main__':

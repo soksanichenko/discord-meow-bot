@@ -140,7 +140,7 @@ class TwitchRelayCog(commands.Cog):
             return
 
         self._twitch = await Twitch(
-            config.twitch_client_id, config.twitch_client_secret
+            config.twitch_client_id, config.twitch_client_secret.get_secret_value()
         )
 
         auth = await get_auth()
@@ -917,7 +917,7 @@ class TwitchRelayCog(commands.Cog):
                     _TOKEN_URL,
                     params={
                         'client_id': config.twitch_client_id,
-                        'client_secret': config.twitch_client_secret,
+                        'client_secret': config.twitch_client_secret.get_secret_value(),
                         'device_code': device_code,
                         'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
                     },
