@@ -14,7 +14,12 @@ from sources.lib.db.operations.reminders import (
 from sources.lib.scheduler import ReminderScheduler
 from sources.lib.utils.discord_utils import require_timezone
 from sources.lib.utils.logger import Logger
-from sources.lib.views.reminders import MAX_FUTURE_DAYS, RemindModal, parse_when
+from sources.lib.views.reminders import (
+    DM_FALLBACK_NOTE,
+    MAX_FUTURE_DAYS,
+    RemindModal,
+    parse_when,
+)
 
 
 class RemindersCog(commands.Cog):
@@ -124,7 +129,7 @@ class RemindersCog(commands.Cog):
 
         ts = discord.utils.format_dt(remind_at, style='F')
         await interaction.response.send_message(
-            f"Got it! I'll remind you {ts}.",
+            f"Got it! I'll remind you {ts}.{DM_FALLBACK_NOTE}",
             ephemeral=True,
         )
 

@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from sources.lib.scheduler import ReminderScheduler
 
 MAX_FUTURE_DAYS = 365
+DM_FALLBACK_NOTE = (
+    "\n-# If your DMs are closed when this fires, I'll post it "
+    'in this channel instead, note included.'
+)
 
 
 def parse_when(text: str, timezone_str: str | None) -> datetime | None:
@@ -142,7 +146,7 @@ class RemindModal(discord.ui.Modal):
 
         ts = discord.utils.format_dt(remind_at, style='F')
         await interaction.response.send_message(
-            f"Got it! I'll remind you {ts}.",
+            f"Got it! I'll remind you {ts}.{DM_FALLBACK_NOTE}",
             ephemeral=True,
         )
 

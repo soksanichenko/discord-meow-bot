@@ -135,12 +135,18 @@ class TwitchRelayCog(commands.Cog):
         """Authenticate with Twitch, start EventSub, and subscribe to all saved relays."""
         self._http_session = aiohttp.ClientSession()
 
-        if not (config.twitch_client_id and config.twitch_client_secret):
-            self.logger.warning('Twitch credentials not configured; relay disabled')
+        if not (
+            config.twitch_client_id
+            and config.twitch_client_secret
+            and config.encryption_key
+        ):
+            self.logger.warning(
+                'Twitch credentials or ENCRYPTION_KEY not configured; relay disabled'
+            )
             return
 
         self._twitch = await Twitch(
-            config.twitch_client_id, config.twitch_client_secret
+            config.twitch_client_id, config.twitch_client_secret.get_secret_value()
         )
 
         auth = await get_auth()
@@ -869,6 +875,13 @@ class TwitchRelayCog(commands.Cog):
                 'Twitch credentials are not configured.', ephemeral=True
             )
             return
+        if not config.encryption_key:
+            await interaction.response.send_message(
+                'ENCRYPTION_KEY is not configured — required to store Twitch '
+                'tokens securely.',
+                ephemeral=True,
+            )
+            return
 
         await interaction.response.defer(ephemeral=True)
 
@@ -917,7 +930,7 @@ class TwitchRelayCog(commands.Cog):
                     _TOKEN_URL,
                     params={
                         'client_id': config.twitch_client_id,
-                        'client_secret': config.twitch_client_secret,
+                        'client_secret': config.twitch_client_secret.get_secret_value(),
                         'device_code': device_code,
                         'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
                     },

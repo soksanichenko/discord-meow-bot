@@ -47,6 +47,11 @@
     state: present
   become: yes
 
+# mode 0644 (not 0640): the file is owned by root, but the shared nginx
+# container (infra repo, nginx:1.26 image) runs its worker process as the
+# unprivileged `nginx` user (uid/gid 101), which isn't in the root group —
+# it can only read this file via the "other" bits. Matches the mode used by
+# every other htpasswd file in that shared nginx role.
 - name: Manage meow-bot health htpasswd file
   community.general.htpasswd:
     path: "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"

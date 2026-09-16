@@ -2,7 +2,7 @@
 
 from urllib.parse import quote_plus
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -32,17 +32,18 @@ class Config(BaseSettings):
 
     __db: DBConfig = DBConfig()
 
-    discord_token: str
+    discord_token: SecretStr
     health_port: int = 8080
     birthday_images_dir: str = '/tmp/meow-bot-images'
     youtube_api_key: str = ''
     spotify_api_client_id: str = ''
-    spotify_api_client_secret: str = ''
+    spotify_api_client_secret: SecretStr = SecretStr('')
     rsshub_url: str = 'https://rsshub.app'
     telegram_relay_poll_interval_minutes: int = 5
     youtube_relay_poll_interval_minutes: int = 5
     twitch_client_id: str = ''
-    twitch_client_secret: str = ''
+    twitch_client_secret: SecretStr = SecretStr('')
+    encryption_key: SecretStr = SecretStr('')
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'

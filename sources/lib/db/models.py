@@ -243,7 +243,12 @@ class YouTubeLiveSession(Base):
 
 
 class TwitchAuth(Base):
-    """Stored Twitch OAuth tokens for EventSub WebSocket subscriptions (single row)."""
+    """Stored Twitch OAuth tokens for EventSub WebSocket subscriptions (single row).
+
+    access_token and refresh_token are encrypted at rest (Fernet, key from
+    ENCRYPTION_KEY) by sources.lib.db.operations.twitch_auth — never read or
+    write these columns directly.
+    """
 
     __tablename__ = 'twitch_auth'
 

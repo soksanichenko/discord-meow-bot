@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Only the latest commit on the `master` branch is actively maintained and receives security fixes.
+Only the latest commit on the `main` branch is actively maintained and receives security fixes.
 
 ## Reporting a Vulnerability
 

@@ -103,7 +103,8 @@ class SpotifyClient:
             return self._token.access_token
 
         credentials = base64.b64encode(
-            f'{config.spotify_api_client_id}:{config.spotify_api_client_secret}'.encode()
+            f'{config.spotify_api_client_id}:'
+            f'{config.spotify_api_client_secret.get_secret_value()}'.encode()
         ).decode()
 
         try:
