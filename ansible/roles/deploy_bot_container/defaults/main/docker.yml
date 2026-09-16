@@ -8,4 +8,5 @@ docker_extra_networks: []
 health_port: 8080
 bot_image_tag: "latest"
 bot_image_pull: "always"
+bot_container_uid: 1000
 ...

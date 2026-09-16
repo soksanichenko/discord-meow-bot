@@ -17,12 +17,14 @@ RUN python3 -m venv venv && \
 
 # Stage 3: Runtime
 FROM almalinux:10
-RUN dnf install -y epel-release && \
-    dnf install -y python3 ffmpeg-free && \
-    dnf clean all
+RUN dnf install -y python3 && dnf clean all
+RUN groupadd --gid 1000 meowbot && \
+    useradd --uid 1000 --gid meowbot --create-home --shell /sbin/nologin meowbot
 ENV PYTHONPATH="."
 WORKDIR /code
 COPY --from=python-builder /code/venv ./venv
 COPY sources/ ./sources/
 COPY --from=frontend-builder /app/dist/ ./frontend/
+RUN chown -R meowbot:meowbot /code
+USER meowbot
 ENTRYPOINT ["bash"]
