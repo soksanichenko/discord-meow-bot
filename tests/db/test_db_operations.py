@@ -219,6 +219,7 @@ class TestSetRelayMessageById:
     def _relay(self, **kwargs):
         defaults = {
             'id': 1,
+            'guild_id': 42,
             'yt_channel_title': 'My Channel',
             'message_video': None,
             'message_short': None,
@@ -228,58 +229,69 @@ class TestSetRelayMessageById:
         return SimpleNamespace(**defaults)
 
     async def test_returns_none_when_not_found(self):
-        session, ctx = _make_session(get=None)
+        session, ctx = _make_session(scalar=None)
         with patch(
             'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
         ):
             from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
 
-            result = await set_relay_message_by_id(1, 'video', 'Hi!')
+            result = await set_relay_message_by_id(1, 42, 'video', 'Hi!')
+        assert result is None
+
+    async def test_returns_none_for_wrong_guild(self):
+        """A relay ID from another guild must not be found (cross-guild IDOR guard)."""
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
+
+            result = await set_relay_message_by_id(1, 999, 'video', 'Hi!')
         assert result is None
 
     async def test_sets_video_field_and_returns_title(self):
         relay = self._relay()
-        session, ctx = _make_session(get=relay)
+        session, ctx = _make_session(scalar=relay)
         with patch(
             'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
         ):
             from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
 
-            result = await set_relay_message_by_id(1, 'video', 'New video!')
+            result = await set_relay_message_by_id(1, 42, 'video', 'New video!')
         assert result == 'My Channel'
         assert relay.message_video == 'New video!'
 
     async def test_sets_short_field(self):
         relay = self._relay()
-        session, ctx = _make_session(get=relay)
+        session, ctx = _make_session(scalar=relay)
         with patch(
             'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
         ):
             from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
 
-            await set_relay_message_by_id(1, 'short', 'Short dropped!')
+            await set_relay_message_by_id(1, 42, 'short', 'Short dropped!')
         assert relay.message_short == 'Short dropped!'
 
     async def test_sets_live_field(self):
         relay = self._relay()
-        session, ctx = _make_session(get=relay)
+        session, ctx = _make_session(scalar=relay)
         with patch(
             'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
         ):
             from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
 
-            await set_relay_message_by_id(1, 'live', 'Live now!')
+            await set_relay_message_by_id(1, 42, 'live', 'Live now!')
         assert relay.message_live == 'Live now!'
 
     async def test_clears_field_with_none(self):
         relay = self._relay(message_video='Old message')
-        session, ctx = _make_session(get=relay)
+        session, ctx = _make_session(scalar=relay)
         with patch(
             'sources.lib.db.operations.youtube_relay.AsyncSession', return_value=ctx
         ):
             from sources.lib.db.operations.youtube_relay import set_relay_message_by_id
 
-            await set_relay_message_by_id(1, 'video', None)
+            await set_relay_message_by_id(1, 42, 'video', None)
         assert relay.message_video is None
 
 

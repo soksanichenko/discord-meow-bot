@@ -4,6 +4,8 @@
     path: "{{ docker_lib_folder }}/{{ docker_volumes['images']['path'] }}"
     recurse: yes
     state: directory
+    owner: "{{ bot_container_uid }}"
+    group: "{{ bot_container_uid }}"
   become: yes
 
 - name: Ensure Docker network exists

@@ -442,7 +442,9 @@ class _SetMessageModal(discord.ui.Modal):
             interaction: The Discord interaction from the modal submission.
         """
         text = self.message_input.value.strip() or None
-        await set_relay_message_by_id(self.relay.id, self.kind, text)
+        await set_relay_message_by_id(
+            self.relay.id, self.relay.guild_id, self.kind, text
+        )
         label = 'reset to default' if text is None else 'updated'
         await interaction.response.send_message(
             f'Custom {self.kind} message for **{self.relay.yt_channel_title}** {label}.',
@@ -804,7 +806,9 @@ class YouTubeRelayCog(commands.Cog):
         if relay_id is None:
             return
 
-        title = await set_relay_message_by_id(relay_id, kind.value, None)
+        title = await set_relay_message_by_id(
+            relay_id, interaction.guild_id, kind.value, None
+        )
         if title is None:
             await interaction.response.send_message(
                 'Relay not found.',

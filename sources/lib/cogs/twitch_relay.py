@@ -973,6 +973,7 @@ class TwitchRelayCog(commands.Cog):
     @app_commands.describe(channel='Twitch channel to sync (leave empty for all)')
     @app_commands.autocomplete(channel=_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_sync(
         self,
         interaction: discord.Interaction,
@@ -992,8 +993,15 @@ class TwitchRelayCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        relays = await get_all_relays()
-        user_ids = {channel} if channel else {r.twitch_user_id for r in relays}
+        relays = await get_guild_relays(interaction.guild_id)
+        guild_user_ids = {r.twitch_user_id for r in relays}
+        if channel and channel not in guild_user_ids:
+            await interaction.followup.send(
+                'That channel is not configured as a relay in this server.',
+                ephemeral=True,
+            )
+            return
+        user_ids = {channel} if channel else guild_user_ids
 
         if not user_ids:
             await interaction.followup.send('No channels to sync.', ephemeral=True)
@@ -1025,6 +1033,7 @@ class TwitchRelayCog(commands.Cog):
     )
     @app_commands.autocomplete(channel=_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_force_check(
         self,
         interaction: discord.Interaction,

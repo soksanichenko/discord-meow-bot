@@ -100,6 +100,7 @@ class StatsCog(commands.Cog):
         since='Only import messages from this date forward (YYYY-MM-DD). Ignored when resuming.'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def import_history(
         self,
         interaction: discord.Interaction,
