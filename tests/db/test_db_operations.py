@@ -4,8 +4,9 @@ Each operation module creates its own AsyncSession internally, so tests patch
 `AsyncSession` in the relevant module and inject a pre-configured mock session.
 """
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -212,6 +213,103 @@ class TestRemoveRelayById:
             result = await remove_relay_by_id(relay_id=1)
         assert result is True
         session.delete.assert_awaited_once_with(relay)
+        session.commit.assert_awaited_once()
+
+
+class TestGetAuth:
+    async def test_returns_none_when_not_found(self):
+        session, ctx = _make_session(scalar=None)
+        with patch(
+            'sources.lib.db.operations.twitch_auth.AsyncSession', return_value=ctx
+        ):
+            from sources.lib.db.operations.twitch_auth import get_auth
+
+            result = await get_auth()
+        assert result is None
+
+    async def test_decrypts_a_properly_encrypted_row(self):
+        row = SimpleNamespace(
+            access_token='enc-access',
+            refresh_token='enc-refresh',
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        session, ctx = _make_session(scalar=row)
+        with (
+            patch(
+                'sources.lib.db.operations.twitch_auth.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.twitch_auth.decrypt',
+                side_effect=lambda t: t.replace('enc-', 'plain-'),
+            ) as mock_decrypt,
+        ):
+            from sources.lib.db.operations.twitch_auth import get_auth
+
+            result = await get_auth()
+        assert result.access_token == 'plain-access'
+        assert result.refresh_token == 'plain-refresh'
+        assert mock_decrypt.call_count == 2
+        session.execute.assert_not_awaited()
+
+    async def test_migrates_legacy_plaintext_row_without_crashing(self):
+        """Regression test: a row written before encryption existed must not crash.
+
+        This exact scenario broke production on 2026-09-16: an existing
+        plaintext Twitch auth row made decrypt() raise InvalidToken inside
+        TwitchRelayCog.cog_load(), which crashed the entire bot at startup.
+        """
+        from cryptography.fernet import InvalidToken
+
+        row = SimpleNamespace(
+            access_token='legacy-plaintext-access',
+            refresh_token='legacy-plaintext-refresh',
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        session, ctx = _make_session(scalar=row)
+        with (
+            patch(
+                'sources.lib.db.operations.twitch_auth.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.twitch_auth.decrypt',
+                side_effect=InvalidToken,
+            ),
+            patch(
+                'sources.lib.db.operations.twitch_auth.encrypt',
+                side_effect=lambda t: f'enc({t})',
+            ),
+        ):
+            from sources.lib.db.operations.twitch_auth import get_auth
+
+            result = await get_auth()
+        assert result.access_token == 'legacy-plaintext-access'
+        assert result.refresh_token == 'legacy-plaintext-refresh'
+        session.execute.assert_awaited_once()
+        session.commit.assert_awaited()
+
+
+class TestSaveAuth:
+    async def test_encrypts_before_storing(self):
+        session, ctx = _make_session()
+        with (
+            patch(
+                'sources.lib.db.operations.twitch_auth.AsyncSession', return_value=ctx
+            ),
+            patch(
+                'sources.lib.db.operations.twitch_auth.encrypt',
+                side_effect=lambda t: f'enc({t})',
+            ) as mock_encrypt,
+        ):
+            from sources.lib.db.operations.twitch_auth import save_auth
+
+            await save_auth(
+                'plain-access', 'plain-refresh', datetime(2030, 1, 1, tzinfo=UTC)
+            )
+        assert mock_encrypt.call_args_list == [
+            call('plain-access'),
+            call('plain-refresh'),
+        ]
+        session.execute.assert_awaited_once()
         session.commit.assert_awaited_once()
 
 

@@ -3,12 +3,16 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sources.lib.db import AsyncSession
 from sources.lib.db.models import TwitchAuth
 from sources.lib.utils.crypto import decrypt, encrypt
+from sources.lib.utils.logger import Logger
+
+_logger = Logger()
 
 
 @dataclass
@@ -23,6 +27,11 @@ class DecryptedTwitchAuth:
 async def get_auth() -> DecryptedTwitchAuth | None:
     """Return the stored Twitch OAuth tokens, decrypted, or None if not authorized.
 
+    Rows written before encryption was introduced hold plaintext tokens. If
+    decryption fails, the raw values are treated as legacy plaintext and
+    transparently re-saved through save_auth() (encrypted), so this only
+    happens once per row.
+
     Returns:
         DecryptedTwitchAuth, or None.
     """
@@ -30,9 +39,21 @@ async def get_auth() -> DecryptedTwitchAuth | None:
         row = await session.scalar(select(TwitchAuth).where(TwitchAuth.id == 1))
     if row is None:
         return None
+
+    try:
+        access_token = decrypt(row.access_token)
+        refresh_token = decrypt(row.refresh_token)
+    except InvalidToken:
+        _logger.warning(
+            'Twitch auth row was stored in plaintext; migrating to encrypted storage'
+        )
+        access_token = row.access_token
+        refresh_token = row.refresh_token
+        await save_auth(access_token, refresh_token, row.expires_at)
+
     return DecryptedTwitchAuth(
-        access_token=decrypt(row.access_token),
-        refresh_token=decrypt(row.refresh_token),
+        access_token=access_token,
+        refresh_token=refresh_token,
         expires_at=row.expires_at,
     )
 

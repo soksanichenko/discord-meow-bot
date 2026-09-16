@@ -14,6 +14,7 @@ os.environ.setdefault('DB_PASSWORD', 'test')
 os.environ.setdefault('DB_HOST', 'localhost')
 os.environ.setdefault('DB_DATABASE', 'test')
 os.environ.setdefault('DISCORD_TOKEN', 'test')
+os.environ.setdefault('ENCRYPTION_KEY', 'zXQ3q5j3v3v6b6y3z3v6b6y3z3v6b6y3z3v6b6y3z3E=')
 
 
 def _run_migrations(url: str) -> None:
