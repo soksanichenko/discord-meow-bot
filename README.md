@@ -41,6 +41,7 @@ A Discord bot with quality-of-life features for servers.
 ### URL Domain Fixer
 Automatically rewrites tracking-heavy or privacy-invasive links with
 privacy-friendly mirrors. Rules are configurable per server via slash commands.
+Also applies to links inside forwarded messages, not just typed links.
 
 Default rules:
 - `reddit.com` → `rxddit.com`

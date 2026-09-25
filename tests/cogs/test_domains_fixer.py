@@ -6,15 +6,28 @@ from unittest.mock import AsyncMock, patch
 from sources.lib.utils.domains_fixer import fix_urls
 
 
-def _message(content: str, guild_id: int = 1) -> SimpleNamespace:
+def _message(
+    content: str, guild_id: int = 1, message_snapshots: list | None = None
+) -> SimpleNamespace:
     guild = SimpleNamespace(id=guild_id)
     author = SimpleNamespace(mention='@user')
-    return SimpleNamespace(content=content, guild=guild, author=author)
+    return SimpleNamespace(
+        content=content,
+        guild=guild,
+        author=author,
+        message_snapshots=message_snapshots or [],
+    )
 
 
 def _dm_message(content: str) -> SimpleNamespace:
     author = SimpleNamespace(mention='@user')
-    return SimpleNamespace(content=content, guild=None, author=author)
+    return SimpleNamespace(
+        content=content, guild=None, author=author, message_snapshots=[]
+    )
+
+
+def _snapshot(content: str) -> SimpleNamespace:
+    return SimpleNamespace(content=content)
 
 
 def _fixer(
@@ -109,3 +122,45 @@ class TestFixUrls:
         ):
             result = await fix_urls(msg)
         assert '/user/status/123456' in result
+
+    async def test_forwarded_message_url_is_fixed(self):
+        msg = _message(
+            '', message_snapshots=[_snapshot('check https://reddit.com/r/python')]
+        )
+        fixer = _fixer('reddit.com', 'rxddit')
+        with patch(
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
+            new=AsyncMock(return_value=[fixer]),
+        ):
+            result = await fix_urls(msg)
+        assert (
+            result
+            == 'check https://rxddit.com/r/python\nOriginal message posted by @user'
+        )
+
+    async def test_forwarded_message_no_match_returns_original(self):
+        msg = _message(
+            '', message_snapshots=[_snapshot('check https://example.com/post')]
+        )
+        with patch(
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
+            new=AsyncMock(return_value=[]),
+        ):
+            result = await fix_urls(msg)
+        assert result == ''
+
+    async def test_forwarded_message_with_comment_keeps_both(self):
+        msg = _message(
+            'look at this',
+            message_snapshots=[_snapshot('https://reddit.com/r/python')],
+        )
+        fixer = _fixer('reddit.com', 'rxddit')
+        with patch(
+            'sources.lib.utils.domains_fixer.get_all_domain_fixers',
+            new=AsyncMock(return_value=[fixer]),
+        ):
+            result = await fix_urls(msg)
+        assert (
+            result == 'look at this\nhttps://rxddit.com/r/python\n'
+            'Original message posted by @user'
+        )

@@ -58,12 +58,19 @@ class URLFixer:
             for f in fixers
         }
 
+    def _content_parts(self) -> list[str]:
+        """Return the message's own content plus any forwarded snapshot content."""
+        return [self._message.content] + [
+            snapshot.content for snapshot in self._message.message_snapshots
+        ]
+
     def _parse_urls(self) -> None:
         self._parsed_urls = {}
-        for token in self._message.content.split():
-            if token.startswith('http://') or token.startswith('https://'):
-                parsed = urlparse(token)
-                self._parsed_urls[parsed] = extract(parsed.netloc)
+        for part in self._content_parts():
+            for token in part.split():
+                if token.startswith('http://') or token.startswith('https://'):
+                    parsed = urlparse(token)
+                    self._parsed_urls[parsed] = extract(parsed.netloc)
 
     def _has_matches(self) -> bool:
         return any(
@@ -100,7 +107,7 @@ class URLFixer:
         ).geturl()
 
     def _apply_replacements(self) -> str:
-        content = self._message.content
+        content = '\n'.join(part for part in self._content_parts() if part)
         for parsed_url, parsed_domain in self._parsed_urls.items():
             if parsed_domain.top_domain_under_public_suffix not in self._rules:
                 continue
