@@ -1,57 +1,79 @@
-"""Tests for StatsCog message count buffering and flushing."""
+"""Tests for StatsCog commands; counting itself is covered by test_stats_tracker."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sqlalchemy.exc import IntegrityError, OperationalError
+import discord
 
-from sources.lib.cogs.stats import StatsCog
-
-
-def _db_error(cls: type) -> Exception:
-    return cls('INSERT ...', {}, Exception('db error'))
+from sources.lib.cogs.stats import StatsCog, _ResetConfirmView
 
 
-async def test_flush_keeps_counts_when_db_is_unavailable() -> None:
+def _interaction(guild_id: int = 1) -> MagicMock:
+    interaction = MagicMock(spec=discord.Interaction)
+    interaction.guild_id = guild_id
+    interaction.guild = MagicMock(spec=discord.Guild)
+    interaction.guild.id = guild_id
+    interaction.response = AsyncMock()
+    interaction.edit_original_response = AsyncMock()
+    return interaction
+
+
+async def test_import_rejects_invalid_date() -> None:
     cog = StatsCog(MagicMock())
-    cog._buffer[1][10] += 3
+    interaction = _interaction()
 
-    with patch(
-        'sources.lib.cogs.stats.increment_message_counts',
-        new=AsyncMock(side_effect=_db_error(OperationalError)),
-    ):
-        # Raising here would stop the tasks.loop for good.
-        await cog._flush_buffer.coro(cog)
+    with patch('sources.lib.cogs.stats.upsert_import_job', new=AsyncMock()) as upsert:
+        await cog.import_history.callback(cog, interaction, since='2024-13-01')
 
-    assert cog._buffer[1][10] == 3
+    upsert.assert_not_awaited()
+    assert 'Invalid date' in interaction.response.send_message.call_args.args[0]
 
 
-async def test_flush_retries_kept_counts_on_next_run() -> None:
+async def test_import_records_job_and_starts_import() -> None:
     cog = StatsCog(MagicMock())
-    cog._buffer[1][10] += 3
-    increment = AsyncMock(side_effect=[_db_error(OperationalError), None])
+    interaction = _interaction()
+    cog.tracker.start_import = MagicMock(return_value=True)
 
-    with patch('sources.lib.cogs.stats.increment_message_counts', new=increment):
-        await cog._flush_buffer.coro(cog)
-        cog._buffer[1][10] += 2
-        await cog._flush_buffer.coro(cog)
+    with patch('sources.lib.cogs.stats.upsert_import_job', new=AsyncMock()) as upsert:
+        await cog.import_history.callback(cog, interaction, since='2024-01-02')
 
-    increment.assert_awaited_with(1, {10: 5})
-    assert not cog._buffer
+    since = upsert.await_args.args[1]
+    assert (since.year, since.month, since.day) == (2024, 1, 2)
+    cog.tracker.start_import.assert_called_once_with(interaction.guild, since)
 
 
-async def test_flush_drops_counts_rejected_by_db_and_flushes_other_guilds() -> None:
+async def test_import_does_not_restart_running_import() -> None:
     cog = StatsCog(MagicMock())
-    cog._buffer[1][10] += 3
-    cog._buffer[2][20] += 4
+    interaction = _interaction()
+    cog.tracker.is_importing = MagicMock(return_value=True)
+    cog.tracker.start_import = MagicMock()
 
-    async def increment(guild_id: int, counts: dict[int, int]) -> None:
-        if guild_id == 1:
-            # e.g. the bot left guild 1 and its row is gone.
-            raise _db_error(IntegrityError)
+    with patch('sources.lib.cogs.stats.upsert_import_job', new=AsyncMock()) as upsert:
+        await cog.import_history.callback(cog, interaction, since=None)
 
-    increment_mock = AsyncMock(side_effect=increment)
-    with patch('sources.lib.cogs.stats.increment_message_counts', new=increment_mock):
-        await cog._flush_buffer.coro(cog)
+    upsert.assert_not_awaited()
+    cog.tracker.start_import.assert_not_called()
 
-    increment_mock.assert_any_await(2, {20: 4})
-    assert not cog._buffer
+
+async def test_reset_asks_for_confirmation_without_resetting() -> None:
+    cog = StatsCog(MagicMock())
+    interaction = _interaction()
+    cog.tracker.reset = AsyncMock()
+
+    await cog.reset.callback(cog, interaction)
+
+    cog.tracker.reset.assert_not_awaited()
+    kwargs = interaction.response.send_message.call_args.kwargs
+    assert isinstance(kwargs['view'], _ResetConfirmView)
+    assert kwargs['ephemeral'] is True
+
+
+async def test_reset_confirm_resets_guild() -> None:
+    tracker = MagicMock()
+    tracker.reset = AsyncMock()
+    view = _ResetConfirmView(tracker)
+    interaction = _interaction()
+
+    await view.confirm.callback(interaction)
+
+    tracker.reset.assert_awaited_once_with(interaction.guild)
+    interaction.edit_original_response.assert_awaited_once()

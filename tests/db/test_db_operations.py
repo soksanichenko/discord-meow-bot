@@ -936,18 +936,6 @@ class TestGetChannelProgress:
         assert result is None
 
 
-class TestGetGuildsWithIncompleteImport:
-    async def test_returns_guild_id_list(self):
-        session, ctx = _make_session(scalars_rows=[1, 2, 3])
-        with patch('sources.lib.db.operations.stats.AsyncSession', return_value=ctx):
-            from sources.lib.db.operations.stats import (
-                get_guilds_with_incomplete_import,
-            )
-
-            result = await get_guilds_with_incomplete_import()
-        assert result == [1, 2, 3]
-
-
 # ---------------------------------------------------------------------------
 # birthdays operations
 # ---------------------------------------------------------------------------

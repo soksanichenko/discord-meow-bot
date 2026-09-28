@@ -108,6 +108,7 @@ per-channel checkpointing so it survives bot restarts.
 - `/stats leaderboard` — top 10 message senders
 - `/stats import [since]` — start or resume historical import (admin)
 - `/stats import-status` — show import progress (admin)
+- `/stats reset` — wipe statistics and rebuild them from history (admin)
 
 ### Telegram Channel Relay
 Forwards messages from public Telegram channels to Discord channels by

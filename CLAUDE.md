@@ -23,7 +23,7 @@ sources/
 │   │   ├── messages.py   # URL domain fixing listener (on_message)
 │   │   ├── music_links.py  # /music-links group + cross-platform link conversion
 │   │   ├── reminders.py  # /reminders group (add, list, cancel)
-│   │   ├── stats.py      # /stats group + on_message counter + background import
+│   │   ├── stats.py      # /stats group; delegates counting to StatsTracker
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
 │   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket + reconnect watchdog
 │   │   ├── user.py       # /get-timestamp, /set-timezone, /my-settings, /force-timezone, /timezones
@@ -32,6 +32,7 @@ sources/
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── spotify.py        # Spotify Web API client + YouTube title matching utilities (music_links.py)
 │   ├── scheduler.py      # ReminderScheduler — wraps APScheduler for /reminders
+│   ├── stats_tracker.py  # StatsTracker — exact-once message counting (live, catch-up, import, reset)
 │   ├── views/
 │   │   └── reminders.py  # RemindModal, RescheduleView, parse_when() (used by reminders.py cog)
 │   ├── utils/            # Shared helpers used across cogs
@@ -120,7 +121,8 @@ Rules:
 - `MusicLinksChannel(guild_id+channel_id PK FK)` — channels where music link conversion is active
 - `Reminder(id PK, user_id, channel_id, message_url, message_content, note, remind_at, created_at, is_sent)` — scheduled reminders
 - `MessageStats(guild_id+user_id PK, message_count)` — aggregate message count per user per guild
-- `StatsImportProgress(guild_id+channel_id PK, last_message_id nullable, is_completed)` — checkpoint for historical import
+- `StatsImportProgress(guild_id+channel_id PK, oldest_id, newest_id, is_completed)` — per-channel range of messages already counted; counts and range always move in one transaction (`apply_counts`)
+- `StatsImportJob(guild_id PK, since nullable)` — requested history import that has not finished; resumed on every `on_ready`
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 - `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, seen_video_ids JSON, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `seen_video_ids` is a sliding window of recently-posted video IDs for deduplication; `message_*` are custom notification texts (NULL = use built-in default)
 - `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
@@ -186,6 +188,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/stats leaderboard` | stats.py | Top message senders |
 | `/stats import [since]` | stats.py | Import message history (admin) |
 | `/stats import-status` | stats.py | Show import progress (admin) |
+| `/stats reset` | stats.py | Wipe statistics and rebuild them from history (admin) |
 | `/telegram-relay add` | telegram_relay.py | Forward a Telegram channel to Discord (admin) |
 | `/telegram-relay modify` | telegram_relay.py | Change Discord channel for a relay (admin) |
 | `/telegram-relay remove` | telegram_relay.py | Stop forwarding a Telegram channel (admin) |

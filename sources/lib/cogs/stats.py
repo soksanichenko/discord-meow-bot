@@ -1,30 +1,56 @@
 """Stats cog — per-guild message count statistics and leaderboard."""
 
-import asyncio
-from collections import defaultdict
 from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from sqlalchemy.exc import OperationalError
 
 from sources.lib.db.operations.stats import (
     get_all_channel_progress,
-    get_channel_progress,
-    get_guilds_with_incomplete_import,
     get_leaderboard,
-    increment_message_counts,
-    save_channel_progress,
+    upsert_import_job,
 )
+from sources.lib.stats_tracker import StatsTracker
 from sources.lib.utils.logger import Logger
 
-_CHECKPOINT_EVERY = 500
 _FLUSH_INTERVAL_SECONDS = 30
 
 
+class _ResetConfirmView(discord.ui.View):
+    """Ephemeral confirmation for /stats reset."""
+
+    def __init__(self, tracker: StatsTracker) -> None:
+        """Initialise the view.
+
+        Args:
+            tracker: The stats tracker that performs the reset.
+        """
+        super().__init__(timeout=60)
+        self.tracker = tracker
+
+    @discord.ui.button(label='Reset statistics', style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        """Wipe the guild's statistics and start rebuilding them.
+
+        Args:
+            interaction: The button interaction.
+            button: The pressed button.
+        """
+        self.stop()
+        # Answer first: the reset can wait for a flush and outlast the 3 s deadline.
+        await interaction.response.edit_message(content='Resetting…', view=None)
+        await self.tracker.reset(interaction.guild)
+        await interaction.edit_original_response(
+            content='Statistics wiped. Rebuilding from history in the background; '
+            'check `/stats import-status` for progress.'
+        )
+
+
 class StatsCog(commands.Cog):
-    """Message statistics commands and realtime on_message listener."""
+    """Message statistics commands; counting is done by StatsTracker."""
 
     stats = app_commands.Group(
         name='stats', description='Message statistics and leaderboard'
@@ -38,76 +64,57 @@ class StatsCog(commands.Cog):
         """
         self.bot = bot
         self.logger = Logger()
-        self._import_tasks: dict[int, asyncio.Task] = {}
-        # Buffered message counts, flushed to the DB periodically instead of
-        # writing on every single message. A crash between flushes loses at
-        # most one interval's worth of counts — an accepted trade-off.
-        self._buffer: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        self.tracker = StatsTracker()
 
     async def cog_load(self) -> None:
-        """Resume any imports that were in progress when the bot last stopped."""
-        guild_ids = await get_guilds_with_incomplete_import()
-        for guild_id in guild_ids:
-            guild = self.bot.get_guild(guild_id)
-            if guild is None:
-                continue
-            self.logger.info('Stats import: auto-resuming for guild %s', guild.name)
-            self._import_tasks[guild_id] = asyncio.create_task(
-                self._run_import(guild, since_dt=None)
-            )
+        """Start the periodic flush of live counts."""
         self._flush_buffer.start()
 
     async def cog_unload(self) -> None:
-        """Stop the flush loop and write out any remaining buffered counts."""
+        """Stop background work and write out what can be written."""
         self._flush_buffer.cancel()
-        await self._do_flush()
+        await self.tracker.close()
 
     @tasks.loop(seconds=_FLUSH_INTERVAL_SECONDS)
     async def _flush_buffer(self) -> None:
         """Periodically write buffered message counts to the database."""
-        await self._do_flush()
+        await self.tracker.flush()
 
     @_flush_buffer.before_loop
     async def _before_flush(self) -> None:
         await self.bot.wait_until_ready()
 
-    async def _do_flush(self) -> None:
-        """Write out and clear all currently buffered message counts.
-
-        Counts that fail on a transient DB error go back into the buffer for the
-        next run. Counts the DB rejects outright (e.g. the guild row is gone) are
-        dropped so they cannot block every later flush. Nothing is re-raised,
-        because an exception would stop the tasks.loop permanently.
-        """
-        if not self._buffer:
-            return
-        pending, self._buffer = self._buffer, defaultdict(lambda: defaultdict(int))
-        for guild_id, counts in pending.items():
-            try:
-                await increment_message_counts(guild_id, dict(counts))
-            except OperationalError:
-                self.logger.warning(
-                    'Stats flush failed for guild %s, will retry',
-                    guild_id,
-                    exc_info=True,
-                )
-                for user_id, delta in counts.items():
-                    self._buffer[guild_id][user_id] += delta
-            except Exception:
-                self.logger.exception(
-                    'Stats flush: dropping counts for guild %s', guild_id
-                )
-
     @commands.Cog.listener('on_message')
     async def on_message(self, message: discord.Message) -> None:
-        """Buffer a message count increment for every non-bot guild message.
+        """Count a live message.
 
         Args:
             message: The incoming Discord message.
         """
-        if message.author.bot or message.guild is None:
-            return
-        self._buffer[message.guild.id][message.author.id] += 1
+        self.tracker.record(message)
+
+    @commands.Cog.listener('on_ready')
+    async def on_ready(self) -> None:
+        """Start a counting epoch: catch up on downtime, resume imports."""
+        await self.tracker.on_ready(self.bot.guilds)
+
+    @commands.Cog.listener('on_guild_join')
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        """Start counting a newly joined guild.
+
+        Args:
+            guild: The guild the bot joined.
+        """
+        self.tracker.on_guild_join(guild)
+
+    @commands.Cog.listener('on_guild_remove')
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Stop all stats work for a guild the bot has left.
+
+        Args:
+            guild: The guild the bot left.
+        """
+        await self.tracker.forget(guild.id)
 
     @stats.command(
         name='leaderboard', description='Show top message senders in this server'
@@ -146,7 +153,7 @@ class StatsCog(commands.Cog):
         name='import', description='Import message history to build statistics'
     )
     @app_commands.describe(
-        since='Only import messages from this date forward (YYYY-MM-DD). Ignored when resuming.'
+        since='Only import messages from this date forward (YYYY-MM-DD).'
     )
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -155,15 +162,13 @@ class StatsCog(commands.Cog):
         interaction: discord.Interaction,
         since: str | None = None,
     ) -> None:
-        """Start a background historical message import for this guild.
+        """Start or resume the background history import for this guild.
 
         Args:
             interaction: The Discord interaction.
             since: Optional ISO date (YYYY-MM-DD) limiting how far back the import goes.
         """
-        guild_id = interaction.guild_id
-        running_task = self._import_tasks.get(guild_id)
-        if running_task and not running_task.done():
+        if self.tracker.is_importing(interaction.guild_id):
             await interaction.response.send_message(
                 'An import is already running. Check progress with `/stats import-status`.',
                 ephemeral=True,
@@ -181,9 +186,8 @@ class StatsCog(commands.Cog):
                 )
                 return
 
-        self._import_tasks[guild_id] = asyncio.create_task(
-            self._run_import(interaction.guild, since_dt)
-        )
+        await upsert_import_job(interaction.guild_id, since_dt)
+        self.tracker.start_import(interaction.guild, since_dt)
         await interaction.response.send_message(
             'Import started in the background. Use `/stats import-status` to check progress.',
             ephemeral=True,
@@ -195,111 +199,52 @@ class StatsCog(commands.Cog):
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def import_status(self, interaction: discord.Interaction) -> None:
-        """Show the current state of the historical import for this guild.
+        """Show the state of the history import and downtime catch-up.
 
         Args:
             interaction: The Discord interaction.
         """
         guild_id = interaction.guild_id
-        running_task = self._import_tasks.get(guild_id)
-        running = running_task is not None and not running_task.done()
-        progress_rows = await get_all_channel_progress(interaction.guild_id)
-
+        progress_rows = await get_all_channel_progress(guild_id)
         readable_channels = sum(
             1
             for ch in interaction.guild.text_channels
             if ch.permissions_for(interaction.guild.me).read_message_history
         )
         completed = sum(1 for r in progress_rows if r.is_completed)
-        in_progress = sum(1 for r in progress_rows if not r.is_completed)
+        catching_up = self.tracker.catching_up_count(guild_id)
 
         embed = discord.Embed(title='Import Status', colour=discord.Colour.blurple())
-        embed.add_field(name='Running', value='Yes' if running else 'No', inline=True)
+        embed.add_field(
+            name='Running',
+            value='Yes' if self.tracker.is_importing(guild_id) else 'No',
+            inline=True,
+        )
         embed.add_field(
             name='Progress',
             value=f'{completed} / {readable_channels} channels done',
             inline=True,
         )
-        if in_progress:
+        if catching_up:
             embed.add_field(
-                name='In progress', value=f'{in_progress} channel(s)', inline=True
+                name='Catching up', value=f'{catching_up} channel(s)', inline=True
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def _run_import(
-        self, guild: discord.Guild, since_dt: datetime | None
-    ) -> None:
-        """Scan all readable text channels and accumulate per-user message counts.
-
-        Saves a checkpoint to the database every _CHECKPOINT_EVERY messages so the
-        import can resume from where it left off if the bot restarts.
+    @stats.command(
+        name='reset', description='Wipe statistics and rebuild them from history'
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def reset(self, interaction: discord.Interaction) -> None:
+        """Ask for confirmation before wiping this guild's statistics.
 
         Args:
-            guild: The Discord guild to import.
-            since_dt: Lower bound for messages (only used for channels with no prior progress).
+            interaction: The Discord interaction.
         """
-        text_channels = [
-            ch
-            for ch in guild.text_channels
-            if ch.permissions_for(guild.me).read_message_history
-        ]
-        self.logger.info(
-            'Stats import started for guild %s: %d channels',
-            guild.name,
-            len(text_channels),
+        await interaction.response.send_message(
+            'This deletes all message statistics for this server and rebuilds them '
+            'from channel history. Continue?',
+            view=_ResetConfirmView(self.tracker),
+            ephemeral=True,
         )
-
-        for channel in text_channels:
-            progress = await get_channel_progress(guild.id, channel.id)
-            if progress and progress.is_completed:
-                continue
-
-            after: discord.Object | datetime | None
-            if progress and progress.last_message_id:
-                after = discord.Object(id=progress.last_message_id)
-            else:
-                after = since_dt
-
-            counts: dict[int, int] = {}
-            processed = 0
-            last_id: int | None = progress.last_message_id if progress else None
-
-            try:
-                async for message in channel.history(
-                    limit=None, oldest_first=True, after=after
-                ):
-                    if not message.author.bot:
-                        counts[message.author.id] = counts.get(message.author.id, 0) + 1
-                    last_id = message.id
-                    processed += 1
-
-                    if processed % _CHECKPOINT_EVERY == 0:
-                        if counts:
-                            await increment_message_counts(guild.id, counts)
-                            counts = {}
-                        await save_channel_progress(
-                            guild.id, channel.id, last_id, False
-                        )
-                        self.logger.info(
-                            'Stats import: %s — checkpoint at %d messages',
-                            channel.name,
-                            processed,
-                        )
-
-                if counts:
-                    await increment_message_counts(guild.id, counts)
-                await save_channel_progress(guild.id, channel.id, last_id, True)
-                self.logger.info(
-                    'Stats import: channel %s done (%d messages)',
-                    channel.name,
-                    processed,
-                )
-
-            except discord.Forbidden:
-                self.logger.warning(
-                    'Stats import: no permission for #%s, skipping', channel.name
-                )
-                await save_channel_progress(guild.id, channel.id, last_id, True)
-
-        self.logger.info('Stats import complete for guild %s', guild.name)
-        self._import_tasks.pop(guild.id, None)
