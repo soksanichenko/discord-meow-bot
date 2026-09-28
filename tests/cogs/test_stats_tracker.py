@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 
 from sources.lib.stats_tracker import StatsTracker
-from tests.cogs._stats_fakes import GUILD_ID, World, crash, db_error, settle, sf
+from tests.cogs._stats_fakes import BASE, GUILD_ID, World, crash, db_error, settle, sf
 
 
 @pytest.fixture
@@ -219,3 +221,100 @@ class TestCatchUpEdgeCases:
 
         assert second.catching_up_count(GUILD_ID) == 0
         assert world.db.user_counts()[8] == 1
+
+
+class TestImport:
+    async def test_import_in_parallel_with_live_counting(
+        self, world: World, small_checkpoints: None
+    ) -> None:
+        for minute in range(1, 10):
+            world.send(None, 10, minute, author_id=minute % 2)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        await world.db.upsert_import_job(GUILD_ID, None)
+        world.channels[10].pause(after=3)
+
+        assert tracker.start_import(world.guild, None) is True
+        await world.channels[10].paused.wait()
+        assert tracker.start_import(world.guild, None) is False
+        for minute in (11, 12, 13):
+            world.send(tracker, 10, minute, author_id=7)
+        await tracker.flush()
+        world.channels[10].unpause()
+        await settle(tracker)
+        await tracker.flush()
+
+        assert world.db.user_counts() == world.expected()
+        assert world.db.jobs == {}
+        assert world.db.progress[(GUILD_ID, 10)].is_completed is True
+
+    async def test_import_resumes_after_restart_and_honours_since(
+        self, world: World, small_checkpoints: None
+    ) -> None:
+        for minute in range(1, 21):
+            world.send(None, 10, minute, author_id=minute % 3)
+        since = BASE + timedelta(minutes=10)
+        first = StatsTracker()
+        world.clock.minute = 30
+        await first.on_ready([world.guild])
+        await world.db.upsert_import_job(GUILD_ID, since)
+        world.channels[10].pause(after=3)
+        first.start_import(world.guild, since)
+        await world.channels[10].paused.wait()
+
+        await crash(first)
+        world.channels[10].unpause()
+        second = StatsTracker()
+        world.clock.minute = 40
+        await second.on_ready([world.guild])
+        await settle(second)
+
+        assert world.db.user_counts() == world.expected(lambda m: m.id > sf(10))
+        assert world.db.jobs == {}
+
+
+class TestReset:
+    async def test_reset_rebuilds_counts_exactly(self, world: World) -> None:
+        for minute in range(1, 6):
+            world.send(None, 10, minute, author_id=1)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        tracker.start_import(world.guild, None)
+        await settle(tracker)
+        world.send(tracker, 10, 11, author_id=2)
+        await tracker.flush()
+        world.send(tracker, 10, 12, author_id=3)  # still buffered at reset time
+
+        world.clock.minute = 20
+        await tracker.reset(world.guild)
+        # Sent before the reset boundary, delivered after it.
+        world.send(tracker, 10, 19.5, author_id=4)
+        world.send(tracker, 10, 21, author_id=5)
+        await settle(tracker)
+        await tracker.flush()
+
+        assert world.db.user_counts() == world.expected()
+        assert world.db.jobs == {}
+
+
+class TestForget:
+    async def test_forget_stops_tasks_and_writes_nothing(self, world: World) -> None:
+        for minute in range(1, 6):
+            world.send(None, 10, minute, author_id=1)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        world.channels[10].pause(after=2)
+        tracker.start_import(world.guild, None)
+        await world.channels[10].paused.wait()
+        world.send(tracker, 10, 11, author_id=2)
+        writes = world.db.writes
+
+        await tracker.forget(GUILD_ID)
+        world.channels[10].unpause()
+        await tracker.flush()
+
+        assert tracker.is_importing(GUILD_ID) is False
+        assert world.db.writes == writes
