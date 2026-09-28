@@ -1,9 +1,6 @@
 """Main DB module"""
 
-from asyncio import current_task
-
 from sqlalchemy.ext.asyncio import (
-    async_scoped_session,
     async_sessionmaker,
     create_async_engine,
 )
@@ -15,7 +12,6 @@ async_session_factory = async_sessionmaker(
     bind=async_engine,
     expire_on_commit=False,
 )
-AsyncSession = async_scoped_session(
-    session_factory=async_session_factory,
-    scopefunc=current_task,
-)
+# A fresh session per call. A task-scoped registry would keep a reference to
+# every task that ever touched the DB, and discord.py spawns one per event.
+AsyncSession = async_session_factory
