@@ -88,7 +88,12 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from sources.lib.db.models import Guild, MessageStats, StatsImportJob, StatsImportProgress
+from sources.lib.db.models import (
+    Guild,
+    MessageStats,
+    StatsImportJob,
+    StatsImportProgress,
+)
 from sources.lib.db.operations.stats import (
     apply_counts,
     delete_import_job,
@@ -147,7 +152,9 @@ class TestApplyCounts:
         guild_id = _GUILD_ID + 1
         await _guild(db_session, guild_id)
 
-        await apply_counts(guild_id, _CHANNEL_ID, {7: 3}, range_start=100, newest_id=150)
+        await apply_counts(
+            guild_id, _CHANNEL_ID, {7: 3}, range_start=100, newest_id=150
+        )
 
         row = await _progress(db_session, guild_id)
         assert (row.oldest_id, row.newest_id, row.is_completed) == (100, 150, False)
@@ -259,7 +266,9 @@ class TestMigration:
         _alembic(pg_async_url, 'downgrade', 'bc25943c8c1d')
         try:
             await db_session.execute(
-                text("INSERT INTO guilds (id, name) VALUES (:g, 'M') ON CONFLICT DO NOTHING"),
+                text(
+                    "INSERT INTO guilds (id, name) VALUES (:g, 'M') ON CONFLICT DO NOTHING"
+                ),
                 {'g': guild_id},
             )
             await db_session.execute(
@@ -469,7 +478,9 @@ async def apply_counts(
         )
         updates = {}
         if newest_id is not None:
-            updates['newest_id'] = func.greatest(StatsImportProgress.newest_id, newest_id)
+            updates['newest_id'] = func.greatest(
+                StatsImportProgress.newest_id, newest_id
+            )
         if oldest_id is not None:
             updates['oldest_id'] = func.least(StatsImportProgress.oldest_id, oldest_id)
         if is_completed is not None:
@@ -769,7 +780,9 @@ class FakeStatsDB:
             'reset_guild_stats',
             'upsert_guild',
         ):
-            monkeypatch.setattr(f'sources.lib.stats_tracker.{name}', getattr(self, name))
+            monkeypatch.setattr(
+                f'sources.lib.stats_tracker.{name}', getattr(self, name)
+            )
 
     def user_counts(self) -> dict[int, int]:
         return {u: n for (g, u), n in self.counts.items() if g == GUILD_ID and n}
@@ -825,7 +838,9 @@ class World:
         return dict(counts)
 
 
-def live(guild: FakeGuild, channel: FakeChannel, message: FakeMessage) -> SimpleNamespace:
+def live(
+    guild: FakeGuild, channel: FakeChannel, message: FakeMessage
+) -> SimpleNamespace:
     """Shape a message the way on_message delivers it."""
     return SimpleNamespace(
         id=message.id,
@@ -967,9 +982,7 @@ class TestRestart:
 
         assert world.db.user_counts() == world.expected()
 
-    async def test_crash_with_held_live_counts_then_restart(
-        self, world: World
-    ) -> None:
+    async def test_crash_with_held_live_counts_then_restart(self, world: World) -> None:
         await _first_run(world)
         for minute in range(4, 8):
             world.send(None, 10, minute, author_id=1)
@@ -1240,7 +1253,9 @@ class StatsTracker:
             Number of tracked channels that are not caught up.
         """
         return sum(
-            1 for key in self._floor if key[0] == guild_id and key not in self._caught_up
+            1
+            for key in self._floor
+            if key[0] == guild_id and key not in self._caught_up
         )
 
     async def close(self) -> None:
@@ -1568,143 +1583,144 @@ At the end of `on_ready`, after the `async with self._lock:` block (outside it),
 Add these public methods after `on_guild_join`:
 
 ```python
-    def start_import(self, guild: discord.Guild, since: datetime | None) -> bool:
-        """Start the backward history import for a guild unless one is running.
+def start_import(self, guild: discord.Guild, since: datetime | None) -> bool:
+    """Start the backward history import for a guild unless one is running.
 
-        Args:
-            guild: The guild to import.
-            since: Lower time bound; None imports the whole history.
+    Args:
+        guild: The guild to import.
+        since: Lower time bound; None imports the whole history.
 
-        Returns:
-            True if a new import was started.
-        """
-        if self.is_importing(guild.id):
-            return False
-        self._import_tasks[guild.id] = asyncio.create_task(
-            self._import_guild(guild, since)
-        )
-        return True
+    Returns:
+        True if a new import was started.
+    """
+    if self.is_importing(guild.id):
+        return False
+    self._import_tasks[guild.id] = asyncio.create_task(self._import_guild(guild, since))
+    return True
 
-    def is_importing(self, guild_id: int) -> bool:
-        """Return whether a history import is running for a guild.
 
-        Args:
-            guild_id: Discord guild ID.
+def is_importing(self, guild_id: int) -> bool:
+    """Return whether a history import is running for a guild.
 
-        Returns:
-            True while the import task is running.
-        """
-        task = self._import_tasks.get(guild_id)
-        return task is not None and not task.done()
+    Args:
+        guild_id: Discord guild ID.
 
-    async def reset(self, guild: discord.Guild) -> None:
-        """Wipe a guild's statistics and rebuild them from history.
+    Returns:
+        True while the import task is running.
+    """
+    task = self._import_tasks.get(guild_id)
+    return task is not None and not task.done()
 
-        Args:
-            guild: The guild to reset.
-        """
-        async with self._lock:
-            await self._stop(self._catch_up_tasks.pop(guild.id, None))
-            await self._stop(self._import_tasks.pop(guild.id, None))
-            self._boundary[guild.id] = now_snowflake()
-            self._drop_guild_state(guild.id)
-            await reset_guild_stats(guild.id)
-        self.start_import(guild, since=None)
 
-    async def forget(self, guild_id: int) -> None:
-        """Stop all work for a guild the bot has left.
+async def reset(self, guild: discord.Guild) -> None:
+    """Wipe a guild's statistics and rebuild them from history.
 
-        Args:
-            guild_id: Discord guild ID.
-        """
-        async with self._lock:
-            await self._stop(self._catch_up_tasks.pop(guild_id, None))
-            await self._stop(self._import_tasks.pop(guild_id, None))
-            self._boundary.pop(guild_id, None)
-            self._drop_guild_state(guild_id)
+    Args:
+        guild: The guild to reset.
+    """
+    async with self._lock:
+        await self._stop(self._catch_up_tasks.pop(guild.id, None))
+        await self._stop(self._import_tasks.pop(guild.id, None))
+        self._boundary[guild.id] = now_snowflake()
+        self._drop_guild_state(guild.id)
+        await reset_guild_stats(guild.id)
+    self.start_import(guild, since=None)
+
+
+async def forget(self, guild_id: int) -> None:
+    """Stop all work for a guild the bot has left.
+
+    Args:
+        guild_id: Discord guild ID.
+    """
+    async with self._lock:
+        await self._stop(self._catch_up_tasks.pop(guild_id, None))
+        await self._stop(self._import_tasks.pop(guild_id, None))
+        self._boundary.pop(guild_id, None)
+        self._drop_guild_state(guild_id)
 ```
 
 Add these private methods after `_catch_up_channel`:
 
 ```python
-    async def _import_guild(self, guild: discord.Guild, since: datetime | None) -> None:
-        after = (
-            discord.Object(id=discord.utils.time_snowflake(since)) if since else None
-        )
-        channels = [
-            channel
-            for channel in guild.text_channels
-            if channel.permissions_for(guild.me).read_message_history
-        ]
-        self.logger.info(
-            'Stats import started for guild %s: %d channels', guild.name, len(channels)
-        )
-        for channel in channels:
-            await self._retrying(self._import_channel, guild, channel, after)
-        await self._retrying(delete_import_job, guild.id)
-        self.logger.info('Stats import complete for guild %s', guild.name)
+async def _import_guild(self, guild: discord.Guild, since: datetime | None) -> None:
+    after = discord.Object(id=discord.utils.time_snowflake(since)) if since else None
+    channels = [
+        channel
+        for channel in guild.text_channels
+        if channel.permissions_for(guild.me).read_message_history
+    ]
+    self.logger.info(
+        'Stats import started for guild %s: %d channels', guild.name, len(channels)
+    )
+    for channel in channels:
+        await self._retrying(self._import_channel, guild, channel, after)
+    await self._retrying(delete_import_job, guild.id)
+    self.logger.info('Stats import complete for guild %s', guild.name)
 
-    async def _import_channel(
-        self,
-        guild: discord.Guild,
-        channel: discord.TextChannel,
-        after: discord.Object | None,
-    ) -> None:
+
+async def _import_channel(
+    self,
+    guild: discord.Guild,
+    channel: discord.TextChannel,
+    after: discord.Object | None,
+) -> None:
+    row = await get_channel_progress(guild.id, channel.id)
+    if row is None:
+        # Created after on_ready: its range starts at the guild boundary.
+        await apply_counts(
+            guild.id, channel.id, {}, range_start=self._boundary[guild.id]
+        )
         row = await get_channel_progress(guild.id, channel.id)
-        if row is None:
-            # Created after on_ready: its range starts at the guild boundary.
-            await apply_counts(
-                guild.id, channel.id, {}, range_start=self._boundary[guild.id]
-            )
-            row = await get_channel_progress(guild.id, channel.id)
-        if row.is_completed:
-            return
-        counts: defaultdict[int, int] = defaultdict(int)
-        oldest_id = row.oldest_id
-        processed = 0
-        try:
-            async for message in channel.history(
-                limit=None,
-                before=discord.Object(id=row.oldest_id),
-                after=after,
-                oldest_first=False,
-            ):
-                if not message.author.bot:
-                    counts[message.author.id] += 1
-                oldest_id = message.id
-                processed += 1
-                if processed % _CHECKPOINT_EVERY == 0:
-                    await self._write(
-                        guild.id,
-                        channel.id,
-                        counts,
-                        range_start=row.oldest_id,
-                        oldest_id=oldest_id,
-                    )
-                    counts = defaultdict(int)
-                    self.logger.info(
-                        'Stats import: %s — checkpoint at %d messages',
-                        channel.name,
-                        processed,
-                    )
-        except discord.Forbidden:
-            self.logger.warning(
-                'Stats import: no permission for #%s, skipping', channel.name
-            )
-        await self._write(
-            guild.id,
-            channel.id,
-            counts,
-            range_start=row.oldest_id,
-            oldest_id=oldest_id,
-            is_completed=True,
+    if row.is_completed:
+        return
+    counts: defaultdict[int, int] = defaultdict(int)
+    oldest_id = row.oldest_id
+    processed = 0
+    try:
+        async for message in channel.history(
+            limit=None,
+            before=discord.Object(id=row.oldest_id),
+            after=after,
+            oldest_first=False,
+        ):
+            if not message.author.bot:
+                counts[message.author.id] += 1
+            oldest_id = message.id
+            processed += 1
+            if processed % _CHECKPOINT_EVERY == 0:
+                await self._write(
+                    guild.id,
+                    channel.id,
+                    counts,
+                    range_start=row.oldest_id,
+                    oldest_id=oldest_id,
+                )
+                counts = defaultdict(int)
+                self.logger.info(
+                    'Stats import: %s — checkpoint at %d messages',
+                    channel.name,
+                    processed,
+                )
+    except discord.Forbidden:
+        self.logger.warning(
+            'Stats import: no permission for #%s, skipping', channel.name
         )
+    await self._write(
+        guild.id,
+        channel.id,
+        counts,
+        range_start=row.oldest_id,
+        oldest_id=oldest_id,
+        is_completed=True,
+    )
 
-    def _drop_guild_state(self, guild_id: int) -> None:
-        for mapping in (self._buffer, self._floor):
-            for key in [k for k in mapping if k[0] == guild_id]:
-                del mapping[key]
-        self._caught_up = {k for k in self._caught_up if k[0] != guild_id}
+
+def _drop_guild_state(self, guild_id: int) -> None:
+    for mapping in (self._buffer, self._floor):
+        for key in [k for k in mapping if k[0] == guild_id]:
+            del mapping[key]
+    self._caught_up = {k for k in self._caught_up if k[0] != guild_id}
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
