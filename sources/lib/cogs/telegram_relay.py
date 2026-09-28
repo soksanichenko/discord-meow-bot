@@ -99,6 +99,7 @@ class TelegramRelayCog(commands.Cog):
     relay = app_commands.Group(
         name='telegram-relay',
         description='Forward public Telegram channels to Discord',
+        default_permissions=discord.Permissions(manage_guild=True),
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -147,6 +148,7 @@ class TelegramRelayCog(commands.Cog):
         channel='Discord channel to post new messages to',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_add(
         self,
         interaction: discord.Interaction,
@@ -209,6 +211,7 @@ class TelegramRelayCog(commands.Cog):
     @relay.command(name='remove', description='Stop forwarding a Telegram channel')
     @app_commands.describe(username='Telegram channel username to remove (without @)')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_remove(
         self,
         interaction: discord.Interaction,
@@ -273,6 +276,7 @@ class TelegramRelayCog(commands.Cog):
     )
     @app_commands.autocomplete(channel=_relay_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_modify(
         self,
         interaction: discord.Interaction,
@@ -319,6 +323,7 @@ class TelegramRelayCog(commands.Cog):
         name='list', description='Show all active Telegram relays for this server'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_list(self, interaction: discord.Interaction) -> None:
         """List all Telegram relays configured for this guild.
 

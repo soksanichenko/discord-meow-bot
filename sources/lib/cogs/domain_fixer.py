@@ -58,6 +58,7 @@ class DomainFixerCog(commands.Cog):
     @group.command(
         name='init', description='Load default domain replacement rules for this server'
     )
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def init_fixers(self, interaction: discord.Interaction) -> None:
         """Upsert the default domain fixer rules for this guild.
 
@@ -83,6 +84,7 @@ class DomainFixerCog(commands.Cog):
     @group.command(
         name='list', description='Show all configured domain replacement rules'
     )
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def list_fixers(self, interaction: discord.Interaction) -> None:
         """List all domain fixer rules for this guild.
 
@@ -115,6 +117,7 @@ class DomainFixerCog(commands.Cog):
         replacement='Replacement domain name, e.g. rxddit',
         subdomain='Override subdomain (leave empty to keep original)',
     )
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def add_fixer(
         self,
         interaction: discord.Interaction,
@@ -197,6 +200,7 @@ class DomainFixerCog(commands.Cog):
     @group.command(name='remove', description='Remove a domain replacement rule')
     @app_commands.describe(source='Source domain to remove')
     @app_commands.autocomplete(source=_source_domain_autocomplete)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def remove_fixer(
         self,
         interaction: discord.Interaction,

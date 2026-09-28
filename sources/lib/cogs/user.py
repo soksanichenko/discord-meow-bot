@@ -52,6 +52,7 @@ class UserCog(commands.Cog):
     )
     @app_commands.autocomplete(timezone=autocomplete_timezone)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def force_timezone(
         self,
         interaction: discord.Interaction,
@@ -97,6 +98,7 @@ class UserCog(commands.Cog):
     )
     @app_commands.describe(user='Show timezone for a specific member; omit to list all')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def timezones(
         self,
         interaction: discord.Interaction,

@@ -561,6 +561,7 @@ class BirthdaysCog(commands.Cog):
         channel='The text channel where birthday announcements will be posted'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_set(
         self,
         interaction: discord.Interaction,
@@ -585,6 +586,7 @@ class BirthdaysCog(commands.Cog):
         description='Remove the configured birthday announcement channel',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_remove(self, interaction: discord.Interaction) -> None:
         """Clear the birthday announcement channel for this server.
 
@@ -600,6 +602,7 @@ class BirthdaysCog(commands.Cog):
     @birthday.command(name='role-set', description='Set the birthday role')
     @app_commands.describe(role='The role to assign to members on their birthday')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def role_set(
         self,
         interaction: discord.Interaction,
@@ -625,6 +628,17 @@ class BirthdaysCog(commands.Cog):
             )
             return
 
+        # Without this, a manager could make the bot hand out roles above their own.
+        if (
+            interaction.user.id != interaction.guild.owner_id
+            and role >= interaction.user.top_role
+        ):
+            await interaction.response.send_message(
+                f'**{role.name}** is at or above your highest role and cannot be used.',
+                ephemeral=True,
+            )
+            return
+
         await upsert_guild_settings(interaction.guild_id, birthday_role_id=role.id)
         await interaction.response.send_message(
             f'**{role.name}** will be assigned to members on their birthday.',
@@ -635,6 +649,7 @@ class BirthdaysCog(commands.Cog):
         name='role-remove', description='Remove the configured birthday role'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def role_remove(self, interaction: discord.Interaction) -> None:
         """Clear the birthday role for this server.
 
@@ -656,6 +671,7 @@ class BirthdaysCog(commands.Cog):
         )
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def message_set(self, interaction: discord.Interaction, message: str) -> None:
         """Set a custom birthday announcement message template for this server.
 
@@ -674,6 +690,7 @@ class BirthdaysCog(commands.Cog):
         description='Remove the custom birthday announcement message',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def message_remove(self, interaction: discord.Interaction) -> None:
         """Clear the custom birthday message, reverting to the default.
 
@@ -691,6 +708,7 @@ class BirthdaysCog(commands.Cog):
     )
     @app_commands.describe(image='Image file (PNG, JPG, GIF, WebP — max 2 MB)')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def image_set(
         self, interaction: discord.Interaction, image: discord.Attachment
     ) -> None:
@@ -738,6 +756,7 @@ class BirthdaysCog(commands.Cog):
         name='image-remove', description='Remove the custom birthday announcement image'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def image_remove(self, interaction: discord.Interaction) -> None:
         """Delete the stored birthday image and clear the setting for this server.
 
@@ -761,6 +780,7 @@ class BirthdaysCog(commands.Cog):
         user='Member to use as the birthday person (defaults to yourself)'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def preview(
         self,
         interaction: discord.Interaction,
@@ -809,6 +829,7 @@ class BirthdaysCog(commands.Cog):
         year='Year of birth (optional)',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def force_birthday(
         self,
         interaction: discord.Interaction,
@@ -863,6 +884,7 @@ class BirthdaysCog(commands.Cog):
     )
     @app_commands.describe(user='The member whose birthday to remove')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def purge_birthday(
         self,
         interaction: discord.Interaction,

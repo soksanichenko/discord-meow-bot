@@ -100,6 +100,7 @@ class TwitchRelayCog(commands.Cog):
     relay = app_commands.Group(
         name='twitch-relay',
         description='Forward Twitch stream notifications to Discord',
+        default_permissions=discord.Permissions(manage_guild=True),
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -859,6 +860,7 @@ class TwitchRelayCog(commands.Cog):
         description='Authorize the bot to use Twitch EventSub (one-time setup)',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_authorize(self, interaction: discord.Interaction) -> None:
         """Start the Twitch Device Code Grant flow and store the resulting tokens.
 
@@ -1114,6 +1116,7 @@ class TwitchRelayCog(commands.Cog):
         discord_channel='Discord channel to post notifications to',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_add(
         self,
         interaction: discord.Interaction,
@@ -1189,6 +1192,7 @@ class TwitchRelayCog(commands.Cog):
     @app_commands.describe(channel='Twitch relay to remove')
     @app_commands.autocomplete(channel=_relay_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_remove(
         self,
         interaction: discord.Interaction,
@@ -1228,6 +1232,7 @@ class TwitchRelayCog(commands.Cog):
     )
     @app_commands.autocomplete(channel=_relay_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_modify(
         self,
         interaction: discord.Interaction,
@@ -1272,6 +1277,7 @@ class TwitchRelayCog(commands.Cog):
     @app_commands.describe(channel='Twitch relay to configure')
     @app_commands.autocomplete(channel=_relay_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_set_message(
         self,
         interaction: discord.Interaction,
@@ -1301,6 +1307,7 @@ class TwitchRelayCog(commands.Cog):
     @app_commands.describe(channel='Twitch relay to reset')
     @app_commands.autocomplete(channel=_relay_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_remove_message(
         self,
         interaction: discord.Interaction,
@@ -1330,6 +1337,7 @@ class TwitchRelayCog(commands.Cog):
         name='list', description='Show all active Twitch relays for this server'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_list(self, interaction: discord.Interaction) -> None:
         """List all Twitch relays configured for this guild.
 

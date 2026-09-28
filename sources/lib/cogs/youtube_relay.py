@@ -458,6 +458,7 @@ class YouTubeRelayCog(commands.Cog):
     relay = app_commands.Group(
         name='youtube-relay',
         description='Forward YouTube channel uploads to Discord',
+        default_permissions=discord.Permissions(manage_guild=True),
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -549,6 +550,7 @@ class YouTubeRelayCog(commands.Cog):
         channel='YouTube channel URL, @handle, or channel ID (UCxxx)'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_add(
         self,
         interaction: discord.Interaction,
@@ -611,6 +613,7 @@ class YouTubeRelayCog(commands.Cog):
     @app_commands.describe(channel='YouTube channel to remove')
     @app_commands.autocomplete(channel=_yt_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_remove(
         self,
         interaction: discord.Interaction,
@@ -647,6 +650,7 @@ class YouTubeRelayCog(commands.Cog):
         name='list', description='Show all active YouTube relays for this server'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_list(self, interaction: discord.Interaction) -> None:
         """List all YouTube relays configured for this guild.
 
@@ -693,6 +697,7 @@ class YouTubeRelayCog(commands.Cog):
     @app_commands.describe(channel='YouTube channel to modify')
     @app_commands.autocomplete(channel=_yt_channel_autocomplete)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_modify(
         self,
         interaction: discord.Interaction,
@@ -743,6 +748,7 @@ class YouTubeRelayCog(commands.Cog):
         ]
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_set_message(
         self,
         interaction: discord.Interaction,
@@ -789,6 +795,7 @@ class YouTubeRelayCog(commands.Cog):
         ]
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def relay_remove_message(
         self,
         interaction: discord.Interaction,

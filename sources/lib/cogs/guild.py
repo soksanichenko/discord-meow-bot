@@ -53,6 +53,7 @@ class GuildCog(commands.Cog):
 
     @server.command(name='settings', description='View current server configuration')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def server_settings(self, interaction: discord.Interaction) -> None:
         """Display all bot settings configured for this server.
 
@@ -75,6 +76,7 @@ class GuildCog(commands.Cog):
         description='Check whether the bot has the Discord permissions it needs',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def server_permissions(self, interaction: discord.Interaction) -> None:
         """Report missing bot permissions and a re-invite link that grants them.
 
@@ -125,6 +127,7 @@ class GuildCog(commands.Cog):
     @app_commands.describe(timezone='Timezone name, e.g. Europe/Kyiv, America/New_York')
     @app_commands.autocomplete(timezone=autocomplete_timezone)
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def timezone_set(
         self,
         interaction: discord.Interaction,
@@ -155,6 +158,7 @@ class GuildCog(commands.Cog):
         name='timezone-remove', description='Remove the configured server timezone'
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def timezone_remove(self, interaction: discord.Interaction) -> None:
         """Clear the guild-level timezone.
 

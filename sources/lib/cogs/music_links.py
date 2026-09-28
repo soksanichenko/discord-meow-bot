@@ -49,6 +49,7 @@ class MusicLinksCog(commands.Cog):
     music_links = app_commands.Group(
         name='music-links',
         description='Configure music link conversion',
+        default_permissions=discord.Permissions(manage_guild=True),
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -345,6 +346,7 @@ class MusicLinksCog(commands.Cog):
     )
     @app_commands.describe(channel='The channel to allow music link conversion in')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_add(
         self,
         interaction: discord.Interaction,
@@ -374,6 +376,7 @@ class MusicLinksCog(commands.Cog):
     )
     @app_commands.describe(channel='The channel to remove')
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_remove(
         self,
         interaction: discord.Interaction,
@@ -402,6 +405,7 @@ class MusicLinksCog(commands.Cog):
         description='List channels where music link conversion is active',
     )
     @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_list(self, interaction: discord.Interaction) -> None:
         """Show the allowlist for this server.
 
