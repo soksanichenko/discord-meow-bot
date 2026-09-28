@@ -78,7 +78,12 @@ class AutoResponderCog(commands.Cog):
     @tasks.loop(hours=1)
     async def _cleanup_expired(self) -> None:
         """Delete auto-responders whose expiry time has passed."""
-        count = await delete_expired_auto_responders()
+        # An exception escaping here would stop the tasks.loop permanently.
+        try:
+            count = await delete_expired_auto_responders()
+        except Exception:
+            self.logger.exception('Failed to remove expired auto-responders')
+            return
         if count:
             self.logger.info('Removed %d expired auto-responders', count)
 

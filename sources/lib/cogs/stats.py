@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from sqlalchemy.exc import OperationalError
 
 from sources.lib.db.operations.stats import (
     get_all_channel_progress,
@@ -71,12 +72,31 @@ class StatsCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _do_flush(self) -> None:
-        """Write out and clear all currently buffered message counts."""
+        """Write out and clear all currently buffered message counts.
+
+        Counts that fail on a transient DB error go back into the buffer for the
+        next run. Counts the DB rejects outright (e.g. the guild row is gone) are
+        dropped so they cannot block every later flush. Nothing is re-raised,
+        because an exception would stop the tasks.loop permanently.
+        """
         if not self._buffer:
             return
         pending, self._buffer = self._buffer, defaultdict(lambda: defaultdict(int))
         for guild_id, counts in pending.items():
-            await increment_message_counts(guild_id, dict(counts))
+            try:
+                await increment_message_counts(guild_id, dict(counts))
+            except OperationalError:
+                self.logger.warning(
+                    'Stats flush failed for guild %s, will retry',
+                    guild_id,
+                    exc_info=True,
+                )
+                for user_id, delta in counts.items():
+                    self._buffer[guild_id][user_id] += delta
+            except Exception:
+                self.logger.exception(
+                    'Stats flush: dropping counts for guild %s', guild_id
+                )
 
     @commands.Cog.listener('on_message')
     async def on_message(self, message: discord.Message) -> None:

@@ -210,3 +210,18 @@ class TestNormalizeExpiry:
         result = normalize_expiry(dt, 'Europe/Kyiv')
 
         assert result == dt
+
+
+class TestCleanupExpired:
+    async def test_db_error_does_not_stop_the_loop(self):
+        from sqlalchemy.exc import OperationalError
+
+        from sources.lib.cogs.auto_responder import AutoResponderCog
+
+        cog = AutoResponderCog(_make_bot())
+        with patch(
+            'sources.lib.cogs.auto_responder.delete_expired_auto_responders',
+            new=AsyncMock(side_effect=OperationalError('DELETE', {}, Exception())),
+        ):
+            # Raising here would stop the tasks.loop for good.
+            await cog._cleanup_expired.coro(cog)
