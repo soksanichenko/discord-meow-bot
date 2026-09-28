@@ -41,6 +41,7 @@ class FakeChannel:
         self.name = f'ch{channel_id}'
         self.messages: list[FakeMessage] = []
         self.forbidden = False
+        self.deleted = False
         self._pause_after: int | None = None
         self.paused = asyncio.Event()
         self._resume = asyncio.Event()
@@ -68,6 +69,8 @@ class FakeChannel:
     ):
         if self.forbidden:
             raise discord.Forbidden(SimpleNamespace(status=403, reason='Forbidden'), '')
+        if self.deleted:
+            raise discord.NotFound(SimpleNamespace(status=404, reason='Not Found'), '')
         low = after.id if after else -1
         high = before.id if before else 1 << 64
         selected = sorted(
@@ -163,6 +166,8 @@ class FakeStatsDB:
 
     async def reset_guild_stats(self, guild_id: int) -> None:
         await asyncio.sleep(0)
+        if self.failures:
+            raise self.failures.pop(0)
         for key in [k for k in self.counts if k[0] == guild_id]:
             del self.counts[key]
         for key in [k for k in self.progress if k[0] == guild_id]:

@@ -31,27 +31,27 @@ async def test_import_rejects_invalid_date() -> None:
 async def test_import_records_job_and_starts_import() -> None:
     cog = StatsCog(MagicMock())
     interaction = _interaction()
-    cog.tracker.start_import = MagicMock(return_value=True)
+    cog.tracker.request_import = AsyncMock(return_value=True)
 
     with patch('sources.lib.cogs.stats.upsert_import_job', new=AsyncMock()) as upsert:
         await cog.import_history.callback(cog, interaction, since='2024-01-02')
 
     since = upsert.await_args.args[1]
     assert (since.year, since.month, since.day) == (2024, 1, 2)
-    cog.tracker.start_import.assert_called_once_with(interaction.guild, since)
+    cog.tracker.request_import.assert_awaited_once_with(interaction.guild, since)
 
 
 async def test_import_does_not_restart_running_import() -> None:
     cog = StatsCog(MagicMock())
     interaction = _interaction()
     cog.tracker.is_importing = MagicMock(return_value=True)
-    cog.tracker.start_import = MagicMock()
+    cog.tracker.request_import = AsyncMock()
 
     with patch('sources.lib.cogs.stats.upsert_import_job', new=AsyncMock()) as upsert:
         await cog.import_history.callback(cog, interaction, since=None)
 
     upsert.assert_not_awaited()
-    cog.tracker.start_import.assert_not_called()
+    cog.tracker.request_import.assert_not_awaited()
 
 
 async def test_reset_asks_for_confirmation_without_resetting() -> None:

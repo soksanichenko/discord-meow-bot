@@ -130,11 +130,11 @@ class StatsTracker:
             await self._write_pending(kept, retry=False)
             for guild in guilds:
                 await self._retrying(self._start_epoch, guild, boundary)
-        by_id = {guild.id: guild for guild in guilds}
-        for job in await get_import_jobs():
-            guild = by_id.get(job.guild_id)
-            if guild is not None:
-                self.start_import(guild, job.since)
+            by_id = {guild.id: guild for guild in guilds}
+            for job in await get_import_jobs():
+                guild = by_id.get(job.guild_id)
+                if guild is not None:
+                    self._start_import(guild, job.since)
 
     def on_guild_join(self, guild: discord.Guild) -> None:
         """Start counting a newly joined guild live.
@@ -144,7 +144,9 @@ class StatsTracker:
         """
         self._boundary[guild.id] = now_snowflake()
 
-    def start_import(self, guild: discord.Guild, since: datetime | None) -> bool:
+    async def request_import(
+        self, guild: discord.Guild, since: datetime | None
+    ) -> bool:
         """Start the backward history import for a guild unless one is running.
 
         Args:
@@ -154,12 +156,9 @@ class StatsTracker:
         Returns:
             True if a new import was started.
         """
-        if self.is_importing(guild.id):
-            return False
-        self._import_tasks[guild.id] = asyncio.create_task(
-            self._import_guild(guild, since)
-        )
-        return True
+        # Under the lock, so an import can never start inside a reset's window.
+        async with self._lock:
+            return self._start_import(guild, since)
 
     def is_importing(self, guild_id: int) -> bool:
         """Return whether a history import is running for a guild.
@@ -184,8 +183,9 @@ class StatsTracker:
             await self._stop(self._import_tasks.pop(guild.id, None))
             self._boundary[guild.id] = now_snowflake()
             self._drop_guild_state(guild.id)
-            await reset_guild_stats(guild.id)
-        self.start_import(guild, since=None)
+            # A half-done reset would leave stale ranges with no import to fix them.
+            await self._retrying(reset_guild_stats, guild.id)
+            self._start_import(guild, since=None)
 
     async def forget(self, guild_id: int) -> None:
         """Stop all work for a guild the bot has left.
@@ -292,6 +292,15 @@ class StatsTracker:
             guild.id, channel_id, counts, range_start=boundary, newest_id=boundary
         )
 
+    def _start_import(self, guild: discord.Guild, since: datetime | None) -> bool:
+        # A guild without a boundary was forgotten (or never became ready).
+        if guild.id not in self._boundary or self.is_importing(guild.id):
+            return False
+        self._import_tasks[guild.id] = asyncio.create_task(
+            self._import_guild(guild, since)
+        )
+        return True
+
     async def _import_guild(self, guild: discord.Guild, since: datetime | None) -> None:
         after = (
             discord.Object(id=discord.utils.time_snowflake(since)) if since else None
@@ -352,9 +361,9 @@ class StatsTracker:
                         channel.name,
                         processed,
                     )
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.NotFound):
             self.logger.warning(
-                'Stats import: no permission for #%s, skipping', channel.name
+                'Stats import: #%s is gone or not readable, skipping', channel.name
             )
         await self._write(
             guild.id,

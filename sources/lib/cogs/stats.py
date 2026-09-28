@@ -187,7 +187,7 @@ class StatsCog(commands.Cog):
                 return
 
         await upsert_import_job(interaction.guild_id, since_dt)
-        self.tracker.start_import(interaction.guild, since_dt)
+        await self.tracker.request_import(interaction.guild, since_dt)
         await interaction.response.send_message(
             'Import started in the background. Use `/stats import-status` to check progress.',
             ephemeral=True,

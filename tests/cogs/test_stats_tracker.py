@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -235,9 +236,9 @@ class TestImport:
         await world.db.upsert_import_job(GUILD_ID, None)
         world.channels[10].pause(after=3)
 
-        assert tracker.start_import(world.guild, None) is True
+        assert await tracker.request_import(world.guild, None) is True
         await world.channels[10].paused.wait()
-        assert tracker.start_import(world.guild, None) is False
+        assert await tracker.request_import(world.guild, None) is False
         for minute in (11, 12, 13):
             world.send(tracker, 10, minute, author_id=7)
         await tracker.flush()
@@ -260,7 +261,7 @@ class TestImport:
         await first.on_ready([world.guild])
         await world.db.upsert_import_job(GUILD_ID, since)
         world.channels[10].pause(after=3)
-        first.start_import(world.guild, since)
+        await first.request_import(world.guild, since)
         await world.channels[10].paused.wait()
 
         await crash(first)
@@ -281,7 +282,7 @@ class TestReset:
         tracker = StatsTracker()
         world.clock.minute = 10
         await tracker.on_ready([world.guild])
-        tracker.start_import(world.guild, None)
+        await tracker.request_import(world.guild, None)
         await settle(tracker)
         world.send(tracker, 10, 11, author_id=2)
         await tracker.flush()
@@ -307,7 +308,7 @@ class TestForget:
         world.clock.minute = 10
         await tracker.on_ready([world.guild])
         world.channels[10].pause(after=2)
-        tracker.start_import(world.guild, None)
+        await tracker.request_import(world.guild, None)
         await world.channels[10].paused.wait()
         world.send(tracker, 10, 11, author_id=2)
         writes = world.db.writes
@@ -318,3 +319,77 @@ class TestForget:
 
         assert tracker.is_importing(GUILD_ID) is False
         assert world.db.writes == writes
+
+
+class TestReviewRegressions:
+    async def test_import_requested_during_reset_does_not_lose_messages(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        world = World(monkeypatch, channel_ids=(10, 11))
+        for minute in range(1, 6):
+            world.send(None, 10, minute, author_id=1)
+            world.send(None, 11, minute, author_id=2)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        world.send(tracker, 10, 12, author_id=8)
+        await tracker.flush()
+        gate = asyncio.Event()
+        real_reset = world.db.reset_guild_stats
+
+        async def slow_reset(guild_id: int) -> None:
+            await gate.wait()
+            await real_reset(guild_id)
+
+        monkeypatch.setattr('sources.lib.stats_tracker.reset_guild_stats', slow_reset)
+        world.clock.minute = 20
+        reset = asyncio.create_task(tracker.reset(world.guild))
+        await asyncio.sleep(0)
+        # A second admin runs /stats import while the reset is in flight.
+        request = asyncio.create_task(tracker.request_import(world.guild, None))
+        await asyncio.sleep(0)
+        gate.set()
+        await reset
+        await request
+        world.send(tracker, 10, 21, author_id=3)
+        await settle(tracker)
+        await tracker.flush()
+
+        assert world.db.user_counts() == world.expected()
+        assert world.db.jobs == {}
+
+    async def test_import_skips_channel_deleted_mid_import(self, world: World) -> None:
+        world.send(None, 10, 1, author_id=1)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        world.channels[10].deleted = True
+
+        await tracker.request_import(world.guild, None)
+        await asyncio.wait_for(settle(tracker), timeout=1)
+
+        assert tracker.is_importing(GUILD_ID) is False
+        assert world.db.jobs == {}
+
+    async def test_reset_survives_db_error(self, world: World) -> None:
+        for minute in range(1, 4):
+            world.send(None, 10, minute, author_id=1)
+        tracker = StatsTracker()
+        world.clock.minute = 10
+        await tracker.on_ready([world.guild])
+        await tracker.request_import(world.guild, None)
+        await settle(tracker)
+        world.db.failures.append(db_error())
+
+        world.clock.minute = 20
+        await tracker.reset(world.guild)
+        await settle(tracker)
+
+        assert world.db.user_counts() == world.expected()
+
+    async def test_no_import_for_forgotten_guild(self, world: World) -> None:
+        tracker = StatsTracker()
+        await tracker.on_ready([world.guild])
+        await tracker.forget(GUILD_ID)
+
+        assert await tracker.request_import(world.guild, None) is False
