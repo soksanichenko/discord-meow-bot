@@ -284,8 +284,7 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 | Package | Version | Purpose |
 |---|---|---|
 | `discord.py` | 2.7.1 | Discord API |
-| `SQLAlchemy[asyncio]` | 2.0.52 | ORM |
-| `SQLAlchemy-Utils` | 0.42.1 | `create_database` / `database_exists` (used in `db/utils.py`) |
+| `SQLAlchemy[asyncio]` | 2.1.0 | ORM |
 | `psycopg[binary]` | 3.3.5 | Async + sync PostgreSQL driver |
 | `alembic` | 1.19.2 | DB migrations |
 | `pydantic-settings` | 2.15.0 | Config from env vars |
