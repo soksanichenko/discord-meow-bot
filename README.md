@@ -102,8 +102,10 @@ Active only in channels explicitly added via `/music-links channel-add`.
 
 ### Message Statistics
 Tracks message counts per user per guild in real time. Bots are excluded.
-Admins can import the full channel history as a background job, with
-per-channel checkpointing so it survives bot restarts.
+Every message is counted exactly once: messages sent while the bot was down are
+caught up from channel history on the next start. Admins can import the full
+channel history as a background job that resumes after restarts, or wipe the
+statistics and rebuild them from history.
 
 - `/stats leaderboard` — top 10 message senders
 - `/stats import [since]` — start or resume historical import (admin)

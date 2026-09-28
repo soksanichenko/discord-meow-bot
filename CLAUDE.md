@@ -62,7 +62,8 @@ deploy.sh                 # Runs ansible-playbook for zelgray.work inventory
 ## Architecture Principles
 
 - **Cogs** are the top-level feature boundaries. Each cog registers its own Discord commands and event listeners. Add new features by creating a new cog and loading it in `setup_hook()` in `main.py`.
-- **Async everywhere.** Use `psycopg3` for DB, `discord.py` 2.x async API, `asyncio`-scoped sessions. Never block the event loop.
+- **Async everywhere.** Use `psycopg3` for DB, `discord.py` 2.x async API, a fresh session per operation (`async with AsyncSession()`). Never block the event loop.
+- **Admin commands check permissions at runtime.** `@app_commands.default_permissions` is ignored on subcommands and can be overridden by guild admins, so every admin command also carries `@app_commands.checks.has_permissions(manage_guild=True)` (enforced by `tests/cogs/test_permissions.py`).
 - **CRUD layer is generic.** `crud/base.py` provides typed generic operations. Domain-specific logic (e.g., upsert a user) lives in `db/operations/`.
 - **Config is environment-driven.** All secrets come from environment variables (see `config.py`). No secrets in code or YAML.
 
