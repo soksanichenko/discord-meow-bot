@@ -362,7 +362,12 @@ class MessageStats(Base):
 
 
 class StatsImportProgress(Base):
-    """Per-channel checkpoint for historical message import."""
+    """Per-channel range of messages already counted in message_stats.
+
+    Invariant: message_stats holds exactly the non-bot messages of the channel
+    with oldest_id <= id <= newest_id, each counted once. The bounds may be
+    synthetic time-based snowflakes rather than real message IDs.
+    """
 
     __tablename__ = 'stats_import_progress'
 
@@ -372,6 +377,23 @@ class StatsImportProgress(Base):
         primary_key=True,
     )
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    # Snowflake ID of the last processed message; NULL means not yet started.
-    last_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    oldest_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    newest_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # The backward history import reached the start of the channel (or `since`).
     is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class StatsImportJob(Base):
+    """A requested backward history import that has not finished yet."""
+
+    __tablename__ = 'stats_import_jobs'
+
+    guild_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey('guilds.id', ondelete='CASCADE'),
+        primary_key=True,
+    )
+    # NULL means the whole channel history.
+    since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

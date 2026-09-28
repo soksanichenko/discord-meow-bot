@@ -67,6 +67,7 @@ class TestSchema:
             'reminders',
             'message_stats',
             'stats_import_progress',
+            'stats_import_jobs',
             'telegram_relays',
             'youtube_relays',
             'youtube_live_sessions',
