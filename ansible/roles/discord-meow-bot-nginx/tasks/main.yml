@@ -41,32 +41,16 @@
     - meow-bot-pp.html
     - meow-bot-tos.html
 
-- name: Install python3-passlib for htpasswd management
-  ansible.builtin.package:
-    name: python3-passlib
-    state: present
+# The bot's /health used to be proxied publicly behind Basic Auth; nothing used
+# it (the deploy check and the blackbox probe both hit 127.0.0.1). Remove what
+# earlier runs left on the hosts.
+- name: Remove the public health endpoint config and its htpasswd file
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
   become: yes
-
-# mode 0644 (not 0640): the file is owned by root, but the shared nginx
-# container (infra repo, nginx:1.26 image) runs its worker process as the
-# unprivileged `nginx` user (uid/gid 101), which isn't in the root group —
-# it can only read this file via the "other" bits. Matches the mode used by
-# every other htpasswd file in that shared nginx role.
-- name: Manage meow-bot health htpasswd file
-  community.general.htpasswd:
-    path: "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"
-    name: "{{ discord_bot_health_user }}"
-    password: "{{ discord_bot_health_password }}"
-    mode: "0644"
-  become: yes
-  no_log: true
-  notify: Restart Nginx container
-
-- name: Deploy discord bot nginx location config
-  ansible.builtin.template:
-    src: discord-bot-locations.conf.j2
-    dest: "{{ nginx_custom_locations_path }}/discord-bot-locations.conf"
-    mode: "0644"
-  become: yes
+  loop:
+    - "{{ nginx_custom_locations_path }}/discord-bot-locations.conf"
+    - "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"
   notify: Restart Nginx container
 ...
