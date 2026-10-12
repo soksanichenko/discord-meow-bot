@@ -18,11 +18,12 @@ from sources.lib.cogs.relay_utils import (
     parse_relay_id,
     resolve_channel,
 )
-from sources.lib.db.models import YouTubeRelay
+from sources.lib.db.models import YouTubeLiveSession, YouTubeRelay
 from sources.lib.db.operations.youtube_live_session import (
     add_live_session,
     get_all_live_sessions,
     remove_live_session,
+    set_live_session_message,
 )
 from sources.lib.db.operations.youtube_relay import (
     add_relay,
@@ -942,17 +943,34 @@ class YouTubeRelayCog(commands.Cog):
             return raw_id[len('yt:video:') :]
         return None
 
-    async def _classify_video(self, video_id: str) -> tuple[bool, bool]:
-        """Determine whether a video is a Short and/or a live stream.
+    @staticmethod
+    def _live_state(details: dict) -> str:
+        """Map ``liveStreamingDetails`` to a stream lifecycle state.
 
-        Runs both checks concurrently. Defaults to (False, False) on any error
+        Args:
+            details: Non-empty ``liveStreamingDetails`` object from the Videos API.
+
+        Returns:
+            'upcoming' (scheduled stream or premiere), 'live', or 'ended'.
+        """
+        if details.get('actualEndTime'):
+            return 'ended'
+        if details.get('actualStartTime'):
+            return 'live'
+        return 'upcoming'
+
+    async def _classify_video(self, video_id: str) -> tuple[bool, str | None]:
+        """Determine whether a video is a Short and/or a live stream or premiere.
+
+        Runs both checks concurrently. Defaults to (False, None) on any error
         so that classification failures never silently drop videos.
 
         Args:
             video_id: YouTube video ID.
 
         Returns:
-            (is_short, is_live).
+            (is_short, live_state) where live_state is None for regular videos,
+            otherwise 'upcoming', 'live' or 'ended'.
         """
 
         async def check_short() -> bool:
@@ -966,7 +984,7 @@ class YouTubeRelayCog(commands.Cog):
             except Exception:
                 return False
 
-        async def check_live() -> bool:
+        async def check_live() -> str | None:
             try:
                 with api_call_latency.labels(service='youtube').time():
                     async with self._session.get(
@@ -980,12 +998,13 @@ class YouTubeRelayCog(commands.Cog):
                     ) as resp:
                         data = await resp.json()
                 items = data.get('items', [])
-                return bool(items and items[0].get('liveStreamingDetails'))
+                details = items[0].get('liveStreamingDetails') if items else None
+                return self._live_state(details) if details else None
             except Exception:
-                return False
+                return None
 
-        is_short, is_live = await asyncio.gather(check_short(), check_live())
-        return is_short, is_live
+        is_short, live_state = await asyncio.gather(check_short(), check_live())
+        return is_short, live_state
 
     @staticmethod
     def _notification_message(
@@ -1111,6 +1130,42 @@ class YouTubeRelayCog(commands.Cog):
         )
         return viewers, icon_url, thumbnail_url
 
+    async def _send_live_notice(
+        self,
+        relay: YouTubeRelay,
+        channel: discord.abc.Messageable,
+        video_id: str,
+        title: str | None,
+        url: str,
+    ) -> discord.Message:
+        """Post the "stream is live" embed for a relay.
+
+        Args:
+            relay: The relay the notice belongs to.
+            channel: Destination Discord channel.
+            video_id: YouTube video ID of the stream.
+            title: Stream title; falls back to the channel title.
+            url: Stream URL.
+
+        Returns:
+            The sent Discord message.
+        """
+        viewers, channel_icon_url, thumbnail_url = await self._fetch_live_embed_data(
+            video_id, relay.yt_channel_id
+        )
+        embed = self._build_yt_live_embed(
+            author_text=relay.message_live
+            or f'{relay.yt_channel_title} is live on YouTube!',
+            title=title or relay.yt_channel_title,
+            url=url,
+            viewers=viewers,
+            thumbnail_url=thumbnail_url,
+            channel_icon_url=channel_icon_url,
+        )
+        sent = await channel.send(embed=embed)
+        relay_posts.labels(service='youtube', type='live').inc()
+        return sent
+
     @staticmethod
     def _build_yt_live_embed(
         author_text: str,
@@ -1181,11 +1236,13 @@ class YouTubeRelayCog(commands.Cog):
             self.logger.exception('Unexpected error checking live sessions')
 
     async def _check_live_sessions(self) -> None:
-        """Check all tracked live streams and post end-of-stream notices for ones that ended.
+        """Advance tracked streams: announce them when live, close the notice when ended.
 
-        Batches video IDs into requests of up to 50 (YouTube API limit). A session is
-        removed when the stream ends, is gone (deleted/private), or cannot be found.
-        API errors are treated conservatively — sessions are kept alive.
+        Batches video IDs into requests of up to 50 (YouTube API limit). A session
+        without a Discord message is a scheduled stream/premiere that is announced
+        once it starts. A session is removed when the stream ends, is gone
+        (deleted/private/no longer a stream), or cannot be announced. API errors are
+        treated conservatively — sessions are kept as they are.
         """
         sessions = await get_all_live_sessions()
         if not sessions:
@@ -1193,8 +1250,10 @@ class YouTubeRelayCog(commands.Cog):
 
         unique_ids = list({s.video_id for s in sessions})
 
-        # 'live' → still streaming; 'ended' → actualEndTime set; 'gone' → not in API response.
+        # 'upcoming' → not started; 'live' → streaming; 'ended' → actualEndTime set;
+        # 'gone' → not in API response; 'keep' → API error, leave the session alone.
         status: dict[str, str] = {vid: 'gone' for vid in unique_ids}
+        titles: dict[str, str] = {}
 
         for i in range(0, len(unique_ids), 50):
             batch = unique_ids[i : i + 50]
@@ -1203,7 +1262,7 @@ class YouTubeRelayCog(commands.Cog):
                     async with self._session.get(
                         _YT_API_VIDEOS,
                         params={
-                            'part': 'liveStreamingDetails',
+                            'part': 'snippet,liveStreamingDetails',
                             'id': ','.join(batch),
                             'key': config.youtube_api_key,
                         },
@@ -1213,20 +1272,28 @@ class YouTubeRelayCog(commands.Cog):
             except Exception as exc:
                 self.logger.warning('Failed to check live sessions batch: %s', exc)
                 for vid in batch:
-                    status[vid] = 'live'  # keep alive on error
+                    status[vid] = 'keep'
                 continue
 
             for item in data.get('items', []):
-                vid = item['id']
-                details = item.get('liveStreamingDetails', {})
-                status[vid] = 'ended' if details.get('actualEndTime') else 'live'
+                details = item.get('liveStreamingDetails')
+                if not details:
+                    continue  # no longer a stream → treated as gone
+                status[item['id']] = self._live_state(details)
+                titles[item['id']] = item.get('snippet', {}).get('title', '')
 
         for s in sessions:
-            vid_status = status.get(s.video_id, 'live')
-            if vid_status == 'live':
+            vid_status = status.get(s.video_id, 'keep')
+            if vid_status in ('keep', 'upcoming'):
                 continue
 
-            if vid_status == 'ended':
+            if vid_status == 'live':
+                if s.discord_message_id is not None:
+                    continue
+                await self._announce_started_stream(s, titles.get(s.video_id))
+                continue
+
+            if vid_status == 'ended' and s.discord_message_id is not None:
                 relay = await get_relay_by_id(s.relay_id)
                 if relay is not None:
                     channel = await resolve_channel(self.bot, relay.discord_channel_id)
@@ -1244,15 +1311,12 @@ class YouTubeRelayCog(commands.Cog):
                             icon_url='https://www.gstatic.com/youtube/img/branding/favicon/favicon_96x96.png',
                         )
                         edited = False
-                        if s.discord_message_id:
-                            try:
-                                original = await channel.fetch_message(
-                                    s.discord_message_id
-                                )
-                                await original.edit(content=None, embed=end_embed)
-                                edited = True
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
+                        try:
+                            original = await channel.fetch_message(s.discord_message_id)
+                            await original.edit(content=None, embed=end_embed)
+                            edited = True
+                        except (discord.NotFound, discord.Forbidden):
+                            pass
                         if not edited:
                             try:
                                 await channel.send(embed=end_embed)
@@ -1266,6 +1330,45 @@ class YouTubeRelayCog(commands.Cog):
             self.logger.info(
                 'Live session removed for video %s (status: %s)', s.video_id, vid_status
             )
+
+    async def _announce_started_stream(
+        self, live_session: YouTubeLiveSession, title: str | None
+    ) -> None:
+        """Post the live notice for a scheduled stream/premiere that just started.
+
+        The session is dropped instead if the relay, its channel, or live posting
+        is no longer available, so a failed announcement is never retried forever.
+
+        Args:
+            live_session: Tracked session that has no Discord message yet.
+            title: Stream title from the Videos API.
+        """
+        relay = await get_relay_by_id(live_session.relay_id)
+        channel = (
+            await resolve_channel(self.bot, relay.discord_channel_id)
+            if relay is not None and relay.post_lives
+            else None
+        )
+        if relay is None or channel is None:
+            await remove_live_session(live_session.id)
+            return
+        try:
+            sent = await self._send_live_notice(
+                relay,
+                channel,
+                live_session.video_id,
+                title,
+                f'https://www.youtube.com/watch?v={live_session.video_id}',
+            )
+        except discord.Forbidden:
+            self.logger.warning(
+                'No permission to post in channel %d for relay %d',
+                relay.discord_channel_id,
+                relay.id,
+            )
+            await remove_live_session(live_session.id)
+            return
+        await set_live_session_message(live_session.id, sent.id)
 
     async def _poll_youtube_channel(
         self,
@@ -1296,7 +1399,7 @@ class YouTubeRelayCog(commands.Cog):
             return
 
         # Cache classifications so each video is checked once across all relay rows.
-        classification_cache: dict[str, tuple[bool, bool]] = {}
+        classification_cache: dict[str, tuple[bool, str | None]] = {}
         for relay in relays:
             await self._poll_relay(
                 relay, feed.entries, classification_cache, active_live_ids
@@ -1306,7 +1409,7 @@ class YouTubeRelayCog(commands.Cog):
         self,
         relay: YouTubeRelay,
         entries: list,
-        classification_cache: dict[str, tuple[bool, bool]],
+        classification_cache: dict[str, tuple[bool, str | None]],
         active_live_ids: dict[int, set[str]],
     ) -> None:
         """Forward new entries from an already-fetched feed to one relay row.
@@ -1314,7 +1417,7 @@ class YouTubeRelayCog(commands.Cog):
         Args:
             relay: The relay row to process.
             entries: Parsed feed entries for this YouTube channel.
-            classification_cache: Shared cache of (is_short, is_live) per video ID.
+            classification_cache: Shared cache of (is_short, live_state) per video ID.
             active_live_ids: Per-relay set of live video IDs already being tracked.
         """
         seen_ids = set(relay.seen_video_ids or [])
@@ -1386,24 +1489,27 @@ class YouTubeRelayCog(commands.Cog):
                 continue
 
             video_id = self._video_id_from_entry(entry)
-            is_short, is_live = False, False
+            is_short, live_state = False, None
             if video_id:
                 if video_id not in classification_cache:
                     classification_cache[video_id] = await self._classify_video(
                         video_id
                     )
-                is_short, is_live = classification_cache[video_id]
+                is_short, live_state = classification_cache[video_id]
 
-            if is_live and not relay.post_lives:
+            # A stream that already ended before we saw it is a recording, not news.
+            if live_state == 'ended':
+                continue
+            if live_state and not relay.post_lives:
                 continue
             if is_short and not relay.post_shorts:
                 continue
-            if not is_live and not is_short and not relay.post_videos:
+            if not live_state and not is_short and not relay.post_videos:
                 continue
 
-            # Skip live streams already tracked — same video ID re-appeared in feed (resume).
+            # Skip streams already tracked — same video ID re-appeared in feed (resume).
             if (
-                is_live
+                live_state
                 and video_id
                 and video_id in active_live_ids.get(relay.id, set())
             ):
@@ -1421,29 +1527,17 @@ class YouTubeRelayCog(commands.Cog):
                     await update_last_video_id(
                         relay.id, video_id, current_seen[:_SEEN_WINDOW]
                     )
-                if is_live and video_id:
-                    (
-                        viewers,
-                        channel_icon_url,
-                        thumbnail_url,
-                    ) = await self._fetch_live_embed_data(video_id, relay.yt_channel_id)
-                    author_text = (
-                        relay.message_live
-                        or f'{relay.yt_channel_title} is live on YouTube!'
+                if live_state == 'upcoming' and video_id:
+                    # Scheduled stream/premiere: announce it only once it goes live.
+                    await add_live_session(relay.id, video_id)
+                    continue
+                if live_state == 'live' and video_id:
+                    sent = await self._send_live_notice(
+                        relay, channel, video_id, entry.get('title'), link
                     )
-                    embed = self._build_yt_live_embed(
-                        author_text=author_text,
-                        title=entry.get('title') or relay.yt_channel_title,
-                        url=link,
-                        viewers=viewers,
-                        thumbnail_url=thumbnail_url,
-                        channel_icon_url=channel_icon_url,
-                    )
-                    sent = await channel.send(embed=embed)
                     await add_live_session(relay.id, video_id, sent.id)
-                    relay_posts.labels(service='youtube', type='live').inc()
                 else:
-                    message = self._notification_message(relay, is_short, is_live)
+                    message = self._notification_message(relay, is_short, False)
                     await channel.send(f'{message}\n{link}')
                     relay_posts.labels(
                         service='youtube', type='short' if is_short else 'video'

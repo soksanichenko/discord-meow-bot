@@ -12,6 +12,9 @@ async def add_live_session(
 ) -> None:
     """Record a new live stream session to track. No-op if already tracked.
 
+    A session without ``discord_message_id`` is a scheduled stream/premiere that has
+    not started yet; it is announced once it goes live.
+
     Args:
         relay_id: Primary key of the YouTubeRelay row that posted the live notification.
         video_id: YouTube video ID of the live stream.
@@ -52,4 +55,18 @@ async def remove_live_session(session_id: int) -> None:
         obj = await session.get(YouTubeLiveSession, session_id)
         if obj is not None:
             await session.delete(obj)
+            await session.commit()
+
+
+async def set_live_session_message(session_id: int, discord_message_id: int) -> None:
+    """Attach the announcement message to a session that was waiting for the stream.
+
+    Args:
+        session_id: Primary key of the YouTubeLiveSession row.
+        discord_message_id: Snowflake ID of the Discord message that announced the stream.
+    """
+    async with AsyncSession() as session:
+        obj = await session.get(YouTubeLiveSession, session_id)
+        if obj is not None:
+            obj.discord_message_id = discord_message_id
             await session.commit()

@@ -126,7 +126,10 @@ or credentials required — only public channels.
 Forwards new uploads from YouTube channels to Discord channels via
 YouTube's public RSS feed. Supports filtering by content type. Channel
 handles (`@name`) and URLs are resolved automatically via the YouTube
-Data API.
+Data API. Live streams and premieres are announced only once they actually
+start (scheduled ones are not posted as videos) and the announcement is
+updated to a "stream ended" embed when they finish; streams that already
+ended before the bot noticed them are not posted.
 
 - `/youtube-relay add <channel> <#channel>` — start forwarding (admin)
   - Optional: `post_videos`, `post_shorts`, `post_lives` (all `True` by default)

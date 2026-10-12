@@ -126,7 +126,7 @@ Rules:
 - `StatsImportJob(guild_id PK, since nullable)` — requested history import that has not finished; resumed on every `on_ready`
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 - `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, seen_video_ids JSON, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `seen_video_ids` is a sliding window of recently-posted video IDs for deduplication; `message_*` are custom notification texts (NULL = use built-in default)
-- `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks an ongoing live stream so the bot can edit the announcement when the stream ends
+- `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks a live stream so the bot can edit the announcement when the stream ends; `discord_message_id=NULL` means a scheduled stream/premiere that is announced only once it actually starts
 - `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1); `access_token`/`refresh_token` are encrypted at rest (see `ENCRYPTION_KEY`) — always go through `db/operations/twitch_auth.py`, never read/write the columns directly
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
 - `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
