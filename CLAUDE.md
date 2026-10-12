@@ -249,7 +249,7 @@ python sources/scripts/main.py
 - `GET /health` → `503 {"status": "starting"}` while connecting to Discord
 - `GET /metrics` → Prometheus text exposition format (see `sources/lib/utils/metrics.py` for the shared metrics and `main.py` for the bot-level gauges)
 
-The port is published only to `127.0.0.1` on the host (Docker `published_ports`), so it is not externally reachable. The nginx role in the `infra` repo proxies `/health` at `https://zelgray.work/discord-bot/health` behind `auth_basic`; `/metrics` is scraped in-network by the Alloy monitoring agent, not proxied externally.
+The port is published only to `127.0.0.1` on the host (Docker `published_ports`), so it is not externally reachable. Neither endpoint is proxied by nginx: the deploy check and the Alloy blackbox probe hit `127.0.0.1:8080/health` directly, and `/metrics` is scraped by the Alloy monitoring agent.
 
 ## Deployment
 
