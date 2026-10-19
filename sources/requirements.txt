@@ -1,4 +1,4 @@
-aiohttp==3.14.4
+aiohttp==3.14.5
 alembic==1.20.0
 APScheduler==3.11.3
 cryptography==50.0.2
@@ -7,7 +7,7 @@ discord.py==2.7.1
 feedparser==6.0.14
 prometheus_client==0.26.0
 psycopg[binary]==3.3.6
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
 SQLAlchemy[asyncio]==2.1.4
 tldextract==5.4.0
 twitchAPI==4.5.0
