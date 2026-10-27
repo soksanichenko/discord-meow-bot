@@ -25,12 +25,14 @@ sources/
 │   │   ├── reminders.py  # /reminders group (add, list, cancel)
 │   │   ├── stats.py      # /stats group; delegates counting to StatsTracker
 │   │   ├── telegram_relay.py  # /telegram-relay group + APScheduler polling
-│   │   ├── twitch_relay.py    # /twitch-relay group + EventSub WebSocket + reconnect watchdog
+│   │   ├── twitch_relay.py    # /twitch-relay group + EventSub webhook callbacks + reconcile job
 │   │   ├── user.py       # /get-timestamp, /set-timezone, /my-settings, /force-timezone, /timezones
 │   │   ├── voice.py      # Voice channel auto-status
 │   │   └── youtube_relay.py   # /youtube-relay group + APScheduler polling
 │   ├── cogs/relay_utils.py   # Shared relay helpers: resolve_channel, parse_relay_id, build_relay_choices
 │   ├── spotify.py        # Spotify Web API client + YouTube title matching utilities (music_links.py)
+│   ├── twitch_webhook.py # POST /twitch/eventsub handler (HMAC check, ack, background processing) + StreamEvent
+│   ├── twitch_subscriptions.py  # TwitchSubscriptionManager — Helix EventSub subscription create/delete/reconcile
 │   ├── scheduler.py      # ReminderScheduler — wraps APScheduler for /reminders
 │   ├── stats_tracker.py  # StatsTracker — exact-once message counting (live, catch-up, import, reset)
 │   ├── views/
@@ -41,7 +43,7 @@ sources/
 │   │   ├── get_timestamp.py  # Timestamp parsing, autocomplete, TimestampFormatView
 │   │   ├── discord_utils.py  # require_timezone, get_command, guild helpers
 │   │   ├── domains_fixer.py  # URLFixer class + fix_urls()
-│   │   └── crypto.py     # Fernet encrypt/decrypt helpers (ENCRYPTION_KEY) for secrets stored at rest
+│   │   └── twitch_eventsub.py  # Pure EventSub helpers: signature check, dedupe, subscription plan, missed-start note
 │   ├── db/
 │   │   ├── __init__.py   # Async engine + session factory
 │   │   ├── models.py     # SQLAlchemy ORM models
@@ -49,7 +51,7 @@ sources/
 │   │   ├── crud/base.py  # Generic CRUD class (CRUDBase — get, create, update, delete, upsert)
 │   │   ├── operations/   # Domain-specific: users.py, guilds.py, birthdays.py, auto_responder.py,
 │   │   │                 #   domain_fixers.py, music_links.py, reminders.py, stats.py,
-│   │   │                 #   telegram_relay.py, twitch_auth.py, twitch_live_session.py,
+│   │   │                 #   telegram_relay.py, twitch_live_session.py,
 │   │   │                 #   twitch_relay.py, voice_channels.py,
 │   │                 #   youtube_relay.py, youtube_live_session.py
 │   │   └── alembic/      # Migrations
@@ -88,8 +90,10 @@ Pydantic Settings (`sources/config.py`). All values can be set via environment v
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval in minutes (default: 5) |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (EventSub relay) |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret |
-| `ENCRYPTION_KEY` | Fernet key (generate with `Fernet.generate_key()`) used to encrypt Twitch OAuth tokens at rest. Required to use the Twitch relay |
-| `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (default: `8080`) |
+| `TWITCH_EVENTSUB_SECRET` | Secret (10–100 ASCII characters; `openssl rand -hex 32`) Twitch signs EventSub webhook deliveries with. Required to use the Twitch relay |
+| `TWITCH_EVENTSUB_CALLBACK_URL` | Public HTTPS URL Twitch delivers webhooks to (`https://zelgray.work/discord-bot/twitch/eventsub` in production). Required to use the Twitch relay |
+| `TWITCH_RECONCILE_INTERVAL_MINUTES` | Twitch relay reconcile interval in minutes (default: 5) |
+| `HEALTH_PORT` | Port for the internal HTTP server: `/health`, `/metrics` and the Twitch webhook route (default: `8080`) |
 
 Both sync and async DB URLs use `postgresql+psycopg://` (psycopg3) and are constructed from the DB_* variables.
 
@@ -127,7 +131,6 @@ Rules:
 - `TelegramRelay(id PK, guild_id FK, tg_username, discord_channel_id, last_entry_id nullable)` — Telegram channel → Discord channel relay
 - `YouTubeRelay(id PK, guild_id FK, yt_channel_id, yt_channel_title, discord_channel_id, last_video_id nullable, seen_video_ids JSON, post_videos, post_shorts, post_lives, message_video nullable, message_short nullable, message_live nullable)` — YouTube channel → Discord channel relay; `seen_video_ids` is a sliding window of recently-posted video IDs for deduplication; `message_*` are custom notification texts (NULL = use built-in default)
 - `YouTubeLiveSession(id PK, relay_id FK, video_id, discord_message_id nullable)` — tracks a live stream so the bot can edit the announcement when the stream ends; `discord_message_id=NULL` means a scheduled stream/premiere that is announced only once it actually starts
-- `TwitchAuth(id PK, access_token, refresh_token, expires_at)` — single-row Twitch OAuth token store (id always 1); `access_token`/`refresh_token` are encrypted at rest (see `ENCRYPTION_KEY`) — always go through `db/operations/twitch_auth.py`, never read/write the columns directly
 - `TwitchRelay(id PK, guild_id FK, twitch_user_id, twitch_login, discord_channel_id, custom_message nullable)` — Twitch channel → Discord channel relay
 - `TwitchLiveSession(id PK, relay_id FK, discord_message_id nullable)` — tracks an ongoing Twitch live stream; unique per relay_id
 - `VoiceChannel(channel_id PK, guild_id FK, name, status nullable)` — cached voice/stage channel records; status mirrors the last VOICE_CHANNEL_STATUS_UPDATE Gateway event; rows are kept in sync with Discord (creates, renames, deletes)
@@ -200,8 +203,7 @@ Domain-specific wrappers live in `sources/lib/db/operations/`.
 | `/youtube-relay remove-message` | youtube_relay.py | Reset a notification message to default (admin) |
 | `/youtube-relay remove` | youtube_relay.py | Stop forwarding a YouTube channel (admin) |
 | `/youtube-relay list` | youtube_relay.py | Show active YouTube relays (admin) |
-| `/twitch-relay authorize` | twitch_relay.py | Twitch Device Code Grant auth (bot owner only) |
-| `/twitch-relay sync` | twitch_relay.py | Re-subscribe to EventSub for all or one channel (admin) |
+| `/twitch-relay sync` | twitch_relay.py | Delete and recreate the EventSub subscriptions for all or one channel — also how to rotate the secret (admin) |
 | `/twitch-relay force-check` | twitch_relay.py | Check live status now and post a notification if one is missing (admin) |
 | `/twitch-relay add` | twitch_relay.py | Forward a Twitch channel's streams to Discord (admin) |
 | `/twitch-relay remove` | twitch_relay.py | Stop forwarding a Twitch channel (admin) |
@@ -248,8 +250,9 @@ python sources/scripts/main.py
 - `GET /health` → `200 {"status": "ok", "latency_ms": N}` when bot is ready
 - `GET /health` → `503 {"status": "starting"}` while connecting to Discord
 - `GET /metrics` → Prometheus text exposition format (see `sources/lib/utils/metrics.py` for the shared metrics and `main.py` for the bot-level gauges)
+- `POST /twitch/eventsub` → Twitch EventSub webhook (`sources/lib/twitch_webhook.py`): HMAC-verified, answers 204 immediately and processes the event in the background; `404` when the Twitch relay is not configured
 
-The port is published only to `127.0.0.1` on the host (Docker `published_ports`), so it is not externally reachable. Neither endpoint is proxied by nginx: the deploy check and the Alloy blackbox probe hit `127.0.0.1:8080/health` directly, and `/metrics` is scraped by the Alloy monitoring agent.
+The port is published only to `127.0.0.1` on the host (Docker `published_ports`), so it is not externally reachable. nginx proxies exactly one path to it, `POST /discord-bot/twitch/eventsub` → `/twitch/eventsub` (no auth_basic: the HMAC is the authentication). `/health` and `/metrics` are not proxied: the deploy check and the Alloy blackbox probe hit `127.0.0.1:8080/health` directly, and `/metrics` is scraped by the Alloy monitoring agent.
 
 ## Deployment
 
@@ -295,9 +298,8 @@ The Ansible playbook itself (`ansible-playbook -i inventories/zelgray.work -vv p
 | `tldextract` | 5.3.2 | URL domain extraction |
 | `dateparser` | 1.4.3 | Natural language date parsing |
 | `tzlocal` | 5.4.4 | Local timezone detection (transitive dependency of `APScheduler`/`dateparser`) |
-| `APScheduler` | 3.11.3 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start, relay polling, Twitch EventSub reconnect watchdog) |
+| `APScheduler` | 3.11.3 | Scheduled tasks (birthday announcements, reminder delivery, event auto-start, relay polling, Twitch reconcile job) |
 | `aiohttp` | 3.14.3 | HTTP client (YouTube API, Spotify API, Twitch API) |
 | `feedparser` | 6.0.14 | RSS feed parsing (Telegram relay, YouTube relay) |
-| `twitchAPI` | 4.5.0 | Twitch EventSub WebSocket + API client |
+| `twitchAPI` | 4.5.0 | Twitch Helix client (streams, users, videos, EventSub subscription management); the webhook endpoint itself is our own |
 | `prometheus_client` | 0.26.0 | Prometheus `/metrics` endpoint |
-| `cryptography` | 50.0.0 | Fernet encryption for Twitch tokens at rest |
