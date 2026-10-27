@@ -28,6 +28,7 @@ from sources.lib.cogs.twitch_relay import TwitchRelayCog
 from sources.lib.cogs.user import UserCog
 from sources.lib.cogs.voice import VoiceCog
 from sources.lib.cogs.youtube_relay import YouTubeRelayCog
+from sources.lib.twitch_webhook import eventsub_route
 from sources.lib.utils.logger import Logger
 from sources.lib.utils.metrics import command_errors
 
@@ -69,6 +70,8 @@ async def _start_health_server(bot_instance: 'MeowBot') -> None:
     app['bot'] = bot_instance
     app.router.add_get('/health', _health_handler)
     app.router.add_get('/metrics', _metrics_handler)
+    # nginx proxies only this exact path to the outside world (see the nginx role).
+    app.router.add_post('/twitch/eventsub', eventsub_route)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     # Must bind 0.0.0.0 for the Docker published_ports mapping to reach it;
