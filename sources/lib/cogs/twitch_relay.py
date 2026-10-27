@@ -2,7 +2,9 @@
 
 import asyncio
 import time
+from collections import defaultdict
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime, timedelta
 
 import discord
 from apscheduler.events import EVENT_JOB_ERROR
@@ -41,10 +43,18 @@ from sources.lib.utils.logger import Logger
 from sources.lib.utils.metrics import (
     api_call_latency,
     relay_fetch_errors,
+    relay_last_poll,
     relay_posts,
     scheduler_job_failures,
 )
-from sources.lib.utils.twitch_eventsub import Subscription
+from sources.lib.utils.twitch_eventsub import Subscription, format_missed_start_note
+
+# Helix accepts at most 100 user ids per get_streams call.
+_STREAMS_BATCH = 100
+# A live channel with no session younger than this is left to the normal
+# stream.online handler, so the reconcile does not announce it with a false
+# "start was missed" note a few seconds before that handler posts.
+_MISSED_START_GRACE = timedelta(minutes=2)
 
 
 class _SetMessageModal(discord.ui.Modal):
@@ -103,6 +113,7 @@ class TwitchRelayCog(commands.Cog):
         self.webhook_handler: TwitchWebhookHandler | None = None
         self._scheduler = AsyncIOScheduler()
         self._initial_reconcile: asyncio.Task | None = None
+        self._relay_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def cog_load(self) -> None:
         """Start the webhook handler and the reconcile job if Twitch is configured."""
@@ -169,11 +180,12 @@ class TwitchRelayCog(commands.Cog):
 
     async def _reconcile(self) -> None:
         """Run one reconcile pass; errors are logged and counted, never raised."""
-        try:
-            await self._reconcile_subscriptions()
-        except Exception:
-            relay_fetch_errors.labels(service='twitch').inc()
-            self.logger.exception('Twitch reconcile failed')
+        for step in (self._reconcile_subscriptions, self._reconcile_live_state):
+            try:
+                await step()
+            except Exception:
+                relay_fetch_errors.labels(service='twitch').inc()
+                self.logger.exception('Twitch reconcile step %s failed', step.__name__)
 
     async def _sync_subscriptions(self, twitch_user_id: str) -> bool:
         """Reconcile subscriptions after a relay change.
@@ -313,6 +325,7 @@ class TwitchRelayCog(commands.Cog):
         twitch_display_name: str,
         url: str,
         stream_info: dict | None,
+        missed_start_note: str | None = None,
     ) -> bool:
         """Post a live-stream announcement for one relay and record the live session.
 
@@ -321,64 +334,70 @@ class TwitchRelayCog(commands.Cog):
             twitch_display_name: Broadcaster display name used in the default message.
             url: Twitch channel URL.
             stream_info: Dict from _fetch_stream_info, or None for a plain-text fallback.
+            missed_start_note: Footer for an announcement posted after the start was
+                missed, or None for a normal one.
 
         Returns:
             True if the notification was posted (or a session for this relay
             already existed), False if the Discord channel was missing or the
             bot lacked permission to post there.
         """
-        existing = await get_live_sessions_for_user(relay.twitch_user_id)
-        if any(s.relay_id == relay.id for s in existing):
-            # Already announced (e.g. a retry after a timed-out earlier attempt) —
-            # skip to avoid posting a duplicate announcement.
-            return True
+        # Held across check -> send -> record so a stream.online notification and a
+        # reconcile pass cannot both announce the same stream.
+        async with self._relay_locks[relay.id]:
+            existing = await get_live_sessions_for_user(relay.twitch_user_id)
+            if any(s.relay_id == relay.id for s in existing):
+                # Already announced (e.g. a retry after a timed-out earlier attempt) —
+                # skip to avoid posting a duplicate announcement.
+                return True
 
-        channel = await resolve_channel(self.bot, relay.discord_channel_id)
-        if channel is None:
-            self.logger.warning(
-                'Discord channel %d not found for relay %d',
-                relay.discord_channel_id,
-                relay.id,
-            )
-            return False
+            channel = await resolve_channel(self.bot, relay.discord_channel_id)
+            if channel is None:
+                self.logger.warning(
+                    'Discord channel %d not found for relay %d',
+                    relay.discord_channel_id,
+                    relay.id,
+                )
+                return False
 
-        try:
-            if stream_info:
-                author_text = (
-                    relay.custom_message
-                    or f'{twitch_display_name} is now live on Twitch!'
+            try:
+                if stream_info:
+                    author_text = (
+                        relay.custom_message
+                        or f'{twitch_display_name} is now live on Twitch!'
+                    )
+                    embed = self._build_live_embed(
+                        author_text=author_text,
+                        title=stream_info['title'],
+                        url=url,
+                        game=stream_info['game'],
+                        viewers=stream_info['viewers'],
+                        thumbnail_url=stream_info['thumbnail_url'],
+                        profile_image_url=stream_info['profile_image_url'],
+                        missed_start_note=missed_start_note,
+                    )
+                    sent = await channel.send(embed=embed)
+                else:
+                    message = (
+                        relay.custom_message
+                        or f'**{twitch_display_name}** is now live on Twitch!'
+                    )
+                    sent = await channel.send(f'{message}\n{url}')
+                await add_live_session(relay.id, sent.id)
+                relay_posts.labels(service='twitch', type='online').inc()
+                self.logger.info(
+                    'Posted stream.online for %s to channel %d',
+                    relay.twitch_login,
+                    relay.discord_channel_id,
                 )
-                embed = self._build_live_embed(
-                    author_text=author_text,
-                    title=stream_info['title'],
-                    url=url,
-                    game=stream_info['game'],
-                    viewers=stream_info['viewers'],
-                    thumbnail_url=stream_info['thumbnail_url'],
-                    profile_image_url=stream_info['profile_image_url'],
+                return True
+            except discord.Forbidden:
+                self.logger.warning(
+                    'No permission to post in channel %d for relay %d',
+                    relay.discord_channel_id,
+                    relay.id,
                 )
-                sent = await channel.send(embed=embed)
-            else:
-                message = (
-                    relay.custom_message
-                    or f'**{twitch_display_name}** is now live on Twitch!'
-                )
-                sent = await channel.send(f'{message}\n{url}')
-            await add_live_session(relay.id, sent.id)
-            relay_posts.labels(service='twitch', type='online').inc()
-            self.logger.info(
-                'Posted stream.online for %s to channel %d',
-                relay.twitch_login,
-                relay.discord_channel_id,
-            )
-            return True
-        except discord.Forbidden:
-            self.logger.warning(
-                'No permission to post in channel %d for relay %d',
-                relay.discord_channel_id,
-                relay.id,
-            )
-            return False
+                return False
 
     async def _handle_stream_offline(self, event: StreamEvent) -> None:
         """Edit the stream announcement when a tracked stream ends.
@@ -453,7 +472,8 @@ class TwitchRelayCog(commands.Cog):
             max_attempts: Number of get_streams attempts before giving up.
 
         Returns:
-            Dict with title, game, viewers, thumbnail_url, profile_image_url keys,
+            Dict with title, game, viewers, thumbnail_url, profile_image_url and
+            started_at keys,
             or None on API error or if no active stream is found.
         """
         if self._twitch is None:
@@ -502,6 +522,7 @@ class TwitchRelayCog(commands.Cog):
                 'viewers': stream.viewer_count,
                 'thumbnail_url': thumbnail_url,
                 'profile_image_url': profile_image_url,
+                'started_at': stream.started_at,
             }
         except Exception as exc:
             relay_fetch_errors.labels(service='twitch').inc()
@@ -519,6 +540,7 @@ class TwitchRelayCog(commands.Cog):
         viewers: int,
         thumbnail_url: str | None,
         profile_image_url: str | None,
+        missed_start_note: str | None = None,
     ) -> discord.Embed:
         """Build a Streamcord-style embed for a live Twitch stream.
 
@@ -530,6 +552,7 @@ class TwitchRelayCog(commands.Cog):
             viewers: Live viewer count.
             thumbnail_url: Stream preview image URL, or None.
             profile_image_url: Channel profile picture URL, or None.
+            missed_start_note: Footer text for an announcement posted late, or None.
 
         Returns:
             A discord.Embed ready to post.
@@ -543,6 +566,8 @@ class TwitchRelayCog(commands.Cog):
         embed.add_field(name='Viewers', value=f'{viewers:,}', inline=True)
         if thumbnail_url:
             embed.set_image(url=thumbnail_url)
+        if missed_start_note:
+            embed.set_footer(text=missed_start_note)
         return embed
 
     @staticmethod
@@ -573,72 +598,109 @@ class TwitchRelayCog(commands.Cog):
         )
         return embed
 
-    async def _cleanup_stale_sessions(self) -> None:
-        """Edit announcements for streams that ended while the bot was offline.
+    async def _get_live_user_ids(self, user_ids: list[str]) -> set[str]:
+        """Return which of the given Twitch channels are live right now.
 
-        Fetches all open live sessions from the DB, checks which streams are
-        still active via the Twitch API, and closes any that are no longer live.
+        Args:
+            user_ids: Twitch user ids to check; queried in batches of 100.
+
+        Returns:
+            The ids that currently have an active stream.
+
+        Raises:
+            Exception: Whatever Helix raises; the caller must not treat a failed
+                call as "nobody is live".
         """
-        sessions = await get_all_live_sessions()
-        if not sessions:
-            return
+        live: set[str] = set()
+        for start in range(0, len(user_ids), _STREAMS_BATCH):
+            batch = user_ids[start : start + _STREAMS_BATCH]
+            with api_call_latency.labels(service='twitch').time():
+                async for stream in self._twitch.get_streams(
+                    user_id=batch, first=_STREAMS_BATCH
+                ):
+                    live.add(stream.user_id)
+        return live
 
-        relays = await get_all_relays()
-        relay_map = {r.id: r for r in relays}
+    async def _close_session(self, session, relay: TwitchRelay) -> None:
+        """Edit a live announcement to the 'stream ended' embed and drop its session.
 
-        user_ids = list(
-            {
-                relay_map[s.relay_id].twitch_user_id
-                for s in sessions
-                if s.relay_id in relay_map
-            }
+        Args:
+            session: The TwitchLiveSession row to close.
+            relay: The relay the session belongs to.
+        """
+        vod_url = await self._get_latest_vod_url(relay.twitch_user_id)
+        end_embed = self._build_ended_embed(
+            relay.twitch_login, relay.twitch_login, vod_url
         )
-        if not user_ids:
-            return
+        if session.discord_message_id:
+            channel = await resolve_channel(self.bot, relay.discord_channel_id)
+            if channel is not None:
+                try:
+                    original = await channel.fetch_message(session.discord_message_id)
+                    await original.edit(content=None, embed=end_embed)
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+        await remove_live_session(session.id)
 
-        live_user_ids: set[str] = set()
+    async def _reconcile_live_state(self) -> None:
+        """Bring live sessions in line with what Twitch reports.
+
+        Closes announcements of streams that ended without a stream.offline being
+        processed, and announces live streams that never got an announcement,
+        with a note that their start was missed. A Helix failure changes nothing.
+        """
+        if self._twitch is None:
+            return
+        relays = await get_all_relays()
+        sessions = await get_all_live_sessions()
+        relay_map = {r.id: r for r in relays}
         try:
-            async for stream in self._twitch.get_streams(user_id=user_ids):
-                live_user_ids.add(stream.user_id)
+            live = await self._get_live_user_ids(
+                sorted({r.twitch_user_id for r in relays})
+            )
         except Exception as exc:
-            self.logger.warning('Failed to check live streams on startup: %s', exc)
+            relay_fetch_errors.labels(service='twitch').inc()
+            self.logger.warning('Failed to check live Twitch streams: %s', exc)
             return
 
         stale = [
             s
             for s in sessions
-            if s.relay_id in relay_map
-            and relay_map[s.relay_id].twitch_user_id not in live_user_ids
+            if s.relay_id not in relay_map
+            or relay_map[s.relay_id].twitch_user_id not in live
         ]
-        if not stale:
-            return
-
-        self.logger.info(
-            'Closing %d stale Twitch live session(s) from before restart', len(stale)
-        )
+        if stale:
+            self.logger.info('Closing %d stale Twitch live session(s)', len(stale))
         for session in stale:
             relay = relay_map.get(session.relay_id)
             if relay is None:
                 await remove_live_session(session.id)
+            else:
+                await self._close_session(session, relay)
+
+        announced = {s.relay_id for s in sessions}
+        unannounced: dict[str, list[TwitchRelay]] = defaultdict(list)
+        for relay in relays:
+            if relay.twitch_user_id in live and relay.id not in announced:
+                unannounced[relay.twitch_user_id].append(relay)
+        for user_id, user_relays in unannounced.items():
+            stream_info = await self._fetch_stream_info(user_id, max_attempts=1)
+            if stream_info is None:
                 continue
+            now = datetime.now(UTC)
+            if now - stream_info['started_at'] < _MISSED_START_GRACE:
+                continue
+            note = format_missed_start_note(stream_info['started_at'], now)
+            for relay in user_relays:
+                await self._post_live_notification(
+                    relay,
+                    relay.twitch_login,
+                    f'https://www.twitch.tv/{relay.twitch_login}',
+                    stream_info,
+                    missed_start_note=note,
+                )
 
-            vod_url = await self._get_latest_vod_url(relay.twitch_user_id)
-            end_embed = self._build_ended_embed(
-                relay.twitch_login, relay.twitch_login, vod_url
-            )
-
-            if session.discord_message_id:
-                channel = await resolve_channel(self.bot, relay.discord_channel_id)
-                if channel is not None:
-                    try:
-                        original = await channel.fetch_message(
-                            session.discord_message_id
-                        )
-                        await original.edit(content=None, embed=end_embed)
-                    except (discord.NotFound, discord.Forbidden):
-                        pass
-
-            await remove_live_session(session.id)
+        relay_last_poll.labels(service='twitch').set(time.time())
 
     async def _resolve_user(self, raw: str) -> tuple[str, str] | None:
         """Resolve a Twitch login name or channel URL to (user_id, login).
@@ -821,7 +883,13 @@ class TwitchRelayCog(commands.Cog):
 
             url = f'https://www.twitch.tv/{relay.twitch_login}'
             posted = await self._post_live_notification(
-                relay, relay.twitch_login, url, stream_info
+                relay,
+                relay.twitch_login,
+                url,
+                stream_info,
+                missed_start_note=format_missed_start_note(
+                    stream_info['started_at'], datetime.now(UTC)
+                ),
             )
             lines.append(
                 f'**{relay.twitch_login}** — '
