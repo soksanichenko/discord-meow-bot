@@ -44,6 +44,9 @@ class Config(BaseSettings):
     twitch_client_id: str = ''
     twitch_client_secret: SecretStr = SecretStr('')
     encryption_key: SecretStr = SecretStr('')
+    twitch_eventsub_secret: SecretStr = SecretStr('')
+    twitch_eventsub_callback_url: str = ''
+    twitch_reconcile_interval_minutes: int = 5
     sync_db_url: str = (
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
@@ -52,6 +55,23 @@ class Config(BaseSettings):
         f'postgresql+psycopg://{__db.login}:{__db.password}@'
         f'{__db.host}:{__db.port}/{__db.database}'
     )
+
+    @field_validator('twitch_eventsub_secret')
+    @classmethod
+    def validate_eventsub_secret(cls, secret: SecretStr) -> SecretStr:
+        """Check the EventSub secret is empty (relay disabled) or 10-100 ASCII chars."""
+        value = secret.get_secret_value()
+        if value and not (10 <= len(value) <= 100 and value.isascii()):
+            raise ValueError('must be 10-100 ASCII characters')
+        return secret
+
+    @field_validator('twitch_eventsub_callback_url')
+    @classmethod
+    def validate_eventsub_callback_url(cls, url: str) -> str:
+        """Check the EventSub callback URL is empty (relay disabled) or HTTPS."""
+        if url and not url.startswith('https://'):
+            raise ValueError('must start with https://')
+        return url
 
 
 config = Config()
