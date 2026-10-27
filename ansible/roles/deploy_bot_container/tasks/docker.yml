@@ -63,6 +63,8 @@
       RSSHUB_URL: "http://rsshub:1200"
       TWITCH_CLIENT_ID: "{{ twitch_client_id }}"
       TWITCH_CLIENT_SECRET: "{{ twitch_client_secret }}"
+      TWITCH_EVENTSUB_SECRET: "{{ twitch_eventsub_secret }}"
+      TWITCH_EVENTSUB_CALLBACK_URL: "{{ twitch_eventsub_callback_url }}"
       ENCRYPTION_KEY: "{{ encryption_key }}"
     labels:
       monitoring.critical: "true"

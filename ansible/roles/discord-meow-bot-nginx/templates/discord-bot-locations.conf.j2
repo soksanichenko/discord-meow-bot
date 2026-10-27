@@ -1,0 +1,10 @@
+# Twitch EventSub webhook. No auth_basic: Twitch cannot send credentials; the
+# bot authenticates every request by the HMAC signature. Only this exact path
+# is proxied, so the bot's /health and /metrics stay internal.
+location = /discord-bot/twitch/eventsub {
+    limit_except POST { deny all; }
+    client_max_body_size  64k;
+    proxy_pass            http://discord-meow-bot:{{ health_port }}/twitch/eventsub;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout    10s;
+}

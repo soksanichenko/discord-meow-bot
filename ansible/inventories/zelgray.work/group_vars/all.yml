@@ -10,6 +10,8 @@ spotify_api_client_secret: "{{ infisical_secrets.secrets['spotify-api-client-sec
 twitch_client_id: "{{ infisical_secrets.secrets['twitch-client-id-discord-bot'] }}"
 twitch_client_secret: "{{ infisical_secrets.secrets['twitch-secret-discord-bot'] }}"
 encryption_key: "{{ infisical_secrets.secrets['discord-bot-encryption-key'] }}"
+twitch_eventsub_secret: "{{ infisical_secrets.secrets['twitch-eventsub-secret-discord-bot'] }}"
+twitch_eventsub_callback_url: "https://zelgray.work/discord-bot/twitch/eventsub"
 db_password: "{{ infisical_secrets.secrets['discord-bot-db-password'] }}"
 db_login: "meow-bot"
 db_host: postgresql
