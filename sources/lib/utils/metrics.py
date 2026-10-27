@@ -45,3 +45,16 @@ twitch_webhook_requests = Counter(
     'Number of Twitch EventSub webhook requests by message type and result',
     ['type', 'result'],
 )
+twitch_subscriptions_desired = Gauge(
+    'twitch_subscriptions_desired',
+    'Number of Twitch EventSub subscriptions the relays require',
+)
+twitch_subscriptions_enabled = Gauge(
+    'twitch_subscriptions_enabled',
+    'Number of our Twitch EventSub webhook subscriptions currently enabled',
+)
+twitch_subscription_cost = Gauge(
+    'twitch_subscription_cost',
+    'Twitch EventSub subscription cost: total in use, or the maximum allowed',
+    ['kind'],
+)
