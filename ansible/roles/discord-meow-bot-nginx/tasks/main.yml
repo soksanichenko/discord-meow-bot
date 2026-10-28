@@ -44,13 +44,29 @@
 # The bot's /health used to be proxied publicly behind Basic Auth; nothing used
 # it (the deploy check and the blackbox probe both hit 127.0.0.1). Remove what
 # earlier runs left on the hosts.
-- name: Remove the public health endpoint config and its htpasswd file
+- name: Remove the public health endpoint htpasswd file
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"
     state: absent
   become: yes
-  loop:
-    - "{{ nginx_custom_locations_path }}/discord-bot-locations.conf"
-    - "{{ nginx_htpasswd_path }}/meow-bot-health.htpasswd"
+  notify: Restart Nginx container
+
+# discord-bot-locations.conf now holds only the Twitch EventSub webhook location
+# (it replaces the old public /health one); hosts without the webhook get none.
+- name: Deploy the Twitch EventSub webhook nginx location
+  ansible.builtin.template:
+    src: discord-bot-locations.conf.j2
+    dest: "{{ nginx_custom_locations_path }}/discord-bot-locations.conf"
+    mode: "0644"
+  become: yes
+  when: twitch_eventsub_callback_url | length > 0
+  notify: Restart Nginx container
+
+- name: Remove the Twitch EventSub webhook nginx location when it is disabled
+  ansible.builtin.file:
+    path: "{{ nginx_custom_locations_path }}/discord-bot-locations.conf"
+    state: absent
+  become: yes
+  when: twitch_eventsub_callback_url | length == 0
   notify: Restart Nginx container
 ...
