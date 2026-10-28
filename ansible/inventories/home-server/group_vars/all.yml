@@ -9,7 +9,6 @@ spotify_api_client_id: "{{ infisical_secrets.secrets['spotify-api-client-id'] }}
 spotify_api_client_secret: "{{ infisical_secrets.secrets['spotify-api-client-secret'] }}"
 twitch_client_id: "{{ infisical_secrets.secrets['twitch-client-id-discord-bot'] }}"
 twitch_client_secret: "{{ infisical_secrets.secrets['twitch-secret-discord-bot'] }}"
-encryption_key: "{{ infisical_secrets.secrets['discord-bot-encryption-key'] }}"
 # The Twitch webhook is not exposed on this host, so the Twitch relay stays disabled.
 twitch_eventsub_secret: ""
 twitch_eventsub_callback_url: ""

@@ -25,7 +25,6 @@ from sources.lib.db.models import (
     GuildSettings,
     MessageStats,
     TelegramRelay,
-    TwitchAuth,
     TwitchLiveSession,
     TwitchRelay,
     YouTubeLiveSession,
@@ -71,7 +70,6 @@ class TestSchema:
             'telegram_relays',
             'youtube_relays',
             'youtube_live_sessions',
-            'twitch_auth',
             'twitch_relays',
             'twitch_live_sessions',
             'voice_channels',
@@ -88,6 +86,22 @@ class TestSchema:
                 {'s': 'public', 't': table},
             )
             assert result.scalar() is True, f'Table {table!r} missing from schema'
+
+    async def test_twitch_auth_table_is_dropped(self, db_session: AsyncSession) -> None:
+        """The user-OAuth token table is gone: the relay uses webhooks and app tokens.
+
+        Args:
+            db_session: Async session bound to the test container.
+        """
+        result = await db_session.execute(
+            text(
+                'SELECT EXISTS ('
+                '  SELECT FROM information_schema.tables'
+                "  WHERE table_schema = 'public' AND table_name = 'twitch_auth'"
+                ')'
+            )
+        )
+        assert result.scalar() is False, 'twitch_auth should have been dropped'
 
 
 class TestGuildCascade:
@@ -591,36 +605,6 @@ class TestRelayCascade:
             .all()
         )
         assert remaining == []
-
-
-class TestTwitchAuth:
-    """TwitchAuth single-row upsert semantics (id always 1)."""
-
-    async def test_insert_and_update(self, db_session: AsyncSession) -> None:
-        """Inserting then updating TwitchAuth row 1 must succeed without duplicates.
-
-        Args:
-            db_session: Async session bound to the test container.
-        """
-        from datetime import UTC, datetime, timedelta
-
-        expires = datetime.now(UTC) + timedelta(hours=1)
-        db_session.add(
-            TwitchAuth(
-                id=1,
-                access_token='token_a',
-                refresh_token='refresh_a',
-                expires_at=expires,
-            )
-        )
-        await db_session.commit()
-
-        row = await db_session.get(TwitchAuth, 1)
-        row.access_token = 'token_b'
-        await db_session.commit()
-
-        updated = await db_session.get(TwitchAuth, 1)
-        assert updated.access_token == 'token_b'
 
 
 class TestAutoResponderExpiry:

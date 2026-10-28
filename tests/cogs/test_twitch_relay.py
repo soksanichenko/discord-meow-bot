@@ -1,12 +1,21 @@
 """Tests for Twitch relay cog pure business logic."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
+import pytest
+from pydantic import SecretStr
 
 from sources.lib.cogs.twitch_relay import TwitchRelayCog
+from sources.lib.twitch_subscriptions import TwitchSubscriptionManager
+from sources.lib.twitch_webhook import StreamEvent, TwitchWebhookHandler
+from sources.lib.utils.metrics import relay_fetch_errors, relay_last_poll
+from sources.lib.utils.twitch_eventsub import Subscription
+
+STARTED_AT = datetime(2026, 10, 27, 9, 0, tzinfo=UTC)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,13 +75,12 @@ def _stream_online_event(
     broadcaster_user_id: str = '123',
     broadcaster_user_login: str = 'streamer',
     broadcaster_user_name: str = 'streamer',
-) -> SimpleNamespace:
-    data = SimpleNamespace(
-        broadcaster_user_id=broadcaster_user_id,
-        broadcaster_user_login=broadcaster_user_login,
-        broadcaster_user_name=broadcaster_user_name,
+) -> StreamEvent:
+    return StreamEvent(
+        user_id=broadcaster_user_id,
+        login=broadcaster_user_login,
+        display_name=broadcaster_user_name,
     )
-    return SimpleNamespace(event=data)
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +432,7 @@ class TestFetchStreamInfo:
             title=title,
             game_name=game_name,
             viewer_count=viewer_count,
+            started_at=STARTED_AT,
         )
 
     def _make_twitch(
@@ -451,6 +460,7 @@ class TestFetchStreamInfo:
         result = await cog._fetch_stream_info('123')
 
         assert result is not None
+        assert result['started_at'] == STARTED_AT
         url = result['thumbnail_url']
         assert '?t=' in url
         assert url.split('?t=')[1].isdigit()
@@ -589,33 +599,6 @@ class TestRelayAutocomplete:
             choices = await cog._relay_autocomplete(self._interaction({}), '')
 
         assert choices == []
-
-
-# ---------------------------------------------------------------------------
-# _is_eventsub_connected — EventSub WebSocket connection health metric
-# ---------------------------------------------------------------------------
-
-
-class TestIsEventsubConnected:
-    def test_no_eventsub_yet(self):
-        cog = _make_cog()
-        cog._eventsub = None
-        assert cog._is_eventsub_connected() == 0.0
-
-    def test_eventsub_with_no_connection_yet(self):
-        cog = _make_cog()
-        cog._eventsub = SimpleNamespace(_connection=None)
-        assert cog._is_eventsub_connected() == 0.0
-
-    def test_connection_open(self):
-        cog = _make_cog()
-        cog._eventsub = SimpleNamespace(_connection=SimpleNamespace(closed=False))
-        assert cog._is_eventsub_connected() == 1.0
-
-    def test_connection_closed(self):
-        cog = _make_cog()
-        cog._eventsub = SimpleNamespace(_connection=SimpleNamespace(closed=True))
-        assert cog._is_eventsub_connected() == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -760,7 +743,7 @@ class TestForceCheck:
         message = interaction.followup.send.call_args[0][0]
         assert 'not currently live' in message
 
-    async def test_live_posts_notification(self):
+    async def test_live_posts_notification_with_missed_start_note(self):
         relay = _relay()
         cog = _make_cog()
         cog._twitch = MagicMock()
@@ -771,6 +754,7 @@ class TestForceCheck:
             'viewers': 1,
             'thumbnail_url': None,
             'profile_image_url': None,
+            'started_at': datetime.now(UTC) - timedelta(minutes=83, seconds=30),
         }
 
         with (
@@ -793,7 +777,11 @@ class TestForceCheck:
 
         fetch_mock.assert_awaited_once_with(relay.twitch_user_id, max_attempts=1)
         post_mock.assert_awaited_once_with(
-            relay, relay.twitch_login, 'https://www.twitch.tv/streamer', stream_info
+            relay,
+            relay.twitch_login,
+            'https://www.twitch.tv/streamer',
+            stream_info,
+            missed_start_note='Already live for 1h 23m — the start of the stream was missed',
         )
         message = interaction.followup.send.call_args[0][0]
         assert 'notification posted' in message
@@ -809,6 +797,7 @@ class TestForceCheck:
             'viewers': 1,
             'thumbnail_url': None,
             'profile_image_url': None,
+            'started_at': STARTED_AT,
         }
 
         with (
@@ -852,3 +841,562 @@ class TestForceCheck:
 
         message = interaction.followup.send.call_args[0][0]
         assert message == '**beta** — not currently live.'
+
+
+# ---------------------------------------------------------------------------
+# Webhook wiring — cog_load, event callbacks, subscription reconcile, commands
+# ---------------------------------------------------------------------------
+
+CALLBACK_URL = 'https://example.com/discord-bot/twitch/eventsub'
+
+
+def _config(**overrides) -> SimpleNamespace:
+    values = {
+        'twitch_client_id': 'client-id',
+        'twitch_client_secret': SecretStr('client-secret'),
+        'twitch_eventsub_secret': SecretStr('a-secret-of-sufficient-length'),
+        'twitch_eventsub_callback_url': CALLBACK_URL,
+        'twitch_reconcile_interval_minutes': 5,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def _twitch_client() -> MagicMock:
+    client = MagicMock()
+    client.close = AsyncMock()
+    return client
+
+
+class TestCogLoad:
+    @pytest.mark.parametrize(
+        ('missing', 'empty'),
+        [
+            ('twitch_client_id', ''),
+            ('twitch_client_secret', SecretStr('')),
+            ('twitch_eventsub_secret', SecretStr('')),
+            ('twitch_eventsub_callback_url', ''),
+        ],
+    )
+    async def test_disabled_when_a_setting_is_missing(self, missing, empty):
+        cog = _make_cog()
+
+        with (
+            patch('sources.lib.cogs.twitch_relay.config', _config(**{missing: empty})),
+            patch('sources.lib.cogs.twitch_relay.Twitch', AsyncMock()) as twitch_cls,
+        ):
+            await cog.cog_load()
+
+        assert cog._twitch is None
+        assert cog.webhook_handler is None
+        assert cog._manager is None
+        twitch_cls.assert_not_called()
+
+    async def test_builds_handler_manager_and_reconcile_job(self):
+        cog = _make_cog()
+        cog._reconcile = AsyncMock()
+        twitch = _twitch_client()
+
+        with (
+            patch('sources.lib.cogs.twitch_relay.config', _config()),
+            patch(
+                'sources.lib.cogs.twitch_relay.Twitch', AsyncMock(return_value=twitch)
+            ),
+        ):
+            await cog.cog_load()
+            await asyncio.sleep(0)
+
+        try:
+            assert cog._twitch is twitch
+            assert isinstance(cog.webhook_handler, TwitchWebhookHandler)
+            assert isinstance(cog._manager, TwitchSubscriptionManager)
+            job = cog._scheduler.get_job('twitch_reconcile')
+            assert job is not None
+            assert job.trigger.interval == timedelta(minutes=5)
+            cog._reconcile.assert_awaited_once()
+            twitch.set_user_authentication.assert_not_called()
+        finally:
+            cog._scheduler.shutdown(wait=False)
+
+    async def test_unload_stops_the_scheduler_and_closes_the_client(self):
+        cog = _make_cog()
+        cog._reconcile = AsyncMock()
+        twitch = _twitch_client()
+        with (
+            patch('sources.lib.cogs.twitch_relay.config', _config()),
+            patch(
+                'sources.lib.cogs.twitch_relay.Twitch', AsyncMock(return_value=twitch)
+            ),
+        ):
+            await cog.cog_load()
+
+        await cog.cog_unload()
+        await asyncio.sleep(
+            0
+        )  # AsyncIOScheduler applies shutdown on the next loop turn
+
+        twitch.close.assert_awaited_once()
+        assert not cog._scheduler.running
+
+    async def test_unload_without_a_configured_relay_is_a_noop(self):
+        cog = _make_cog()
+
+        await cog.cog_unload()
+
+
+class TestWebhookCallbacks:
+    async def test_online_event_reaches_the_handler(self):
+        cog = _make_cog()
+        cog._handle_stream_online = AsyncMock()
+        event = StreamEvent('1', 'a', 'A')
+
+        await cog._on_online(event)
+
+        cog._handle_stream_online.assert_awaited_once_with(event)
+
+    async def test_offline_event_reaches_the_handler(self):
+        cog = _make_cog()
+        cog._handle_stream_offline = AsyncMock()
+        event = StreamEvent('1', 'a', 'A')
+
+        await cog._on_offline(event)
+
+        cog._handle_stream_offline.assert_awaited_once_with(event)
+
+    async def test_revocation_triggers_a_reconcile(self):
+        cog = _make_cog()
+        cog._reconcile = AsyncMock()
+
+        await cog._on_revocation(
+            Subscription('s1', 'stream.online', '1', 'authorization_revoked')
+        )
+
+        cog._reconcile.assert_awaited_once()
+
+
+class TestReconcileSubscriptions:
+    @staticmethod
+    def _cog_with_manager(**reconcile_kwargs) -> TwitchRelayCog:
+        cog = _make_cog()
+        cog._manager = MagicMock()
+        cog._manager.reconcile = AsyncMock(**reconcile_kwargs)
+        return cog
+
+    async def test_passes_each_channel_once(self):
+        cog = self._cog_with_manager(return_value=set())
+        relays = [
+            _relay(relay_id=1, twitch_user_id='1'),
+            _relay(relay_id=2, twitch_user_id='1', guild_id=2),
+            _relay(relay_id=3, twitch_user_id='2'),
+        ]
+
+        with patch(
+            'sources.lib.cogs.twitch_relay.get_all_relays',
+            AsyncMock(return_value=relays),
+        ):
+            await cog._reconcile_subscriptions()
+
+        cog._manager.reconcile.assert_awaited_once_with({'1', '2'})
+
+    async def test_a_failing_reconcile_is_logged_and_counted_not_raised(self):
+        cog = self._cog_with_manager(side_effect=RuntimeError('helix down'))
+        cog.logger = MagicMock()
+        before = relay_fetch_errors.labels(service='twitch')._value.get()
+
+        with patch(
+            'sources.lib.cogs.twitch_relay.get_all_relays',
+            AsyncMock(return_value=[_relay()]),
+        ):
+            await cog._reconcile()
+
+        assert relay_fetch_errors.labels(service='twitch')._value.get() == before + 1
+        cog.logger.exception.assert_called_once()
+
+
+def _cog_with_manager() -> TwitchRelayCog:
+    cog = _make_cog()
+    cog._twitch = MagicMock()
+    cog._manager = MagicMock()
+    cog._manager.reconcile = AsyncMock(return_value=set())
+    cog._manager.recreate = AsyncMock(return_value=set())
+    return cog
+
+
+def _target_channel() -> MagicMock:
+    channel = MagicMock()
+    channel.id = 7
+    channel.mention = '#target'
+    return channel
+
+
+class TestRelayAdd:
+    async def _add(self, cog, inserted: bool) -> str:
+        interaction = _force_check_interaction()
+        cog._resolve_user = AsyncMock(return_value=('42', 'login'))
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.add_relay',
+                AsyncMock(return_value=inserted),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_relays',
+                AsyncMock(return_value=[_relay(twitch_user_id='42')]),
+            ),
+        ):
+            await cog.relay_add.callback(cog, interaction, 'login', _target_channel())
+        return interaction.followup.send.call_args[0][0]
+
+    async def test_new_relay_is_reconciled_and_confirmed(self):
+        cog = _cog_with_manager()
+
+        message = await self._add(cog, inserted=True)
+
+        cog._manager.reconcile.assert_awaited_once_with({'42'})
+        assert message.startswith('Now forwarding **login**')
+
+    async def test_new_relay_reports_a_failed_subscription(self):
+        cog = _cog_with_manager()
+        cog._manager.reconcile.return_value = {'42'}
+
+        message = await self._add(cog, inserted=True)
+
+        assert 'subscription failed' in message
+
+    async def test_existing_relay_retries_the_subscription(self):
+        cog = _cog_with_manager()
+
+        message = await self._add(cog, inserted=False)
+
+        cog._manager.reconcile.assert_awaited_once_with({'42'})
+        assert 'EventSub subscription confirmed' in message
+
+
+class TestRelayRemove:
+    async def test_reconciles_after_removing_the_relay(self):
+        cog = _cog_with_manager()
+        interaction = _force_check_interaction()
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.parse_relay_id',
+                AsyncMock(return_value=5),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.remove_relay',
+                AsyncMock(return_value=('login', '42')),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_relays',
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            await cog.relay_remove.callback(cog, interaction, '5')
+
+        cog._manager.reconcile.assert_awaited_once_with(set())
+        assert 'removed' in interaction.followup.send.call_args[0][0]
+
+
+class TestRelaySync:
+    async def _sync(self, cog, channel=None):
+        interaction = _force_check_interaction()
+        relay = _relay(twitch_user_id='123', twitch_login='streamer')
+        with patch(
+            'sources.lib.cogs.twitch_relay.get_guild_relays',
+            AsyncMock(return_value=[relay]),
+        ):
+            await cog.relay_sync.callback(cog, interaction, channel)
+        return interaction
+
+    async def test_not_configured(self):
+        cog = _make_cog()
+        cog._manager = None
+
+        interaction = await self._sync(cog)
+
+        interaction.response.send_message.assert_awaited_once()
+        assert 'not configured' in interaction.response.send_message.call_args[0][0]
+
+    async def test_recreates_subscriptions_for_the_guild_channels(self):
+        cog = _cog_with_manager()
+
+        interaction = await self._sync(cog)
+
+        cog._manager.recreate.assert_awaited_once_with({'123'})
+        assert interaction.followup.send.call_args[0][0] == '✓ **streamer**'
+
+    async def test_marks_channels_that_failed(self):
+        cog = _cog_with_manager()
+        cog._manager.recreate.return_value = {'123'}
+
+        interaction = await self._sync(cog, channel='123')
+
+        assert interaction.followup.send.call_args[0][0] == '✗ **streamer**'
+
+
+# ---------------------------------------------------------------------------
+# Live-state reconcile — closes stale sessions, announces missed streams
+# ---------------------------------------------------------------------------
+
+
+def _session(session_id: int = 1, relay_id: int = 1, message_id: int = 555):
+    return SimpleNamespace(
+        id=session_id, relay_id=relay_id, discord_message_id=message_id
+    )
+
+
+def _live_twitch(live_user_ids: set[str], raise_exc: Exception | None = None):
+    """A Twitch client whose get_streams reports the given users as live."""
+    twitch = MagicMock()
+    calls: list[dict] = []
+
+    async def get_streams(**kwargs):
+        calls.append(kwargs)
+        if raise_exc is not None:
+            raise raise_exc
+        for user_id in kwargs['user_id']:
+            if user_id in live_user_ids:
+                yield SimpleNamespace(user_id=user_id)
+
+    twitch.get_streams = get_streams
+    twitch.calls = calls
+    return twitch
+
+
+def _stream_info(started_at: datetime) -> dict:
+    return {
+        'title': 'Playing games',
+        'game': 'Minecraft',
+        'viewers': 10,
+        'thumbnail_url': None,
+        'profile_image_url': None,
+        'started_at': started_at,
+    }
+
+
+class TestReconcileLiveState:
+    @staticmethod
+    def _cog(live: set[str], raise_exc: Exception | None = None) -> TwitchRelayCog:
+        cog = _make_cog()
+        cog._twitch = _live_twitch(live, raise_exc)
+        cog._get_latest_vod_url = AsyncMock(return_value=None)
+        cog._post_live_notification = AsyncMock(return_value=True)
+        cog.logger = MagicMock()
+        return cog
+
+    @staticmethod
+    def _patches(sessions, relays, message=None):
+        channel = AsyncMock()
+        channel.fetch_message = AsyncMock(return_value=message or AsyncMock())
+        return channel, (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_live_sessions',
+                AsyncMock(return_value=sessions),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_relays',
+                AsyncMock(return_value=relays),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.resolve_channel',
+                AsyncMock(return_value=channel),
+            ),
+            patch('sources.lib.cogs.twitch_relay.remove_live_session', AsyncMock()),
+        )
+
+    async def _run(self, cog, sessions, relays, message=None):
+        channel, (p_sessions, p_relays, p_channel, p_remove) = self._patches(
+            sessions, relays, message
+        )
+        with p_sessions, p_relays, p_channel, p_remove as remove:
+            await cog._reconcile_live_state()
+        return channel, remove
+
+    async def test_closes_a_session_whose_channel_is_no_longer_live(self):
+        # Regression: a lost stream.offline left nerzhaviyka's session open (2026-10-27).
+        message = AsyncMock()
+        cog = self._cog(live=set())
+
+        channel, remove = await self._run(
+            cog,
+            [_session(7, relay_id=1, message_id=555)],
+            [_relay(relay_id=1)],
+            message,
+        )
+
+        channel.fetch_message.assert_awaited_once_with(555)
+        message.edit.assert_awaited_once()
+        assert message.edit.call_args.kwargs['embed'].author.name == 'Stream ended'
+        remove.assert_awaited_once_with(7)
+
+    async def test_keeps_a_session_whose_channel_is_still_live(self):
+        cog = self._cog(live={'123'})
+
+        channel, remove = await self._run(
+            cog, [_session()], [_relay(relay_id=1, twitch_user_id='123')]
+        )
+
+        channel.fetch_message.assert_not_awaited()
+        remove.assert_not_awaited()
+        cog._post_live_notification.assert_not_awaited()
+
+    async def test_changes_nothing_when_get_streams_fails(self):
+        cog = self._cog(live=set(), raise_exc=RuntimeError('helix down'))
+
+        channel, remove = await self._run(cog, [_session()], [_relay(relay_id=1)])
+
+        channel.fetch_message.assert_not_awaited()
+        remove.assert_not_awaited()
+        cog._post_live_notification.assert_not_awaited()
+        cog.logger.warning.assert_called()
+
+    async def test_asks_twitch_about_at_most_100_channels_per_call(self):
+        relays = [_relay(relay_id=i, twitch_user_id=str(i)) for i in range(150)]
+        sessions = [_session(1, relay_id=5), _session(2, relay_id=120)]
+        cog = self._cog(live={'120'})
+
+        _, remove = await self._run(cog, sessions, relays)
+
+        assert [len(c['user_id']) for c in cog._twitch.calls] == [100, 50]
+        remove.assert_awaited_once_with(1)  # relay 5 is not live, relay 120 is
+
+    async def test_announces_a_live_channel_without_a_session_with_the_note(self):
+        cog = self._cog(live={'123'})
+        relay = _relay(relay_id=1, twitch_user_id='123')
+        info = _stream_info(datetime.now(UTC) - timedelta(minutes=83, seconds=30))
+        cog._fetch_stream_info = AsyncMock(return_value=info)
+
+        await self._run(cog, [], [relay])
+
+        cog._fetch_stream_info.assert_awaited_once_with('123', max_attempts=1)
+        cog._post_live_notification.assert_awaited_once_with(
+            relay,
+            relay.twitch_login,
+            'https://www.twitch.tv/streamer',
+            info,
+            missed_start_note='Already live for 1h 23m — the start of the stream was missed',
+        )
+
+    async def test_waits_for_the_normal_notification_when_the_stream_just_started(self):
+        cog = self._cog(live={'123'})
+        cog._fetch_stream_info = AsyncMock(
+            return_value=_stream_info(datetime.now(UTC) - timedelta(seconds=30))
+        )
+
+        await self._run(cog, [], [_relay(relay_id=1, twitch_user_id='123')])
+
+        cog._post_live_notification.assert_not_awaited()
+
+    async def test_records_the_poll_time_after_a_successful_pass(self):
+        cog = self._cog(live=set())
+        before = relay_last_poll.labels(service='twitch')._value.get()
+
+        await self._run(cog, [], [_relay()])
+
+        assert relay_last_poll.labels(service='twitch')._value.get() > before
+
+    async def test_reconcile_still_checks_live_state_when_subscriptions_fail(self):
+        cog = _make_cog()
+        cog.logger = MagicMock()
+        cog._reconcile_subscriptions = AsyncMock(side_effect=RuntimeError('boom'))
+        cog._reconcile_live_state = AsyncMock()
+
+        await cog._reconcile()
+
+        cog._reconcile_live_state.assert_awaited_once()
+
+
+class TestMissedStartNote:
+    async def test_stream_online_announcement_has_no_note(self):
+        relay = _relay()
+        channel = AsyncMock()
+        cog = _make_cog()
+        cog._fetch_stream_info = AsyncMock(return_value=_stream_info(STARTED_AT))
+
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_all_relays',
+                AsyncMock(return_value=[relay]),
+            ),
+            patch('sources.lib.cogs.twitch_relay.update_login', AsyncMock()),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.resolve_channel',
+                AsyncMock(return_value=channel),
+            ),
+        ):
+            await cog._handle_stream_online(_stream_online_event('123', 'streamer'))
+
+        assert channel.send.call_args.kwargs['embed'].footer.text is None
+
+    async def test_the_note_becomes_the_embed_footer(self):
+        relay = _relay()
+        channel = AsyncMock()
+        cog = _make_cog()
+
+        with (
+            patch('sources.lib.cogs.twitch_relay.add_live_session', AsyncMock()),
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                'sources.lib.cogs.twitch_relay.resolve_channel',
+                AsyncMock(return_value=channel),
+            ),
+        ):
+            await cog._post_live_notification(
+                relay,
+                'Streamer',
+                'https://www.twitch.tv/streamer',
+                _stream_info(STARTED_AT),
+                missed_start_note='Already live for 5m — the start of the stream was missed',
+            )
+
+        footer = channel.send.call_args.kwargs['embed'].footer.text
+        assert footer == 'Already live for 5m — the start of the stream was missed'
+
+
+class TestConcurrentAnnouncements:
+    async def test_two_simultaneous_notifications_for_one_relay_post_once(self):
+        relay = _relay()
+        sessions: list[SimpleNamespace] = []
+        channel = AsyncMock()
+
+        async def slow_send(**_kwargs):
+            await asyncio.sleep(0.01)
+            return SimpleNamespace(id=9)
+
+        channel.send = AsyncMock(side_effect=slow_send)
+
+        async def get_sessions(_user_id):
+            return list(sessions)
+
+        async def add_session(relay_id, _message_id):
+            sessions.append(SimpleNamespace(relay_id=relay_id))
+
+        cog = _make_cog()
+        with (
+            patch(
+                'sources.lib.cogs.twitch_relay.get_live_sessions_for_user',
+                get_sessions,
+            ),
+            patch('sources.lib.cogs.twitch_relay.add_live_session', add_session),
+            patch(
+                'sources.lib.cogs.twitch_relay.resolve_channel',
+                AsyncMock(return_value=channel),
+            ),
+        ):
+            await asyncio.gather(
+                cog._post_live_notification(
+                    relay, 'S', 'https://x', _stream_info(STARTED_AT)
+                ),
+                cog._post_live_notification(
+                    relay, 'S', 'https://x', _stream_info(STARTED_AT)
+                ),
+            )
+
+        assert channel.send.await_count == 1

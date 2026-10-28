@@ -141,28 +141,32 @@ ended before the bot noticed them are not posted.
 
 ### Twitch Stream Relay
 Forwards Twitch stream start and end notifications to Discord channels via
-EventSub WebSocket. Posts a rich embed on stream start (channel icon, stream
-title, game, viewer count, preview thumbnail) and updates it to a "stream
-ended" embed when the stream finishes. Stale sessions from before a bot
-restart are cleaned up automatically on startup. A stuck notification handler
-(e.g. a hung DB or Twitch API call) is retried automatically instead of
-failing silently; `/twitch-relay force-check` can also be run manually to
-check current live status and post a missing notification. A background
-watchdog checks the EventSub connection every few minutes and rebuilds it
-automatically if it drops and doesn't recover on its own (e.g. after a
-network outage).
+EventSub webhooks: Twitch calls a public HTTPS endpoint of the bot and every
+request is verified with an HMAC signature. Posts a rich embed on stream start
+(channel icon, stream title, game, viewer count, preview thumbnail) and updates
+it to a "stream ended" embed when the stream finishes. A reconcile job (on
+startup and every few minutes) keeps the EventSub subscriptions equal to the
+configured relays, closes announcements of streams that ended without the end
+event being processed, and announces live streams whose start was missed, with
+a note of how long the stream has already been running. A stuck notification
+handler (e.g. a hung DB or Twitch API call) is retried automatically instead
+of failing silently; `/twitch-relay force-check` can also be run manually to
+check current live status and post a missing notification.
 
-One-time setup: run `/twitch-relay authorize` (bot owner) to complete the
-Twitch Device Code Grant flow. Then admins can add relays per server.
+Setup: set `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` of your Twitch
+application, a random `TWITCH_EVENTSUB_SECRET` (10–100 ASCII characters, for
+example `openssl rand -hex 32`) and `TWITCH_EVENTSUB_CALLBACK_URL`, a public
+HTTPS URL that your reverse proxy forwards (POST only) to the bot's
+`/twitch/eventsub` route. No Twitch user authorization is needed. Then admins
+can add relays per server.
 
-- `/twitch-relay authorize` — complete Twitch OAuth (bot owner)
 - `/twitch-relay add <channel> <#channel>` — start forwarding (admin)
 - `/twitch-relay modify <channel>` — change the Discord channel (admin)
 - `/twitch-relay set-message <channel>` — set a custom notification message (admin)
 - `/twitch-relay remove-message <channel>` — reset message to default (admin)
 - `/twitch-relay remove <channel>` — stop forwarding (admin)
 - `/twitch-relay list` — show active relays (admin)
-- `/twitch-relay sync` — re-subscribe to EventSub (admin)
+- `/twitch-relay sync` — recreate the EventSub subscriptions (admin)
 - `/twitch-relay force-check` — check live status now and post a notification if one is missing (admin)
 
 ### Scheduled Event Auto-Start
@@ -242,8 +246,10 @@ All configuration is done via environment variables:
 | `YOUTUBE_RELAY_POLL_INTERVAL_MINUTES` | YouTube relay polling interval | `5` |
 | `TWITCH_CLIENT_ID` | Twitch application client ID (stream relay) | — |
 | `TWITCH_CLIENT_SECRET` | Twitch application client secret | — |
-| `ENCRYPTION_KEY` | Fernet key encrypting Twitch OAuth tokens at rest (generate with `Fernet.generate_key()`); required to use the Twitch relay | — |
-| `HEALTH_PORT` | Port for the internal HTTP health and metrics endpoints (`/health`, `/metrics`) | `8080` |
+| `TWITCH_EVENTSUB_SECRET` | Secret (10–100 ASCII characters) Twitch signs EventSub webhook deliveries with; required to use the Twitch relay | — |
+| `TWITCH_EVENTSUB_CALLBACK_URL` | Public HTTPS URL Twitch delivers EventSub webhooks to (forwarded to `POST /twitch/eventsub`); required to use the Twitch relay | — |
+| `TWITCH_RECONCILE_INTERVAL_MINUTES` | How often the Twitch relay reconciles subscriptions and live sessions | `5` |
+| `HEALTH_PORT` | Port for the internal HTTP server: health and metrics endpoints (`/health`, `/metrics`) and the Twitch webhook route | `8080` |
 
 ## Running
 

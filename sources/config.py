@@ -43,7 +43,6 @@ class Config(BaseSettings):
     youtube_relay_poll_interval_minutes: int = 5
     twitch_client_id: str = ''
     twitch_client_secret: SecretStr = SecretStr('')
-    encryption_key: SecretStr = SecretStr('')
     twitch_eventsub_secret: SecretStr = SecretStr('')
     twitch_eventsub_callback_url: str = ''
     twitch_reconcile_interval_minutes: int = 5
