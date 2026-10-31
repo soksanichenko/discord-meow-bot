@@ -291,4 +291,4 @@ See `ansible/` for playbooks and inventory.
 
 ## License
 
-MIT
+[MIT](https://opensource.org/licenses/MIT)
