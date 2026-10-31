@@ -1,12 +1,4 @@
-# Stage 1: Build frontend (skipped if frontend/package.json is absent)
-FROM node:22-alpine AS frontend-builder
-WORKDIR /app
-COPY frontend/ ./
-RUN if [ -f package.json ]; then npm ci; fi
-ARG VITE_DISCORD_CLIENT_ID
-RUN if [ -f package.json ]; then npm run build; else mkdir -p dist; fi
-
-# Stage 2: Build Python venv
+# Stage 1: Build Python venv
 FROM almalinux:10 AS python-builder
 RUN dnf install -y python3 python3-devel gcc && dnf clean all
 WORKDIR /code
@@ -15,7 +7,7 @@ RUN python3 -m venv venv && \
     venv/bin/pip install --upgrade pip && \
     venv/bin/pip install -r sources/requirements.txt
 
-# Stage 3: Runtime
+# Stage 2: Runtime
 FROM almalinux:10
 RUN dnf install -y python3 && dnf clean all
 RUN groupadd --gid 1000 meowbot && \
@@ -24,7 +16,6 @@ ENV PYTHONPATH="."
 WORKDIR /code
 COPY --from=python-builder /code/venv ./venv
 COPY sources/ ./sources/
-COPY --from=frontend-builder /app/dist/ ./frontend/
 RUN chown -R meowbot:meowbot /code
 USER 1000
 ENTRYPOINT ["bash"]
