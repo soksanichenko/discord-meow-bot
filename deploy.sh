@@ -2,6 +2,17 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# The AlmaLinux mirrorlist points dnf at portal.zelgray.cherkasy.ua. Containers
+# do not read this machine's /etc/hosts and use public DNS, where that host
+# answers 401, so pass the address this machine resolves it to into the build.
+MIRROR_HOST="portal.zelgray.cherkasy.ua"
+BUILD_ARGS=()
+mirror_ip="$(getent ahostsv4 "${MIRROR_HOST}" | awk 'NR==1 {print $1}')"
+if [[ -n "$mirror_ip" ]]; then
+  BUILD_ARGS+=(--add-host "${MIRROR_HOST}:${mirror_ip}")
+fi
+
 REGISTRY="ghcr.io/soksanichenko/discord-meow-bot"
 IMAGE_TAG="dev"
 LOCAL_TRANSFER=false
@@ -74,7 +85,7 @@ if [[ -z "$ANSIBLE_TAGS" ]]; then
   python -m pytest "${PROJECT_DIR}/tests/" -q --tb=short
 
   echo "=== Building Docker image ==="
-  docker build -t "${REGISTRY}:${IMAGE_TAG}" "${PROJECT_DIR}"
+  docker build "${BUILD_ARGS[@]}" -t "${REGISTRY}:${IMAGE_TAG}" "${PROJECT_DIR}"
 
   if [[ "$LOCAL_TRANSFER" == true ]]; then
     echo "=== Transferring image directly to remote (skipping GHCR push) ==="
