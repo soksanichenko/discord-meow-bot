@@ -73,8 +73,6 @@ if [[ -z "$ANSIBLE_TAGS" ]]; then
   echo "=== Running tests ==="
   python -m pytest "${PROJECT_DIR}/tests/" -q --tb=short
 
-  mkdir -p "${PROJECT_DIR}/frontend"
-
   echo "=== Building Docker image ==="
   docker build -t "${REGISTRY}:${IMAGE_TAG}" "${PROJECT_DIR}"
 

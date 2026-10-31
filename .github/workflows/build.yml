@@ -50,9 +50,6 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Ensure frontend directory exists
-        run: mkdir -p frontend
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 

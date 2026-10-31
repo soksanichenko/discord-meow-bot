@@ -6,10 +6,6 @@
 .ruff_cache
 venv
 tests
-frontend/node_modules
-frontend/dist
-frontend/.vite
-frontend/.env*
 *.pyc
 __pycache__
 .env*
