@@ -1,5 +1,5 @@
 # Stage 1: Build frontend (skipped if frontend/package.json is absent)
-FROM node:22-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/ ./
 RUN if [ -f package.json ]; then npm ci; fi
