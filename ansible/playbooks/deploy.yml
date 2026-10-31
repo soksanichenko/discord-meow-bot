@@ -2,12 +2,14 @@
 - name: Deploy discord bot
   hosts: all
   pre_tasks:
-    - import_tasks: pre_tasks/infisical.yml
+    - name: Load Infisical secrets
+      import_tasks: pre_tasks/infisical.yml
   roles:
     - role: discord-meow-bot-nginx
       tags: [nginx]
   tasks:
-    - import_role:
+    - name: Deploy bot container
+      import_role:
         name: deploy_bot_container
         tasks_from: docker.yml
       tags: [docker]

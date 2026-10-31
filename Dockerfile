@@ -26,5 +26,5 @@ COPY --from=python-builder /code/venv ./venv
 COPY sources/ ./sources/
 COPY --from=frontend-builder /app/dist/ ./frontend/
 RUN chown -R meowbot:meowbot /code
-USER meowbot
+USER 1000
 ENTRYPOINT ["bash"]

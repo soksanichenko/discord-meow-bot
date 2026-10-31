@@ -97,5 +97,7 @@ TAGS_ARG=""
 
 echo "=== Deploying ==="
 pushd "${PROJECT_DIR}/ansible" || exit 1
+# EXTRA_VARS and TAGS_ARG hold several words and must be split on purpose.
+# shellcheck disable=SC2086
 ansible-playbook -i "${INVENTORY}" -vv "playbooks/deploy.yml" ${EXTRA_VARS} ${TAGS_ARG}
 popd || exit 1
