@@ -1,0 +1,12 @@
+---
+profile: moderate
+exclude_paths:
+  - .venv/
+  - venv/
+skip_list:
+  - yaml[truthy]
+  - var-naming[no-role-prefix]
+  - role-name
+  - key-order[task]
+  - yaml[line-length]
+...

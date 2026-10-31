@@ -1,0 +1,32 @@
+---
+name: Ansible Lint
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+    paths:
+      - 'ansible/**'
+      - 'requirements.yml'
+      - '.ansible-lint'
+      - '.github/workflows/ansible-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install ansible-lint
+        run: pip install ansible-lint
+
+      - name: Install Ansible collections and roles
+        run: ansible-galaxy install -r requirements.yml
+
+      - name: Run ansible-lint
+        run: ansible-lint .
+        working-directory: ansible
